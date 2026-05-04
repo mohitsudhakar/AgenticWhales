@@ -32,9 +32,9 @@ DEFAULT_CONFIG = {
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
     # Debate and discussion settings
-    "max_debate_rounds": 1,
-    "max_risk_discuss_rounds": 1,
-    "max_recur_limit": 100,
+    "max_debate_rounds": 5,
+    "max_risk_discuss_rounds": 5,
+    "max_recur_limit": 1000,
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
