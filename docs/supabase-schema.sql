@@ -105,8 +105,26 @@ create table if not exists public.sessions (
   status text,
   created_at timestamptz not null default now(),
   completed_at timestamptz,
+  -- Denormalised stats — kept alongside the jsonb data column so they can be
+  -- queried without a JSON path expression, indexed, and aggregated cheaply.
+  tokens_in integer not null default 0,
+  tokens_out integer not null default 0,
+  tokens_total integer generated always as (tokens_in + tokens_out) stored,
+  llm_calls integer not null default 0,
+  tool_calls integer not null default 0,
+  quick_model text,
+  deep_model text,
   data jsonb
 );
+-- Idempotent ALTER for projects that created `sessions` before these columns
+-- existed. Postgres ignores any column that's already there.
+alter table public.sessions add column if not exists tokens_in integer not null default 0;
+alter table public.sessions add column if not exists tokens_out integer not null default 0;
+alter table public.sessions add column if not exists tokens_total integer generated always as (tokens_in + tokens_out) stored;
+alter table public.sessions add column if not exists llm_calls integer not null default 0;
+alter table public.sessions add column if not exists tool_calls integer not null default 0;
+alter table public.sessions add column if not exists quick_model text;
+alter table public.sessions add column if not exists deep_model text;
 create index if not exists sessions_user_id_idx on public.sessions (user_id, created_at desc);
 
 alter table public.sessions enable row level security;
@@ -141,8 +159,22 @@ create table if not exists public.batches (
   ticker_count integer,
   created_at timestamptz not null default now(),
   completed_at timestamptz,
+  tokens_in integer not null default 0,
+  tokens_out integer not null default 0,
+  tokens_total integer generated always as (tokens_in + tokens_out) stored,
+  llm_calls integer not null default 0,
+  tool_calls integer not null default 0,
+  quick_model text,
+  deep_model text,
   data jsonb
 );
+alter table public.batches add column if not exists tokens_in integer not null default 0;
+alter table public.batches add column if not exists tokens_out integer not null default 0;
+alter table public.batches add column if not exists tokens_total integer generated always as (tokens_in + tokens_out) stored;
+alter table public.batches add column if not exists llm_calls integer not null default 0;
+alter table public.batches add column if not exists tool_calls integer not null default 0;
+alter table public.batches add column if not exists quick_model text;
+alter table public.batches add column if not exists deep_model text;
 create index if not exists batches_user_id_idx on public.batches (user_id, created_at desc);
 
 alter table public.batches enable row level security;

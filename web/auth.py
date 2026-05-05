@@ -226,21 +226,43 @@ def _delete_one(table: str, row_id: str) -> bool:
 # Public storage interface — used by web/storage.py + web/batch_storage.py
 # ------------------------------------------------------------------
 
+def _stats_columns(stats: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    """Pull the denormalised counters out of a `stats` blob. Robust to missing
+    keys / non-numeric values so a partial blob never breaks the upsert."""
+    s = stats or {}
+    def _i(k: str) -> int:
+        try:
+            return int(s.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0
+    return {
+        "tokens_in":  _i("tokens_in"),
+        "tokens_out": _i("tokens_out"),
+        "llm_calls":  _i("llm_calls"),
+        "tool_calls": _i("tool_calls"),
+    }
+
+
 def save_session(session: Dict[str, Any]) -> None:
     user_id = session.get("user_id")
     if not _db_writable() or not user_id or user_id == ANONYMOUS_USER_ID:
         # In-memory fallback so local dev without Supabase still works.
         _memstore[("sessions", session["id"])] = session
         return
-    _upsert("sessions", {
+    cfg = session.get("config") or {}
+    row = {
         "id": session["id"],
         "user_id": user_id,
         "ticker": session.get("ticker"),
         "analysis_date": session.get("analysis_date"),
         "status": session.get("status"),
         "completed_at": _ts_iso(session.get("completed_at")),
+        "quick_model": cfg.get("quick_think_llm"),
+        "deep_model": cfg.get("deep_think_llm"),
         "data": session,
-    })
+    }
+    row.update(_stats_columns(session.get("stats")))
+    _upsert("sessions", row)
 
 
 def load_session(session_id: str) -> Optional[Dict[str, Any]]:
@@ -343,15 +365,22 @@ def save_batch(batch: Dict[str, Any]) -> None:
     if not _db_writable() or not user_id or user_id == ANONYMOUS_USER_ID:
         _memstore[("batches", batch["id"])] = batch
         return
-    _upsert("batches", {
+    cfg = batch.get("config") or {}
+    row = {
         "id": batch["id"],
         "user_id": user_id,
         "analysis_date": batch.get("analysis_date"),
         "status": batch.get("status"),
         "ticker_count": len(batch.get("items", [])),
         "completed_at": _ts_iso(batch.get("completed_at")),
+        "quick_model": cfg.get("quick_think_llm"),
+        "deep_model": cfg.get("deep_think_llm"),
         "data": batch,
-    })
+    }
+    # `totals` is the basket-wide aggregate that batch_runner maintains as
+    # children complete; same shape as the per-session `stats`.
+    row.update(_stats_columns(batch.get("totals")))
+    _upsert("batches", row)
 
 
 def load_batch(batch_id: str) -> Optional[Dict[str, Any]]:
