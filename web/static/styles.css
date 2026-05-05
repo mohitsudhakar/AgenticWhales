@@ -886,7 +886,21 @@ body {
 }
 .welcome-tagline { margin: 4px 0 0; font-size: 14px; color: var(--text-dim); }
 
-.welcome-body { padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+.welcome-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* Without these, content (rotating cards + tier strip + sign-in form) can
+     overflow past the modal-card's bottom edge silently — the user sees a
+     truncated form and can't reach the Sign-in-with-Google button. flex:1
+     plus min-height:0 plus overflow-y:auto turns the body into a scrolling
+     region while the welcome head stays pinned at the top. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 /* How-it-works carousel */
 .howitworks {
@@ -1021,7 +1035,13 @@ body {
   background: var(--bg-soft);
   position: relative;
   overflow: hidden;
+  /* Grid children default to min-content min-width — without this the card
+     refuses to shrink below the longest word ("INTERMEDIATE") and overflows
+     its grid track on narrow phones. */
+  min-width: 0;
 }
+.tier-strip-name { overflow-wrap: anywhere; }
+.tier-strip-flag { overflow-wrap: anywhere; max-width: 100%; }
 .tier-strip-card::before {
   content: "";
   position: absolute;
@@ -1242,3 +1262,198 @@ body {
   padding: 2px 6px;
 }
 .ticker-chip.custom-ticker .custom-remove:hover { color: var(--bad); }
+
+/* =====================================================================
+   Mobile top bar + sidebar drawer (hidden on desktop)
+   ===================================================================== */
+
+.mobile-topbar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(11, 15, 23, 0.92);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  font-size: 15px;
+}
+.mobile-brand img { display: block; border-radius: 8px; }
+
+.nav-toggle {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.nav-toggle:hover { background: rgba(255,255,255,0.08); }
+
+.hamburger {
+  width: 18px;
+  height: 14px;
+  position: relative;
+  display: inline-block;
+}
+.hamburger span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
+  transition: transform 0.18s ease, opacity 0.18s ease, top 0.18s ease;
+}
+.hamburger span:nth-child(1) { top: 0; }
+.hamburger span:nth-child(2) { top: 6px; }
+.hamburger span:nth-child(3) { top: 12px; }
+.nav-toggle[aria-expanded="true"] .hamburger span:nth-child(1) { top: 6px; transform: rotate(45deg); }
+.nav-toggle[aria-expanded="true"] .hamburger span:nth-child(2) { opacity: 0; }
+.nav-toggle[aria-expanded="true"] .hamburger span:nth-child(3) { top: 6px; transform: rotate(-45deg); }
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 14, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 45;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.sidebar-backdrop.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* =====================================================================
+   <= 900px — tablet & phone: drawer sidebar, single-column layout
+   ===================================================================== */
+@media (max-width: 900px) {
+  body {
+    /* Single column. Sidebar floats above as a drawer instead of taking a column. */
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .mobile-topbar { display: flex; }
+
+  /* Drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(86vw, 320px);
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    border-right: 1px solid var(--border);
+    box-shadow: 0 0 32px rgba(0,0,0,0.5);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* Main content area sits below the topbar. Drop the desk-sized padding
+     so phones don't waste 80px on whitespace before any actual content. */
+  .main { padding: 18px 16px 80px; }
+  .view { max-width: 100%; }
+  .page-header h1 { font-size: 22px; }
+  .page-header p { font-size: 13px; }
+
+  /* The "welcome to the floor" empty state was vertically-centered in the
+     viewport; on mobile we want it docked near the top so the CTA in the
+     mobile topbar reads first. */
+  .view-empty { display: block; padding-top: 24px; }
+
+  /* Forms collapse to a single column. Spans become irrelevant in 1-col. */
+  .config-grid {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    gap: 12px;
+  }
+  .span-2 { grid-column: span 1; }
+  .field input, .field select { padding: 12px; font-size: 16px; }
+  /* font-size 16px stops iOS Safari from auto-zooming when an input gets focus. */
+
+  .actions { justify-content: stretch; }
+  .actions .go-btn { width: 100%; }
+
+  /* Session / batch header: stack title + status bar so neither truncates. */
+  .session-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .status-bar { flex-wrap: wrap; }
+
+  /* Stats lines wrap rather than horizontal-scroll out of view. */
+  .stats-line { flex-wrap: wrap; gap: 6px 12px; }
+
+  /* Modals — pad less so legal text uses the full width. */
+  .modal-card { width: calc(100% - 24px); max-height: 92vh; }
+  .modal-head { padding: 14px 16px; }
+  .modal-body { padding: 14px 16px 18px; }
+  .modal-body.legal { padding: 16px 18px; }
+
+  /* Welcome modal extras */
+  .welcome-card { width: calc(100% - 24px); max-width: 100%; }
+  .welcome-body { padding: 12px; gap: 12px; }
+  .welcome-tier-strip { grid-template-columns: 1fr; }
+  .howitworks-track { min-height: 240px; }
+  .how-card { padding: 18px 18px; }
+  .how-card h3 { font-size: 17px; }
+  .welcome-actions { flex-direction: column; }
+  .welcome-actions .google-btn,
+  .welcome-actions .ghost-btn { width: 100%; justify-content: center; }
+
+  /* Upgrade modal: tier cards stack instead of side-by-side. */
+  .tier-grid { grid-template-columns: 1fr; }
+
+  /* Universe grid (basket) — let auto-fill react to narrow widths cleanly. */
+  .universe-grid { grid-template-columns: 1fr !important; }
+  .basket-toolbar { flex-wrap: wrap; gap: 8px; }
+
+  /* Portfolio table needs a horizontal scroll on phones — narrower than the
+     four columns can fit. The wrapper handles the scroll bar. */
+  .portfolio-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .portfolio-table { min-width: 560px; }
+
+  /* Larger tap targets on the small touch buttons */
+  .ghost-btn { padding: 8px 12px; min-height: 36px; }
+  .signout-btn { width: 36px; height: 36px; }
+  .stop-btn { padding: 8px 14px; min-height: 36px; }
+}
+
+/* =====================================================================
+   <= 480px — phones: tighter spacing, smaller hero text
+   ===================================================================== */
+@media (max-width: 480px) {
+  .main { padding: 14px 12px 72px; }
+  .page-header h1 { font-size: 20px; }
+  .empty-card h1 { font-size: 24px; }
+  .empty-card { padding: 24px 16px; }
+  .config-grid { padding: 14px; }
+  .modal-head h2 { font-size: 17px; }
+  #welcome-title { font-size: 22px; line-height: 1.2; }
+  .welcome-tagline { font-size: 13px; }
+  .welcome-eyebrow { font-size: 11px; }
+
+  /* Status pill uses smaller font so the whole row stays readable. */
+  .status-pill { font-size: 11px; padding: 4px 10px; }
+}

@@ -50,6 +50,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
   initWelcomeFlow();
+  initMobileNav();
 
   // Config is auth-free; sessions/batches require a logged-in user, so we
   // skip them at boot — `reloadOnAuthChange()` repopulates them when the
@@ -1212,6 +1213,66 @@ function handleBatchEvent(event) {
     renderBatchTotals();
     return;
   }
+}
+
+// =====================================================================
+// Mobile nav drawer
+// =====================================================================
+
+function initMobileNav() {
+  const toggle = $("#nav-toggle");
+  const sidebar = $("#sidebar");
+  const backdrop = $("#sidebar-backdrop");
+  if (!toggle || !sidebar || !backdrop) return;
+
+  function open() {
+    sidebar.classList.add("open");
+    backdrop.classList.add("visible");
+    backdrop.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    toggle.setAttribute("aria-label", "Close navigation");
+  }
+  function close() {
+    sidebar.classList.remove("open");
+    backdrop.classList.remove("visible");
+    // Wait for the fade-out so the layer doesn't disappear mid-transition.
+    setTimeout(() => { backdrop.hidden = true; }, 220);
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", "Open navigation");
+  }
+
+  toggle.addEventListener("click", () => {
+    sidebar.classList.contains("open") ? close() : open();
+  });
+  backdrop.addEventListener("click", close);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.classList.contains("open")) close();
+  });
+
+  // Auto-close after the user taps anything that switches the main view, so
+  // they're not left looking at the drawer covering their just-opened content.
+  ["#new-session-btn", "#new-batch-btn", "#portfolio-btn"].forEach((sel) => {
+    const el = $(sel);
+    if (el) el.addEventListener("click", close);
+  });
+  // Session/batch list items use delegation so newly-rendered rows still close.
+  document.addEventListener("click", (e) => {
+    if (!sidebar.classList.contains("open")) return;
+    const item = e.target.closest?.(".session-item");
+    if (item && sidebar.contains(item)) close();
+  });
+
+  // Resizing past the desktop breakpoint resets state so the drawer doesn't
+  // get stuck closed via CSS while the JS still thinks it's open.
+  const mq = window.matchMedia("(min-width: 901px)");
+  const resync = () => {
+    if (mq.matches) {
+      backdrop.classList.remove("visible");
+      backdrop.hidden = true;
+    }
+  };
+  mq.addEventListener?.("change", resync);
+  resync();
 }
 
 // =====================================================================

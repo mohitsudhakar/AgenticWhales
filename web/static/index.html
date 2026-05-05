@@ -21,7 +21,22 @@
 </head>
 
 <body>
-  <aside class="sidebar">
+  <!-- Mobile-only top bar: hidden on desktop. Hamburger toggles the drawer
+       sidebar; the mini brand keeps users oriented when the sidebar is closed. -->
+  <header class="mobile-topbar" role="banner">
+    <button id="nav-toggle" type="button" class="nav-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+      <span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span>
+    </button>
+    <div class="mobile-brand">
+      <img src="/static/favicon.svg" alt="" width="28" height="28" />
+      <span>Agentic Whales</span>
+    </div>
+  </header>
+
+  <!-- Tap-to-dismiss layer behind the open mobile sidebar. -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+
+  <aside id="sidebar" class="sidebar">
     <div class="brand">
       <img class="brand-mark" src="/static/favicon.svg" alt="" width="38" height="38" />
       <div>
