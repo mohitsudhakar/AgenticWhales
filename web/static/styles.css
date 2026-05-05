@@ -1418,9 +1418,28 @@ body {
   .welcome-card { width: calc(100% - 24px); max-width: 100%; }
   .welcome-body { padding: 12px; gap: 12px; }
   .welcome-tier-strip { grid-template-columns: 1fr; }
-  /* Grid-stack handles sizing now — no explicit min-height needed. */
-  .how-card { padding: 18px 18px; }
+
+  /* Mobile: drop the carousel UX entirely. All five steps stack vertically
+     and the user scrolls through them as part of the welcome modal scroll —
+     simpler, reliable, no clipping, no pagination required on a phone. */
+  .howitworks-track {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .how-card {
+    /* Override the desktop grid-stack + opacity rules so every step is
+       fully visible on mobile. */
+    grid-area: auto;
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    padding: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .how-card:last-child { border-bottom: 0; }
   .how-card h3 { font-size: 17px; }
+  .howitworks-controls { display: none; }
   .welcome-actions { flex-direction: column; }
   .welcome-actions .google-btn,
   .welcome-actions .ghost-btn { width: 100%; justify-content: center; }
