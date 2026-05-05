@@ -179,7 +179,22 @@ class CreateSessionPayload(BaseModel):
     output_language: str = "English"
 
 
-CACHE_TTL_MINUTES = 30
+# Repeat-analysis cache. Both knobs are env-driven so prod can dial caching
+# without a code change.
+#   AGENTICWHALES_CACHE_ENABLED      "true"/"false" (default: true)
+#   AGENTICWHALES_CACHE_TTL_MINUTES  integer minutes (default: 30)
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+CACHE_ENABLED = _env_bool("AGENTICWHALES_CACHE_ENABLED", True)
+try:
+    CACHE_TTL_MINUTES = max(1, int(os.getenv("AGENTICWHALES_CACHE_TTL_MINUTES", "30")))
+except ValueError:
+    CACHE_TTL_MINUTES = 30
 
 
 def _config_signature(payload: Dict[str, Any]) -> str:
@@ -209,18 +224,20 @@ async def create_session(
 
     # Cache check: if this user ran the same ticker+date with the same config
     # within CACHE_TTL_MINUTES and it completed successfully, hand them the
-    # existing session id. Saves LLM cost + doesn't burn quota.
-    cached = auth.find_cached_session(
-        user_id=user_id,
-        ticker=payload.ticker,
-        analysis_date=payload.analysis_date,
-        config_sig=sig,
-        ttl_minutes=CACHE_TTL_MINUTES,
-    )
-    if cached:
-        summary = _summary(cached)
-        summary["cached"] = True
-        return summary
+    # existing session id. Saves LLM cost + doesn't burn quota. Disabled
+    # globally when AGENTICWHALES_CACHE_ENABLED is false.
+    if CACHE_ENABLED:
+        cached = auth.find_cached_session(
+            user_id=user_id,
+            ticker=payload.ticker,
+            analysis_date=payload.analysis_date,
+            config_sig=sig,
+            ttl_minutes=CACHE_TTL_MINUTES,
+        )
+        if cached:
+            summary = _summary(cached)
+            summary["cached"] = True
+            return summary
 
     session = build_session(payload.model_dump())
     session["user_id"] = user_id
