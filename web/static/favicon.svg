@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AgenticWhales">
+  <defs>
+    <linearGradient id="aw-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#6ee7b7"/>
+      <stop offset="50%"  stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded-square brand tile, matches the welcome-modal accent stripe -->
+  <rect width="64" height="64" rx="14" ry="14" fill="url(#aw-bg)"/>
+  <!-- Whale silhouette: body + tail fluke in one path. Dark navy reads well
+       on the bright gradient and keeps it recognisable at 16×16. -->
+  <path fill="#0b0f17" d="
+    M 11 38
+    C 11 27, 22 21, 34 21
+    C 44 21, 50 25, 52 31
+    L 60 25
+    L 58 34
+    L 60 43
+    L 52 37
+    C 50 43, 44 47, 34 47
+    C 22 47, 11 41, 11 38 Z"/>
+  <!-- Eye -->
+  <circle cx="42" cy="32" r="1.6" fill="#e6ecf5"/>
+  <!-- Water spout: two little curved jets above the head; faint on small sizes
+       but adds character at 32+. -->
+  <g fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" opacity="0.9">
+    <path d="M 22 16 Q 22 11, 26 9"/>
+    <path d="M 28 16 Q 30 12, 33 11"/>
+  </g>
+</svg>

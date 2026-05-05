@@ -27,6 +27,12 @@ def save(batch: Dict[str, Any]) -> None:
         tmp = _path(bid).with_suffix(".tmp")
         tmp.write_text(json.dumps(batch, default=str))
         tmp.replace(_path(bid))
+    # Best-effort mirror to Supabase Postgres.
+    try:
+        from . import auth as _auth
+        _auth.mirror_batch(batch)
+    except Exception:
+        pass
 
 
 def load(batch_id: str) -> Optional[Dict[str, Any]]:
@@ -39,14 +45,18 @@ def load(batch_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def list_all() -> List[Dict[str, Any]]:
+def list_all(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return all batches, optionally filtered to those owned by user_id."""
     ensure_dir()
     out: List[Dict[str, Any]] = []
     for p in _BASE.glob("*.json"):
         try:
-            out.append(json.loads(p.read_text()))
+            b = json.loads(p.read_text())
         except (OSError, json.JSONDecodeError):
             continue
+        if user_id is not None and b.get("user_id") != user_id:
+            continue
+        out.append(b)
     out.sort(key=lambda b: b.get("created_at", 0), reverse=True)
     return out
 
@@ -55,5 +65,10 @@ def delete(batch_id: str) -> bool:
     p = _path(batch_id)
     if p.exists():
         p.unlink()
+        try:
+            from . import auth as _auth
+            _auth.delete_batch_row(batch_id)
+        except Exception:
+            pass
         return True
     return False

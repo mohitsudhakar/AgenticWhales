@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tradingagents"
 version = "0.2.4"
-description = "TradingAgents: Multi-Agents LLM Financial Trading Framework"
+description = "Agentic Whales: Multi-Agent Financial Intelligence Platform"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -40,6 +40,8 @@ web = [
 ]
 
 [project.scripts]
+agenticwhales = "cli.main:app"
+agenticwhales-web = "web.server:main"
 tradingagents = "cli.main:app"
 tradingagents-web = "web.server:main"
 

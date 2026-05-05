@@ -25,7 +25,27 @@
 
 ---
 
-# TradingAgents: Multi-Agents LLM Financial Trading Framework
+# AgenticWhales: Multi-Agent Financial Intelligence
+
+> **AgenticWhales** is a fork/rebrand of the upstream [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) project. The Python package, class names, and import paths still use `tradingagents` for compatibility with upstream — only the user-facing product is renamed.
+
+### Auth & quota (Supabase)
+
+The web UI gates new analyses behind a Supabase-backed sign-in (Google OAuth). Free **Novice** accounts get **3 instrument analyses per day** (resetting at 00:00 UTC); higher tiers (Intermediate, Master) are stubs until pricing is finalised.
+
+To wire it up after creating your Supabase project:
+
+1. **Run the migration** in `docs/supabase-schema.sql` (Supabase Studio → SQL Editor → paste & run). This creates `profiles`, `usage_daily`, RLS policies, and an atomic `increment_usage()` RPC.
+2. **Enable Google as an OAuth provider**: Authentication → Providers → Google → on, paste your Google OAuth client ID + secret. Add your AgenticWhales URL (e.g. `http://localhost:8765/`) to *Redirect URLs*.
+3. **Plug your project URL + anon key into the environment**:
+    ```
+    # .env (dev) or your prod env
+    AGENTICWHALES_SUPABASE_URL=https://<your-ref>.supabase.co
+    AGENTICWHALES_SUPABASE_ANON_KEY=eyJhbGciOi...   # the public "anon" key
+    ```
+    The web server reads these at request time and injects them into the served HTML before `supabase-client.js` evaluates — so dev/staging/prod just swap the env, no asset rebuild needed. The anon key is safe to expose to the browser as long as RLS is on (the migration takes care of that). **Never** put the `service_role` key in env vars consumed by the browser path.
+
+If you skip step 3, the welcome modal degrades to a *guest mode* (per-browser localStorage cap; no cross-device tracking) so the app still works.
 
 ## News
 - [2026-04] **TradingAgents v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix. See [CHANGELOG.md](CHANGELOG.md) for the full list.
@@ -44,7 +64,7 @@
 </a>
 </div>
 
-> 🎉 **TradingAgents** officially released! We have received numerous inquiries about the work, and we would like to express our thanks for the enthusiasm in our community.
+> 🎉 **AgenticWhales** is now live (built on top of the upstream TradingAgents framework). We have received numerous inquiries about the work, and we would like to express our thanks for the enthusiasm in our community.
 >
 > So we decided to fully open-source the framework. Looking forward to building impactful projects with you!
 
@@ -54,9 +74,9 @@
 
 </div>
 
-## TradingAgents Framework
+## AgenticWhales Framework
 
-TradingAgents is a multi-agent trading framework that mirrors the dynamics of real-world trading firms. By deploying specialized LLM-powered agents: from fundamental analysts, sentiment experts, and technical analysts, to trader, risk management team, the platform collaboratively evaluates market conditions and informs trading decisions. Moreover, these agents engage in dynamic discussions to pinpoint the optimal strategy.
+AgenticWhales is a multi-agent trading framework that mirrors the dynamics of real-world trading firms. By deploying specialized LLM-powered agents: from fundamental analysts, sentiment experts, and technical analysts, to trader, risk management team, the platform collaboratively evaluates market conditions and informs trading decisions. Moreover, these agents engage in dynamic discussions to pinpoint the optimal strategy.
 
 <p align="center">
   <img src="assets/schema.png" style="width: 100%; height: auto;">

@@ -1,4 +1,4 @@
-// TradingAgents web UI — single-page app, no build step.
+// AgenticWhales web UI — single-page app, no build step.
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -20,8 +20,8 @@ const state = {
 
 window.addEventListener("DOMContentLoaded", async () => {
   // Attach listeners FIRST so the UI is responsive even if data load fails.
-  $("#new-session-btn").addEventListener("click", openConfigView);
-  $("#new-batch-btn").addEventListener("click", openBatchConfigView);
+  $("#new-session-btn").addEventListener("click", guardCreate(openConfigView));
+  $("#new-batch-btn").addEventListener("click", guardCreate(openBatchConfigView));
   $("#bf-provider").addEventListener("change", syncBatchProviderDependentFields);
   $("#portfolio-btn").addEventListener("click", openPortfolioView);
   $("#pf-add-row").addEventListener("click", () => addPortfolioRow());
@@ -31,19 +31,56 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#batch-form").addEventListener("submit", submitBatch);
   $("#bf-select-all").addEventListener("click", () => toggleAllBatchTickers(true));
   $("#bf-clear").addEventListener("click", () => toggleAllBatchTickers(false));
+  $("#bf-custom-add").addEventListener("click", addCustomTicker);
+  $("#bf-custom-ticker").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addCustomTicker(); }
+  });
   $("#m-close").addEventListener("click", closeAgentModal);
   $("#agent-modal").addEventListener("click", (e) => {
     if (e.target.id === "agent-modal") closeAgentModal();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeAgentModal();
+    if (e.key === "Escape") {
+      closeAgentModal();
+      // Privacy / terms / upgrade modals are dismissable with Escape too.
+      for (const id of ["privacy-modal", "terms-modal", "upgrade-modal"]) {
+        const m = document.getElementById(id);
+        if (m && !m.classList.contains("hidden")) m.classList.add("hidden");
+      }
+    }
   });
+  initWelcomeFlow();
 
-  try { await loadConfig();   } catch (e) { console.error("loadConfig failed:", e); }
+  // Config is auth-free; sessions/batches require a logged-in user, so we
+  // skip them at boot — `reloadOnAuthChange()` repopulates them when the
+  // user signs in (or after the welcome modal completes).
+  try { await loadConfig(); } catch (e) { console.error("loadConfig failed:", e); }
+  setView("empty");
+});
+
+async function reloadOnAuthChange() {
+  // Clear current selection so the user doesn't keep viewing someone else's
+  // session by accident across a sign-out / switch.
+  state.activeSessionId = null;
+  state.activeBatchId = null;
+  state.session = null;
+  state.batch = null;
+  closeWebsocket();
+  closeBatchWebsocket();
+  state.sessions = [];
+  state.batches = [];
+  renderSessionList();
+  renderBatchList();
+  if (!userState.current) {
+    setView("empty");
+    return;
+  }
   try { await loadSessions(); } catch (e) { console.error("loadSessions failed:", e); }
   try { await loadBatches();  } catch (e) { console.error("loadBatches failed:", e); }
-  setView(state.sessions.length ? "session-or-empty" : "empty");
-});
+  if (state.view === "empty" && state.sessions.length) {
+    setView("session-or-empty");
+  }
+}
 
 async function loadConfig() {
   const res = await fetch("/api/config");
@@ -146,6 +183,15 @@ function formatRelative(ts) {
 
 // ---------- config form ----------
 
+// Pre-select an option whose value matches `value`, if it exists. No-op
+// otherwise so the browser keeps the first option (its natural default).
+function selectIfPresent(selectEl, value) {
+  if (!selectEl || !value) return;
+  if ([...selectEl.options].some((o) => o.value === value)) {
+    selectEl.value = value;
+  }
+}
+
 function populateProviderSelect() {
   const sel = $("#f-provider");
   sel.innerHTML = "";
@@ -155,6 +201,7 @@ function populateProviderSelect() {
     opt.textContent = p.label;
     sel.appendChild(opt);
   }
+  selectIfPresent(sel, state.config.defaults?.provider);
 }
 
 function populateAnalystChips() {
@@ -187,6 +234,15 @@ function syncProviderDependentFields() {
 
   fillModelSelect("#f-quick", models.quick);
   fillModelSelect("#f-deep",  models.deep);
+
+  // Apply env-driven default models (only meaningful when the provider also
+  // matches the configured default — otherwise we'd be trying to select a
+  // Gemini model id inside an OpenAI dropdown).
+  const defaults = state.config.defaults || {};
+  if (defaults.provider === provider) {
+    selectIfPresent($("#f-quick"), defaults.quick_model);
+    selectIfPresent($("#f-deep"),  defaults.deep_model);
+  }
 
   // Provider-specific thinking field
   const wrap = $("#f-thinking-wrap");
@@ -683,6 +739,7 @@ function populateBatchProviderSelect() {
     opt.textContent = p.label;
     sel.appendChild(opt);
   }
+  selectIfPresent(sel, state.config.defaults?.provider);
 }
 
 function populateBatchAnalystChips() {
@@ -714,6 +771,12 @@ function syncBatchProviderDependentFields() {
   const models = state.config.models[provider] || { quick: [], deep: [] };
   fillModelSelect("#bf-quick", models.quick);
   fillModelSelect("#bf-deep", models.deep);
+
+  const defaults = state.config.defaults || {};
+  if (defaults.provider === provider) {
+    selectIfPresent($("#bf-quick"), defaults.quick_model);
+    selectIfPresent($("#bf-deep"),  defaults.deep_model);
+  }
 
   const wrap = $("#bf-thinking-wrap");
   const label = $("#bf-thinking-label");
@@ -783,19 +846,19 @@ function renderUniverse() {
 }
 
 function toggleAllBatchTickers(on) {
-  $$("#bf-universe .ticker-chip").forEach((c) => c.classList.toggle("active", on));
+  $$("#bf-universe .ticker-chip, #bf-custom-list .ticker-chip").forEach((c) => c.classList.toggle("active", on));
   updateBatchCount();
 }
 
 function updateBatchCount() {
-  const n = $$("#bf-universe .ticker-chip.active").length;
+  const n = $$("#bf-universe .ticker-chip.active, #bf-custom-list .ticker-chip.active").length;
   $("#bf-count").textContent = `(${n} selected)`;
 }
 
 async function submitBatch(e) {
   e.preventDefault();
   const btn = $("#batch-go-btn");
-  const tickers = $$("#bf-universe .ticker-chip.active").map((c) => c.dataset.symbol);
+  const tickers = $$("#bf-universe .ticker-chip.active, #bf-custom-list .ticker-chip.active").map((c) => c.dataset.symbol);
   if (!tickers.length) {
     alert("Select at least one instrument.");
     return;
@@ -1149,4 +1212,450 @@ function handleBatchEvent(event) {
     renderBatchTotals();
     return;
   }
+}
+
+// =====================================================================
+// Welcome flow, auth, tiers, daily quota gating, custom-ticker support.
+// =====================================================================
+
+const TIER_LABEL = { novice: "Novice", intermediate: "Intermediate", master: "Master" };
+
+const userState = {
+  current: null,        // { uid, displayName, email, photoURL, tier, isGuest }
+  usageToday: 0,
+  customTickers: [],    // [{ symbol, name }]
+};
+
+function getAuth() {
+  return window.AgenticWhalesAuth || null;
+}
+
+function initWelcomeFlow() {
+  const start = () => {
+    const auth = getAuth();
+    if (!auth) {
+      // Module hasn't loaded yet — wait for the ready event then retry once.
+      window.addEventListener("agenticwhales-auth-ready", initWelcomeFlow, { once: true });
+      return;
+    }
+    initHowItWorksCarousel();
+    initWelcomeModalControls();
+    initLegalModalControls();
+    initSignOutButton();
+    auth.onChange((u) => {
+      const prev = userState.current;
+      userState.current = u;
+      reflectUserChip();
+      if (u) {
+        // Hide welcome if shown
+        const w = $("#welcome-modal");
+        if (w && !w.classList.contains("hidden")) w.classList.add("hidden");
+        refreshUsageBadge();
+      } else {
+        showWelcomeModal();
+      }
+      // Reload sidebar listings whenever the active user changes (sign-in,
+      // sign-out, or switch). Each user only sees their own runs.
+      if ((prev?.uid || null) !== (u?.uid || null)) {
+        reloadOnAuthChange();
+      }
+    });
+  };
+
+  // Also wire the "How does AgenticWhales work?" link to reopen the carousel
+  // section as a quick refresher (without forcing a re-sign-in).
+  const showHow = $("#show-howitworks");
+  if (showHow) showHow.addEventListener("click", () => showWelcomeModal({ refresher: true }));
+
+  start();
+}
+
+// ---------- "How it works" rotating cards ----------
+let howAutoTimer = null;
+
+function initHowItWorksCarousel() {
+  const track = $("#how-track");
+  const dotsWrap = $("#how-dots");
+  if (!track || !dotsWrap) return;
+  const cards = Array.from(track.querySelectorAll(".how-card"));
+  dotsWrap.innerHTML = "";
+  cards.forEach((_, i) => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = "how-dot" + (i === 0 ? " active" : "");
+    dot.dataset.idx = String(i);
+    dot.addEventListener("click", () => goToCard(i, true));
+    dotsWrap.appendChild(dot);
+  });
+  $("#how-prev").onclick = () => goToCard(currentCardIdx() - 1, true);
+  $("#how-next").onclick = () => goToCard(currentCardIdx() + 1, true);
+  goToCard(0, false);
+  scheduleHowAutoplay();
+}
+
+function currentCardIdx() {
+  const active = $("#how-track .how-card.active");
+  if (!active) return 0;
+  return Number(active.dataset.step || 1) - 1;
+}
+
+function goToCard(idx, manual) {
+  const track = $("#how-track");
+  if (!track) return;
+  const cards = Array.from(track.querySelectorAll(".how-card"));
+  const dots = Array.from($("#how-dots").querySelectorAll(".how-dot"));
+  const n = cards.length;
+  const i = ((idx % n) + n) % n;
+  cards.forEach((c, k) => c.classList.toggle("active", k === i));
+  dots.forEach((d, k) => d.classList.toggle("active", k === i));
+  if (manual) scheduleHowAutoplay();
+}
+
+function scheduleHowAutoplay() {
+  if (howAutoTimer) clearInterval(howAutoTimer);
+  howAutoTimer = setInterval(() => goToCard(currentCardIdx() + 1, false), 5500);
+}
+
+function stopHowAutoplay() {
+  if (howAutoTimer) clearInterval(howAutoTimer);
+  howAutoTimer = null;
+}
+
+// ---------- Welcome modal logic ----------
+
+function showWelcomeModal(opts = {}) {
+  const auth = getAuth();
+  const modal = $("#welcome-modal");
+  if (!modal) return;
+
+  // Surface the "Firebase not configured" notice when relevant, and disable
+  // the Google button so users don't get a confusing error.
+  const hint = $("#welcome-firebase-hint");
+  const googleBtn = $("#welcome-google");
+  const guestBtn = $("#welcome-guest");
+  if (auth && !auth.isConfigured) {
+    if (hint) hint.hidden = false;
+    if (googleBtn) googleBtn.disabled = true;
+  } else if (auth) {
+    if (hint) hint.hidden = true;
+  }
+
+  // Refresher mode: user is already signed in — let them dismiss easily.
+  modal.classList.toggle("refresher", !!opts.refresher);
+
+  modal.classList.remove("hidden");
+  scheduleHowAutoplay();
+  // Focus the consent checkbox so the user can tab straight into the buttons.
+  setTimeout(() => $("#welcome-agree")?.focus(), 50);
+}
+
+function hideWelcomeModal() {
+  const modal = $("#welcome-modal");
+  if (modal) modal.classList.add("hidden");
+  stopHowAutoplay();
+}
+
+function initWelcomeModalControls() {
+  const agree = $("#welcome-agree");
+  const googleBtn = $("#welcome-google");
+  const guestBtn = $("#welcome-guest");
+  const auth = getAuth();
+
+  function updateButtons() {
+    const ok = !!agree.checked;
+    if (auth?.isConfigured) googleBtn.disabled = !ok;
+    guestBtn.disabled = !ok;
+  }
+  agree.addEventListener("change", updateButtons);
+  updateButtons();
+
+  googleBtn.addEventListener("click", async () => {
+    if (!auth?.isConfigured) return;
+    googleBtn.disabled = true;
+    try {
+      // Display name comes from the user's Google profile (full_name in the
+      // auth user_metadata), so we don't need a local input.
+      await auth.signInWithGoogle();
+      hideWelcomeModal();
+    } catch (err) {
+      console.error("Google sign-in failed:", err);
+      alert(`Sign-in failed: ${err.message || err}`);
+      googleBtn.disabled = false;
+    }
+  });
+
+  guestBtn.addEventListener("click", () => {
+    if (auth?.signInAsGuest) {
+      auth.signInAsGuest("Guest");
+    } else {
+      // Supabase IS configured but the user picked guest — degrade to a local
+      // session (no cross-device tracking).
+      userState.current = { uid: `local-${Math.random().toString(36).slice(2,10)}`, displayName: "Guest", tier: "novice", isGuest: true };
+      reflectUserChip();
+    }
+    hideWelcomeModal();
+  });
+}
+
+function initLegalModalControls() {
+  document.addEventListener("click", (e) => {
+    const open = e.target.closest?.("[data-open]");
+    if (open) {
+      const which = open.dataset.open;
+      const id = which === "privacy" ? "privacy-modal" : which === "terms" ? "terms-modal" : null;
+      if (id) document.getElementById(id)?.classList.remove("hidden");
+      return;
+    }
+    const close = e.target.closest?.("[data-close-modal]");
+    if (close) {
+      const id = close.dataset.closeModal;
+      document.getElementById(id)?.classList.add("hidden");
+      return;
+    }
+    // Click on backdrop dismisses
+    for (const id of ["privacy-modal", "terms-modal", "upgrade-modal", "welcome-modal"]) {
+      if (e.target.id === id) {
+        const modal = document.getElementById(id);
+        // Welcome modal can only close itself when the user is signed in
+        // (otherwise the gate would be bypassable by clicking outside).
+        if (id === "welcome-modal") {
+          if (userState.current) modal.classList.add("hidden");
+        } else {
+          modal.classList.add("hidden");
+        }
+      }
+    }
+  });
+}
+
+function initSignOutButton() {
+  const btn = $("#signout-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const auth = getAuth();
+    if (!auth) return;
+    try { await auth.signOut(); } catch (e) { console.error(e); }
+  });
+}
+
+// ---------- User chip + usage badge ----------
+
+function reflectUserChip() {
+  const chip = $("#user-chip");
+  const u = userState.current;
+  if (!chip) return;
+  if (!u) {
+    chip.classList.add("hidden");
+    return;
+  }
+  chip.classList.remove("hidden");
+  $("#user-name").textContent = u.displayName || "Trader";
+  const av = $("#user-avatar");
+  // Always render initials first (covers slow loads, CORS-blocked Google
+  // avatars, no-photo accounts, and guest users). If photoURL preloads
+  // successfully, swap in the image background; the text falls through.
+  const initials = (u.displayName || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p.charAt(0).toUpperCase())
+    .join("") || "?";
+  av.textContent = initials;
+  av.style.backgroundImage = "";
+  if (u.photoURL) {
+    const probe = new Image();
+    probe.onload = () => {
+      // Re-check: the user could have signed out before the image loaded.
+      if (userState.current?.photoURL === u.photoURL) {
+        av.style.backgroundImage = `url("${u.photoURL}")`;
+        av.textContent = "";
+      }
+    };
+    probe.src = u.photoURL;
+  }
+  const badge = $("#user-tier-badge");
+  badge.textContent = TIER_LABEL[u.tier] || "Novice";
+  badge.className = `tier-badge ${u.tier || "novice"}`;
+  refreshUsageBadge();
+}
+
+async function refreshUsageBadge() {
+  const auth = getAuth();
+  const u = userState.current;
+  const el = $("#user-usage");
+  if (!el || !u) return;
+  let used = 0;
+  try { used = await auth.getUsageToday(); } catch (e) { used = userState.usageToday; }
+  userState.usageToday = used;
+  const limit = auth.dailyLimitFor(u.tier || "novice");
+  if (limit === Infinity) {
+    el.textContent = `${used} today · unlimited`;
+  } else {
+    el.textContent = `${used} / ${limit} today`;
+    el.classList.toggle("at-limit", used >= limit);
+  }
+}
+
+// ---------- Quota gate around analysis-creation entry points ----------
+
+function guardCreate(fn) {
+  return async (...args) => {
+    const auth = getAuth();
+    const u = userState.current;
+    if (!auth || !u) {
+      // Not signed in yet — push the welcome modal forward.
+      showWelcomeModal();
+      return;
+    }
+    const limit = auth.dailyLimitFor(u.tier || "novice");
+    let used;
+    try { used = await auth.getUsageToday(); } catch { used = userState.usageToday; }
+    userState.usageToday = used;
+    if (used >= limit) {
+      $("#upgrade-modal").classList.remove("hidden");
+      refreshUsageBadge();
+      return;
+    }
+    fn.apply(null, args);
+  };
+}
+
+// Patched fetch: every /api/* call gets `Authorization: Bearer <jwt>`
+// attached so the server can scope sessions/batches by user. We also keep
+// the post-success hook for usage-counter increments.
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function patchedFetch(input, init) {
+  const url = typeof input === "string" ? input : (input?.url || "");
+  const isApi = url.startsWith("/api/") || url.includes(`${location.host}/api/`);
+  if (isApi) {
+    const auth = getAuth();
+    const token = auth?.getAccessToken?.();
+    if (token) {
+      init = init ? { ...init } : {};
+      const h = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
+      if (!h.has("Authorization")) h.set("Authorization", `Bearer ${token}`);
+      init.headers = h;
+    }
+  }
+  const res = await _origFetch(input, init);
+  try {
+    const method = (init?.method || (typeof input !== "string" ? input.method : "GET") || "GET").toUpperCase();
+    if (res.ok && method === "POST" && (url.endsWith("/api/sessions") || url.endsWith("/api/batches"))) {
+      const auth = getAuth();
+      if (auth && userState.current) {
+        try {
+          // For batches, count each ticker in the basket toward the quota so
+          // a Novice can't bypass the cap by submitting a 50-ticker basket.
+          let increments = 1;
+          if (url.endsWith("/api/batches") && init?.body) {
+            try {
+              const body = JSON.parse(init.body);
+              if (Array.isArray(body.tickers)) increments = Math.max(1, body.tickers.length);
+            } catch {}
+          }
+          for (let i = 0; i < increments; i++) {
+            await auth.incrementUsage();
+          }
+          refreshUsageBadge();
+        } catch (e) {
+          console.warn("usage increment failed:", e);
+        }
+      }
+    }
+  } catch {}
+  return res;
+};
+
+// Browsers can't set headers on WebSocket connects, so the server reads the
+// token from a `?token=...` query param. Patch WebSocket to inject it.
+const _OrigWebSocket = window.WebSocket;
+window.WebSocket = function PatchedWebSocket(url, protocols) {
+  try {
+    const u = new URL(url, location.href);
+    if (u.pathname.startsWith("/api/") && !u.searchParams.has("token")) {
+      const auth = getAuth();
+      const token = auth?.getAccessToken?.();
+      if (token) u.searchParams.set("token", token);
+      url = u.toString();
+    }
+  } catch {}
+  return protocols !== undefined ? new _OrigWebSocket(url, protocols) : new _OrigWebSocket(url);
+};
+window.WebSocket.prototype = _OrigWebSocket.prototype;
+window.WebSocket.CONNECTING = _OrigWebSocket.CONNECTING;
+window.WebSocket.OPEN = _OrigWebSocket.OPEN;
+window.WebSocket.CLOSING = _OrigWebSocket.CLOSING;
+window.WebSocket.CLOSED = _OrigWebSocket.CLOSED;
+
+// ---------- Custom ticker (basket analysis) ----------
+
+function addCustomTicker() {
+  const inp = $("#bf-custom-ticker");
+  const msg = $("#bf-custom-msg");
+  const raw = (inp.value || "").trim();
+  if (!raw) return;
+  // Lightweight validation: alnum, dot, dash, caret. Don't try to be too strict
+  // — yfinance accepts a wide range of tickers (BRK-B, BTC-USD, 0700.HK, ^GSPC).
+  if (!/^[A-Za-z0-9.\-^]{1,20}$/.test(raw)) {
+    msg.textContent = "Use letters, digits, '.', '-' or '^' (max 20 chars).";
+    msg.classList.add("error");
+    return;
+  }
+  const symbol = raw.toUpperCase();
+  // De-dupe against the universe AND existing custom tickers.
+  const inUniverse = (state.config?.universe || []).some((cat) =>
+    cat.tickers.some((t) => t.symbol.toUpperCase() === symbol)
+  );
+  if (inUniverse) {
+    msg.textContent = `${symbol} is already in the basket — just click it below.`;
+    msg.classList.remove("error");
+    inp.value = "";
+    return;
+  }
+  if (userState.customTickers.some((t) => t.symbol === symbol)) {
+    msg.textContent = `${symbol} is already added.`;
+    msg.classList.remove("error");
+    return;
+  }
+  userState.customTickers.push({ symbol, name: "custom" });
+  inp.value = "";
+  msg.textContent = "";
+  msg.classList.remove("error");
+  renderCustomTickerList();
+}
+
+function renderCustomTickerList() {
+  const wrap = $("#bf-custom-list");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  if (!userState.customTickers.length) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  wrap.classList.remove("hidden");
+  for (const t of userState.customTickers) {
+    const chip = document.createElement("div");
+    chip.className = "ticker-chip custom-ticker active";
+    chip.dataset.symbol = t.symbol;
+    chip.innerHTML = `
+      <span>${escapeHTML(t.symbol)}</span>
+      <span class="tk-name">custom</span>
+      <button type="button" class="custom-remove" aria-label="Remove ${escapeHTML(t.symbol)}">×</button>
+    `;
+    chip.addEventListener("click", (e) => {
+      // Toggling the chip selects/deselects it for the basket, except when
+      // the click landed on the remove button.
+      if (e.target.closest(".custom-remove")) return;
+      chip.classList.toggle("active");
+      updateBatchCount();
+    });
+    chip.querySelector(".custom-remove").addEventListener("click", (e) => {
+      e.stopPropagation();
+      userState.customTickers = userState.customTickers.filter((x) => x.symbol !== t.symbol);
+      renderCustomTickerList();
+      updateBatchCount();
+    });
+    wrap.appendChild(chip);
+  }
+  updateBatchCount();
 }

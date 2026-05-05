@@ -67,14 +67,14 @@ body {
 }
 
 .brand-mark {
-  font-size: 22px;
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, rgba(110,231,183,0.25), rgba(96,165,250,0.25));
-  border: 1px solid rgba(110,231,183,0.3);
+  display: block;
+  /* The favicon SVG already carries its own gradient + rounded background,
+     so the wrapper just sizes the image. */
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .brand-title {
@@ -753,3 +753,445 @@ body {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+/* =====================================================================
+   AgenticWhales — auth chip, welcome modal, how-it-works carousel,
+   tier badges, legal modals, custom-ticker input, upgrade prompt.
+   ===================================================================== */
+
+/* User chip — pinned to the bottom of the sidebar */
+.user-chip {
+  margin-top: auto;
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.user-chip-row { display: flex; align-items: center; gap: 10px; }
+.user-chip-row.usage-row { justify-content: space-between; font-size: 12px; padding-left: 42px; }
+.user-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background-size: cover; background-position: center;
+  background-color: var(--bg-elev);
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+  font-weight: 600; color: var(--text-dim);
+  flex-shrink: 0;
+}
+.user-meta { min-width: 0; flex: 1; }
+.user-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tier-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.tier-badge.novice       { background: rgba(110,231,183,0.15); color: var(--accent); border: 1px solid rgba(110,231,183,0.35); }
+.tier-badge.intermediate { background: rgba(96,165,250,0.15); color: var(--accent-2); border: 1px solid rgba(96,165,250,0.35); }
+.tier-badge.master       { background: rgba(244,114,182,0.18); color: var(--accent-3); border: 1px solid rgba(244,114,182,0.4); }
+
+#user-usage.at-limit { color: var(--bad); font-weight: 600; }
+.ghost-btn.small { padding: 2px 8px; font-size: 12px; }
+
+/* Compact icon-only sign-out button to the right of name + tier */
+.signout-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 50%;
+  color: var(--bad);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.signout-btn:hover {
+  background: rgba(248, 113, 113, 0.20);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fff;
+}
+.signout-btn:active { transform: translateY(1px); }
+.signout-btn span[aria-hidden="true"] { line-height: 1; }
+
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent-2);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.link-btn:hover { color: var(--accent); }
+
+/* Welcome modal */
+.welcome-card {
+  max-width: 720px;
+  width: calc(100% - 40px);
+  position: relative;
+  background:
+    radial-gradient(600px 240px at 0% 0%, rgba(110,231,183,0.10), transparent 60%),
+    radial-gradient(600px 240px at 100% 0%, rgba(96,165,250,0.10), transparent 60%),
+    radial-gradient(500px 200px at 50% 100%, rgba(244,114,182,0.08), transparent 60%),
+    var(--bg-card);
+  overflow: hidden;
+}
+.welcome-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent-3));
+  opacity: 0.95;
+  pointer-events: none;
+}
+.welcome-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+.welcome-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+#welcome-title {
+  background: linear-gradient(90deg, #ffffff 30%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.welcome-tagline { margin: 4px 0 0; font-size: 14px; color: var(--text-dim); }
+
+.welcome-body { padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+
+/* How-it-works carousel */
+.howitworks {
+  position: relative;
+  background:
+    linear-gradient(135deg, rgba(110,231,183,0.07), rgba(96,165,250,0.07) 50%, rgba(244,114,182,0.07)),
+    var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.howitworks-track {
+  position: relative;
+  min-height: 200px;
+}
+.how-card {
+  position: absolute;
+  inset: 0;
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+  pointer-events: none;
+}
+.how-card.active {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+.how-step-num {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.how-step-num::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  opacity: 0.6;
+  max-width: 80px;
+}
+/* Each step gets its own accent so the carousel feels alive instead of monochrome */
+.how-card[data-step="1"] .how-step-num { color: var(--accent); }
+.how-card[data-step="1"] h3 { color: var(--accent); }
+.how-card[data-step="2"] .how-step-num { color: var(--accent-2); }
+.how-card[data-step="2"] h3 { color: var(--accent-2); }
+.how-card[data-step="3"] .how-step-num { color: var(--accent-3); }
+.how-card[data-step="3"] h3 { color: var(--accent-3); }
+.how-card[data-step="4"] .how-step-num { color: var(--warn); }
+.how-card[data-step="4"] h3 { color: var(--warn); }
+.how-card[data-step="5"] .how-step-num { color: var(--good); }
+.how-card[data-step="5"] h3 { color: var(--good); }
+.how-card[data-step="1"] .how-step-num::after { background: linear-gradient(90deg, var(--accent), transparent); }
+.how-card[data-step="2"] .how-step-num::after { background: linear-gradient(90deg, var(--accent-2), transparent); }
+.how-card[data-step="3"] .how-step-num::after { background: linear-gradient(90deg, var(--accent-3), transparent); }
+.how-card[data-step="4"] .how-step-num::after { background: linear-gradient(90deg, var(--warn), transparent); }
+.how-card[data-step="5"] .how-step-num::after { background: linear-gradient(90deg, var(--good), transparent); }
+.how-card h3 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}
+.how-card p { margin: 0; color: var(--text); font-size: 14px; opacity: 0.88; }
+
+.howitworks-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+}
+.how-arrow {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.how-arrow:hover {
+  color: var(--bg);
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.howitworks-dots { display: flex; gap: 8px; }
+.how-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--text-faint);
+  opacity: 0.45;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.how-dot.active {
+  opacity: 1;
+  transform: scale(1.3);
+  box-shadow: 0 0 12px currentColor;
+}
+/* Each dot lights up in its step's accent so the dot row visually maps to the cards */
+.how-dot:nth-child(1).active { background: var(--accent);   color: var(--accent); }
+.how-dot:nth-child(2).active { background: var(--accent-2); color: var(--accent-2); }
+.how-dot:nth-child(3).active { background: var(--accent-3); color: var(--accent-3); }
+.how-dot:nth-child(4).active { background: var(--warn);     color: var(--warn); }
+.how-dot:nth-child(5).active { background: var(--good);     color: var(--good); }
+
+/* Tier strip on welcome */
+.welcome-tier-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.tier-strip-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: var(--bg-soft);
+  position: relative;
+  overflow: hidden;
+}
+.tier-strip-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.tier-strip-card.novice {
+  border-color: rgba(110,231,183,0.45);
+  background: linear-gradient(135deg, rgba(110,231,183,0.10), transparent 70%), var(--bg-soft);
+}
+.tier-strip-card.intermediate {
+  border-color: rgba(96,165,250,0.45);
+  background: linear-gradient(135deg, rgba(96,165,250,0.10), transparent 70%), var(--bg-soft);
+}
+.tier-strip-card.master {
+  border-color: rgba(244,114,182,0.5);
+  background: linear-gradient(135deg, rgba(244,114,182,0.12), transparent 70%), var(--bg-soft);
+}
+.tier-strip-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tier-strip-card.novice       .tier-strip-name { color: var(--accent); }
+.tier-strip-card.intermediate .tier-strip-name { color: var(--accent-2); }
+.tier-strip-card.master       .tier-strip-name { color: var(--accent-3); }
+.tier-strip-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* Welcome form (username, consent, sign-in) */
+.welcome-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.welcome-form label {
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.welcome-form > input {
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+}
+.welcome-form > input:focus { outline: none; border-color: var(--accent-2); }
+.welcome-consent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.welcome-consent input { margin-top: 3px; }
+
+.welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.google-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  color: #111;
+  border: 1px solid #dcdcdc;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.05s ease;
+  font-size: 14px;
+}
+.google-btn:hover:not(:disabled) { filter: brightness(0.97); }
+.google-btn:active:not(:disabled) { transform: translateY(1px); }
+.google-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.google-g { flex-shrink: 0; }
+.welcome-firebase-hint {
+  font-size: 12px;
+  color: var(--warn);
+  margin: 0;
+}
+
+/* Legal modal body */
+.modal-body.legal { padding: 20px 24px; max-height: 70vh; overflow: auto; }
+.modal-body.legal h3 { margin: 16px 0 6px; font-size: 14px; letter-spacing: 0.04em; }
+.modal-body.legal p, .modal-body.legal li { font-size: 13.5px; color: var(--text-dim); }
+.modal-body.legal ul { margin: 6px 0 12px; padding-left: 20px; }
+
+/* Upgrade modal */
+.upgrade-card { max-width: 600px; width: calc(100% - 40px); }
+.tier-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 14px 0;
+}
+.tier-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tier-card.intermediate { border-color: rgba(96,165,250,0.4); }
+.tier-card.master       { border-color: rgba(244,114,182,0.45); }
+.tier-name {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 13px;
+}
+.tier-card.intermediate .tier-name { color: var(--accent-2); }
+.tier-card.master       .tier-name { color: var(--accent-3); }
+.tier-perk { font-size: 13px; color: var(--text-dim); }
+.tier-card .ghost-btn { margin-top: 6px; }
+
+/* Custom ticker input row */
+.custom-ticker-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 4px;
+}
+.custom-ticker-row input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.custom-ticker-row input:focus { outline: none; border-color: var(--accent-2); }
+.custom-ticker-row .subtle { font-size: 12px; }
+.custom-ticker-row .subtle.error { color: var(--bad); }
+
+.custom-ticker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+.custom-ticker-list.hidden { display: none; }
+.ticker-chip.custom-ticker {
+  border-color: rgba(244,114,182,0.4);
+  background: rgba(244,114,182,0.08);
+  position: relative;
+  padding-right: 28px;
+}
+.ticker-chip.custom-ticker .custom-remove {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+.ticker-chip.custom-ticker .custom-remove:hover { color: var(--bad); }

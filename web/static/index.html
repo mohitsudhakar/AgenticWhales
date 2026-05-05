@@ -1,20 +1,32 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TradingAgents</title>
+  <!-- Tell browsers and "force dark theme" extensions that this page is
+       already dark. Without these, Dark Reader rewrites our card backgrounds
+       and the rgba gradient overlays + gradient-clipped text vanish. -->
+  <meta name="color-scheme" content="dark" />
+  <meta name="darkreader-lock" />
+  <title>AgenticWhales</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <link rel="stylesheet" href="/static/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <!-- Supabase (Auth + Postgres for usage tracking) — loaded as an ES module.
+       The legacy app.js is a classic script and runs independently; the
+       supabase client exposes itself on window.AgenticWhalesAuth. -->
+  <script type="module" src="/static/supabase-client.js"></script>
   <script src="/static/app.js" defer></script>
 </head>
+
 <body>
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark">⚡</div>
+      <img class="brand-mark" src="/static/favicon.svg" alt="" width="38" height="38" />
       <div>
-        <div class="brand-title">TradingAgents</div>
-        <div class="brand-sub">multi-agent floor</div>
+        <div class="brand-title">Agentic Whales</div>
+        <div class="brand-sub">BULL VS BEAR, RESOLVED</div>
       </div>
     </div>
     <button id="new-session-btn" class="primary-btn">+ New analysis</button>
@@ -34,6 +46,24 @@
       </button>
       <ul id="session-list" class="session-list"></ul>
     </div>
+    <!-- User chip pinned to the bottom of the sidebar. Sign-out sits inline
+         on the right of the name+tier so the chip stays compact. -->
+    <div id="user-chip" class="user-chip hidden">
+      <div class="user-chip-row">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <div class="user-meta">
+          <div class="user-name" id="user-name">Guest</div>
+          <div class="user-tier"><span id="user-tier-badge" class="tier-badge novice">Novice</span></div>
+        </div>
+        <button type="button" id="signout-btn" class="signout-btn" title="Sign out of AgenticWhales"
+          aria-label="Sign out">
+          <span aria-hidden="true">⎋</span>
+        </button>
+      </div>
+      <div class="user-chip-row usage-row">
+        <span class="subtle" id="user-usage">— / —</span>
+      </div>
+    </div>
   </aside>
 
   <main class="main">
@@ -41,6 +71,8 @@
       <div class="empty-card">
         <h1>Welcome to the floor.</h1>
         <p>Spin up a new analysis on the left, or pick a previous one to inspect what each agent thought.</p>
+        <p class="subtle"><button type="button" id="show-howitworks" class="link-btn">How does AgenticWhales
+            work?</button></p>
       </div>
     </div>
 
@@ -108,7 +140,9 @@
     <div id="view-portfolio" class="view view-portfolio hidden">
       <header class="page-header">
         <h1>My positions</h1>
-        <p class="subtle">Optional. Whatever you record here is shown to the Trader, Risk team, and Portfolio Manager so their recommendations are framed as a delta to your existing position. Leave a row blank to skip — analysts always stay objective.</p>
+        <p class="subtle">Optional. Whatever you record here is shown to the Trader, Risk team, and Portfolio Manager so
+          their recommendations are framed as a delta to your existing position. Leave a row blank to skip — analysts
+          always stay objective.</p>
       </header>
 
       <div class="portfolio-card">
@@ -143,7 +177,8 @@
     <div id="view-batch-config" class="view view-batch-config hidden">
       <header class="page-header">
         <h1>Daily basket analysis</h1>
-        <p class="subtle">Pick instruments, run them sequentially, then get a consolidated report with ranked buys, sells, and cross-asset themes.</p>
+        <p class="subtle">Pick instruments, run them sequentially, then get a consolidated report with ranked buys,
+          sells, and cross-asset themes.</p>
       </header>
 
       <form id="batch-form" class="config-grid">
@@ -205,6 +240,13 @@
               <button type="button" class="ghost-btn" id="bf-clear">Clear</button>
             </div>
           </div>
+          <div class="custom-ticker-row">
+            <input id="bf-custom-ticker" placeholder="Add a custom ticker (e.g. NVDA, 0700.HK, BTC-USD)"
+              autocomplete="off" />
+            <button type="button" id="bf-custom-add" class="ghost-btn">+ Add</button>
+            <span id="bf-custom-msg" class="subtle"></span>
+          </div>
+          <div id="bf-custom-list" class="custom-ticker-list"></div>
           <div id="bf-universe" class="universe-grid"></div>
         </div>
 
@@ -213,7 +255,8 @@
             <span class="go-btn-label">Run basket</span>
             <span class="go-btn-spark">→</span>
           </button>
-          <p class="subtle batch-warn">⚠️ Each instrument is a full multi-agent analysis. Selecting many tickers means many LLM calls and significant runtime. Sequential — they run one after another.</p>
+          <p class="subtle batch-warn">⚠️ Each instrument is a full multi-agent analysis. Selecting many tickers means
+            many LLM calls and significant runtime. Sequential — they run one after another.</p>
         </div>
       </form>
     </div>
@@ -242,7 +285,8 @@
           <h2>Daily comprehensive report</h2>
           <div class="final-card-tag" id="b-report-tag">awaiting</div>
         </div>
-        <div id="b-report-body" class="final-body subtle">The report is generated after every instrument has finished.</div>
+        <div id="b-report-body" class="final-body subtle">The report is generated after every instrument has finished.
+        </div>
       </section>
     </div>
 
@@ -262,7 +306,8 @@
           <h2>Final recommendation</h2>
           <div class="final-card-tag" id="s-final-tag">awaiting</div>
         </div>
-        <div id="s-final-body" class="final-body subtle">The Portfolio Manager will weigh in once the debate concludes…</div>
+        <div id="s-final-body" class="final-body subtle">The Portfolio Manager will weigh in once the debate concludes…
+        </div>
       </section>
 
       <section class="agents-section">
@@ -285,5 +330,236 @@
       <div id="m-body" class="modal-body"></div>
     </div>
   </div>
+
+  <!-- =========================================================
+       Welcome modal — first-time users land here. Shows the
+       "how it works" rotating cards, a username field, the
+       Privacy/Terms acknowledgement, and the Sign-in-with-Google
+       button (Supabase Auth). The modal is shown until sign-in
+       completes (or until the user chooses Continue as guest,
+       which falls back to a localStorage cap).
+       ========================================================= -->
+  <div id="welcome-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+    <div class="modal-card welcome-card">
+      <header class="modal-head welcome-head">
+        <div>
+          <div class="welcome-eyebrow subtle">🐳 AgenticWhales</div>
+          <h2 id="welcome-title">Welcome aboard the trading floor.</h2>
+          <p class="subtle welcome-tagline">A pod of AI analysts, researchers, traders and risk managers debating every
+            ticker — so you don't have to.</p>
+        </div>
+      </header>
+
+      <div class="welcome-body">
+        <!-- Rotating "how it works" cards -->
+        <div class="howitworks" data-howitworks>
+          <div class="howitworks-track" id="how-track">
+            <article class="how-card" data-step="1">
+              <div class="how-step-num">01</div>
+              <h3>Pick a ticker, set a depth.</h3>
+              <p>You configure a run: an instrument (or a basket), an analysis date, which analyst desks to involve, and
+                how many rounds of debate the researchers should hold.</p>
+            </article>
+            <article class="how-card" data-step="2">
+              <div class="how-step-num">02</div>
+              <h3>Analysts gather the evidence.</h3>
+              <p>Specialised LLM agents pull market data, news, social sentiment and fundamentals in parallel — each
+                producing a written brief that the rest of the team can read.</p>
+            </article>
+            <article class="how-card" data-step="3">
+              <div class="how-step-num">03</div>
+              <h3>Researchers debate, bull vs. bear.</h3>
+              <p>A bull and a bear researcher argue the position over multiple rounds. A research manager then
+                summarises the strongest case on each side.</p>
+            </article>
+            <article class="how-card" data-step="4">
+              <div class="how-step-num">04</div>
+              <h3>Trader proposes, Risk challenges.</h3>
+              <p>The trader drafts an actionable plan. A risk team — aggressive, conservative and neutral —
+                pressure-tests it from three different angles before it goes upstairs.</p>
+            </article>
+            <article class="how-card" data-step="5">
+              <div class="how-step-num">05</div>
+              <h3>Portfolio Manager makes the call.</h3>
+              <p>The PM reads everything, weighs it against your existing positions if you've shared them, and issues
+                the final BUY / SELL / HOLD with rationale you can audit, agent by agent.</p>
+            </article>
+          </div>
+          <div class="howitworks-controls">
+            <button type="button" class="how-arrow" id="how-prev" aria-label="Previous step">‹</button>
+            <div class="howitworks-dots" id="how-dots"></div>
+            <button type="button" class="how-arrow" id="how-next" aria-label="Next step">›</button>
+          </div>
+        </div>
+
+        <div class="welcome-tier-strip">
+          <div class="tier-strip-card novice">
+            <div class="tier-strip-name">Novice</div>
+            <div class="tier-strip-meta">Free · 3 analyses / day</div>
+          </div>
+          <div class="tier-strip-card intermediate">
+            <div class="tier-strip-name">Intermediate</div>
+            <div class="tier-strip-meta">Pricing soon</div>
+          </div>
+          <div class="tier-strip-card master">
+            <div class="tier-strip-name">Master</div>
+            <div class="tier-strip-meta">Pricing soon</div>
+          </div>
+        </div>
+
+        <div class="welcome-form">
+          <label class="welcome-consent">
+            <input id="welcome-agree" type="checkbox" />
+            <span>I have read and agree to the
+              <button type="button" class="link-btn" data-open="privacy">Privacy Policy</button>
+              and
+              <button type="button" class="link-btn" data-open="terms">Terms of Use</button>.
+            </span>
+          </label>
+
+          <div class="welcome-actions">
+            <button type="button" id="welcome-google" class="google-btn" disabled>
+              <svg class="google-g" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
+                <path fill="#FFC107"
+                  d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z" />
+                <path fill="#FF3D00"
+                  d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+                <path fill="#4CAF50"
+                  d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.1C29.2 35.4 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z" />
+                <path fill="#1976D2"
+                  d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.2 5.1C40.8 35.6 44 30.3 44 24c0-1.2-.1-2.3-.4-3.5z" />
+              </svg>
+              <span>Sign in with Google</span>
+            </button>
+            <button type="button" id="welcome-guest" class="ghost-btn" disabled>Continue as guest</button>
+          </div>
+          <p class="subtle welcome-firebase-hint" id="welcome-firebase-hint" hidden>
+            Supabase isn't configured yet. You can still continue as a guest — your usage cap will be tracked locally in
+            this browser.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy Policy modal -->
+  <div id="privacy-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <div class="modal-team subtle">Legal</div>
+          <h2 id="privacy-title">Privacy Policy</h2>
+        </div>
+        <button class="ghost-btn modal-close" data-close-modal="privacy-modal" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body legal">
+        <p><strong>Effective:</strong> 2026-05-04</p>
+        <p>AgenticWhales is a multi-agent trading research tool. This page explains what data we collect and why.</p>
+        <h3>What we store</h3>
+        <ul>
+          <li><strong>Account data</strong> — if you sign in with Google, we receive your display name, email address,
+            and Google account ID. We use these to identify you across sessions and to attribute analyses to your
+            account.</li>
+          <li><strong>Usage counters</strong> — we record how many analyses you've started today, scoped per user. This
+            is what powers the daily quota for free (Novice) accounts.</li>
+          <li><strong>Tier &amp; preferences</strong> — your chosen display name and your subscription tier (Novice /
+            Intermediate / Master).</li>
+          <li><strong>Analysis history</strong> — the configuration and outputs of analyses you run are stored locally
+            on the server you deploy AgenticWhales to. They are not transmitted to AgenticWhales operators.</li>
+        </ul>
+        <h3>What we do NOT store</h3>
+        <ul>
+          <li>We do not store your Google password — sign-in is delegated to Google.</li>
+          <li>We do not collect payment information until you explicitly subscribe to a paid tier.</li>
+          <li>We do not sell or share personal data with third parties.</li>
+        </ul>
+        <h3>Third parties</h3>
+        <p>Authentication and the per-day usage counter are stored in <a href="https://supabase.com" class="link-btn"
+            target="_blank" rel="noopener">Supabase</a> (Auth + Postgres). Supabase's own privacy terms apply to data
+          they receive on our behalf. Google Sign-In is delegated to Google as the OAuth identity provider.</p>
+        <h3>Your rights</h3>
+        <p>You can sign out at any time from the sidebar. To delete your account or your stored usage data, contact the
+          operator of this AgenticWhales deployment.</p>
+        <h3>Disclaimer</h3>
+        <p>AgenticWhales is a research tool. Outputs are not financial, investment, or trading advice. You are solely
+          responsible for any decisions you make using this software.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terms of Use modal -->
+  <div id="terms-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="terms-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <div class="modal-team subtle">Legal</div>
+          <h2 id="terms-title">Terms of Use</h2>
+        </div>
+        <button class="ghost-btn modal-close" data-close-modal="terms-modal" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body legal">
+        <p><strong>Effective:</strong> 2026-05-04</p>
+        <h3>1. What AgenticWhales is</h3>
+        <p>AgenticWhales is a multi-agent LLM-powered research tool that simulates a trading-floor debate over a chosen
+          instrument. It is provided <em>as-is</em> for informational and research purposes only.</p>
+        <h3>2. Not financial advice</h3>
+        <p>Nothing produced by AgenticWhales — including the BUY / SELL / HOLD verdicts, the analyst briefs, the
+          researcher debates, the trader plans, or the risk team's commentary — constitutes financial, investment,
+          legal, accounting, or tax advice. You are solely responsible for any decision to buy, sell or hold any
+          security or other instrument.</p>
+        <h3>3. Tiers and quotas</h3>
+        <p>Free Novice accounts may run up to <strong>3 instrument analyses per day</strong> (rolling at 00:00 UTC).
+          Paid Intermediate and Master tiers will offer larger quotas; pricing will be announced separately. Quotas may
+          change at any time.</p>
+        <h3>4. Acceptable use</h3>
+        <p>You agree not to use AgenticWhales to: (a) generate market manipulation content; (b) abuse the underlying LLM
+          provider APIs; (c) reverse-engineer or attempt to bypass the per-day quota; or (d) violate any applicable laws
+          or the terms of any LLM provider you've configured.</p>
+        <h3>5. Data</h3>
+        <p>See the <button type="button" class="link-btn" data-open="privacy">Privacy Policy</button> for what we store
+          and why.</p>
+        <h3>6. No warranty</h3>
+        <p>AgenticWhales is provided without warranties of any kind. The operators are not liable for any losses, direct
+          or indirect, arising from your use of the tool.</p>
+        <h3>7. Changes</h3>
+        <p>These terms may be updated. Continued use after an update constitutes acceptance of the revised terms.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upgrade prompt — shown when a Novice user hits their daily cap -->
+  <div id="upgrade-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
+    <div class="modal-card upgrade-card">
+      <header class="modal-head">
+        <div>
+          <div class="modal-team subtle">Daily limit reached</div>
+          <h2 id="upgrade-title">You've used all 3 free analyses for today.</h2>
+        </div>
+        <button class="ghost-btn modal-close" data-close-modal="upgrade-modal" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+        <p>Free <strong>Novice</strong> accounts include up to <strong>3 instrument analyses per day</strong>, resetting
+          at 00:00 UTC.</p>
+        <p>To run more analyses today, upgrade to a higher tier:</p>
+        <div class="tier-grid">
+          <div class="tier-card intermediate">
+            <div class="tier-name">Intermediate</div>
+            <div class="tier-perk">More analyses per day</div>
+            <div class="tier-perk">Higher concurrency in baskets</div>
+            <button type="button" class="ghost-btn" disabled>Pricing soon</button>
+          </div>
+          <div class="tier-card master">
+            <div class="tier-name">Master</div>
+            <div class="tier-perk">Unlimited analyses</div>
+            <div class="tier-perk">Priority compute, full provider access</div>
+            <button type="button" class="ghost-btn" disabled>Pricing soon</button>
+          </div>
+        </div>
+        <p class="subtle">Pricing details will be published separately. In the meantime, your quota will reset at 00:00
+          UTC.</p>
+      </div>
+    </div>
+  </div>
 </body>
+
 </html>
