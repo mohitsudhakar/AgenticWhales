@@ -72,6 +72,12 @@ SECTION_AGENT = {
 }
 
 
+class _Cancelled(Exception):
+    """Internal sentinel — raised from the run thread when the user cancels.
+    Caught by _run_safe to mark the session as 'cancelled' instead of
+    'failed'. Not part of the public API."""
+
+
 class SessionRunner:
     """Owns one analysis run, its in-memory state, and websocket fan-out."""
 
@@ -81,6 +87,17 @@ class SessionRunner:
         self.subscribers: List[asyncio.Queue] = []
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
+        # Cooperative cancellation. Python threads can't be force-stopped, so
+        # the worker checks this flag between graph.stream() chunks. Worst-
+        # case latency = one LLM call duration after the user clicks Stop.
+        self._cancelled = threading.Event()
+
+    def cancel(self) -> None:
+        """Request that the run abort at the next chunk boundary."""
+        self._cancelled.set()
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled.is_set()
 
     # ---- subscription API ----
 
@@ -201,7 +218,15 @@ class SessionRunner:
     def _run_safe(self) -> None:
         try:
             self._run()
+        except _Cancelled:
+            self._set_session(status="cancelled", completed_at=time.time())
         except Exception as exc:
+            # If the user clicked Stop and the underlying graph happened to
+            # raise (e.g. an LLM API call mid-cancel), surface as cancelled
+            # rather than failed — the user's intent was to abort.
+            if self._cancelled.is_set():
+                self._set_session(status="cancelled", completed_at=time.time())
+                return
             self._set_session(
                 status="failed",
                 error=str(exc),
@@ -257,6 +282,8 @@ class SessionRunner:
         }
 
         for chunk in graph.graph.stream(init_state, **args):
+            if self._cancelled.is_set():
+                raise _Cancelled()
             for message in chunk.get("messages", []):
                 mid = getattr(message, "id", None)
                 if mid is not None:
@@ -346,6 +373,8 @@ class SessionRunner:
             # streams progress instead of waiting for completion.
             self._set_stats(stats_handler.get_stats())
 
+        if self._cancelled.is_set():
+            raise _Cancelled()
         for name in list(self.session["agent_status"].keys()):
             self._set_status(name, "completed")
         self._set_stats(stats_handler.get_stats())

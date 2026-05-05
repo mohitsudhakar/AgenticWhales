@@ -32,6 +32,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#bf-select-all").addEventListener("click", () => toggleAllBatchTickers(true));
   $("#bf-clear").addEventListener("click", () => toggleAllBatchTickers(false));
   $("#bf-custom-add").addEventListener("click", addCustomTicker);
+  $("#s-stop-btn").addEventListener("click", stopActiveSession);
+  $("#b-stop-btn").addEventListener("click", stopActiveBatch);
   $("#bf-custom-ticker").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); addCustomTicker(); }
   });
@@ -381,6 +383,13 @@ function renderSession() {
   const pill = $("#s-status");
   pill.textContent = s.status;
   pill.className = `status-pill ${s.status}`;
+  // Stop button is only meaningful while the run is in flight.
+  const stopBtn = $("#s-stop-btn");
+  if (stopBtn) {
+    const stoppable = s.status === "running" || s.status === "pending";
+    stopBtn.classList.toggle("hidden", !stoppable);
+    if (stoppable && stopBtn.disabled) stopBtn.disabled = false;
+  }
   renderSessionStats();
   renderFinal();
   renderAgents();
@@ -944,6 +953,12 @@ function renderBatch() {
   const pill = $("#b-status");
   pill.textContent = batchStatusLabel(b.status);
   pill.className = `status-pill ${b.status}`;
+  const stopBtn = $("#b-stop-btn");
+  if (stopBtn) {
+    const stoppable = ["pending", "running", "composing_report"].includes(b.status);
+    stopBtn.classList.toggle("hidden", !stoppable);
+    if (stoppable && stopBtn.disabled) stopBtn.disabled = false;
+  }
   renderBatchTotals();
   renderBatchItems();
   renderBatchReport();
@@ -1211,6 +1226,50 @@ function handleBatchEvent(event) {
     if (event.team_totals) state.batch.team_totals = event.team_totals;
     renderBatchTotals();
     return;
+  }
+}
+
+// =====================================================================
+// Stop-active-run handlers
+// =====================================================================
+
+async function stopActiveSession() {
+  const sid = state.activeSessionId;
+  if (!sid) return;
+  const btn = $("#s-stop-btn");
+  if (!confirm("Stop this analysis? It can't be resumed; partial output is saved.")) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/sessions/${sid}/stop`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    // The runner cancels at the next chunk boundary — give the user a hint
+    // that we're waiting on it. The WS event will flip the pill to "cancelled".
+    btn.disabled = true;
+  } catch (e) {
+    alert(`Failed to stop: ${e.message || e}`);
+    btn.disabled = false;
+  }
+}
+
+async function stopActiveBatch() {
+  const bid = state.activeBatchId;
+  if (!bid) return;
+  const btn = $("#b-stop-btn");
+  if (!confirm("Stop this basket? In-flight analyses will be aborted; remaining tickers won't run.")) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/batches/${bid}/stop`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    btn.disabled = true;
+  } catch (e) {
+    alert(`Failed to stop: ${e.message || e}`);
+    btn.disabled = false;
   }
 }
 

@@ -269,7 +269,12 @@
           <p id="b-totals" class="subtle stats-line"></p>
           <p id="b-team-totals" class="subtle stats-line"></p>
         </div>
-        <div class="status-pill" id="b-status">pending</div>
+        <div class="status-bar">
+          <div class="status-pill" id="b-status">pending</div>
+          <button type="button" id="b-stop-btn" class="stop-btn hidden" title="Stop this basket">
+            <span aria-hidden="true">■</span> Stop
+          </button>
+        </div>
       </header>
 
       <section class="batch-progress-card">
@@ -298,7 +303,12 @@
           <p id="s-stats" class="subtle stats-line"></p>
           <p id="s-team-timings" class="subtle stats-line"></p>
         </div>
-        <div class="status-pill" id="s-status">pending</div>
+        <div class="status-bar">
+          <div class="status-pill" id="s-status">pending</div>
+          <button type="button" id="s-stop-btn" class="stop-btn hidden" title="Stop this analysis">
+            <span aria-hidden="true">■</span> Stop
+          </button>
+        </div>
       </header>
 
       <section id="s-final" class="final-card">

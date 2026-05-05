@@ -270,6 +270,22 @@ async def get_session(sid: str, user_id: str = Depends(get_current_user_id)) -> 
     return s
 
 
+@app.post("/api/sessions/{sid}/stop")
+async def stop_session(sid: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    runner = _runners.get(sid)
+    if not runner:
+        # Session isn't actively running on this process — either it already
+        # completed (no-op) or we're on a different machine after a restart.
+        s = storage.load(sid)
+        _ensure_owner(s, user_id)
+        return {"stopped": False, "reason": "not currently running"}
+    _ensure_owner(runner.session, user_id)
+    if runner.session.get("status") in ("completed", "failed", "cancelled"):
+        return {"stopped": False, "reason": f"already {runner.session.get('status')}"}
+    runner.cancel()
+    return {"stopped": True}
+
+
 @app.delete("/api/sessions/{sid}")
 async def delete_session(sid: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
     runner = _runners.get(sid)
@@ -389,6 +405,21 @@ async def get_batch(bid: str, user_id: str = Depends(get_current_user_id)) -> Di
     b = batch_storage.load(bid)
     _ensure_owner(b, user_id)
     return b
+
+
+@app.post("/api/batches/{bid}/stop")
+async def stop_batch(bid: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    runner = _batch_runners.get(bid)
+    if not runner:
+        b = batch_storage.load(bid)
+        _ensure_owner(b, user_id)
+        return {"stopped": False, "reason": "not currently running"}
+    _ensure_owner(runner.batch, user_id)
+    terminal = ("completed", "failed", "cancelled", "completed_no_report")
+    if runner.batch.get("status") in terminal:
+        return {"stopped": False, "reason": f"already {runner.batch.get('status')}"}
+    runner.cancel()
+    return {"stopped": True}
 
 
 @app.delete("/api/batches/{bid}")

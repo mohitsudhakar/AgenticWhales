@@ -804,6 +804,37 @@ body {
 #user-usage.at-limit { color: var(--bad); font-weight: 600; }
 .ghost-btn.small { padding: 2px 8px; font-size: 12px; }
 
+/* Status bar = pill + Stop button on session/batch headers */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(248, 113, 113, 0.10);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 999px;
+  color: var(--bad);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.stop-btn:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fff;
+}
+.stop-btn:disabled { opacity: 0.55; cursor: progress; }
+.stop-btn span[aria-hidden="true"] { font-size: 10px; }
+
 /* Compact icon-only sign-out button to the right of name + tier */
 .signout-btn {
   flex-shrink: 0;

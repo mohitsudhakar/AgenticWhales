@@ -39,6 +39,23 @@ class BatchRunner:
         self.subscribers: List[asyncio.Queue] = []
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
+        # Cooperative cancellation. Cascades to the currently-running child
+        # SessionRunners and prevents new ones from being kicked off.
+        self._cancelled = threading.Event()
+        self._active_children: List[SessionRunner] = []
+
+    def cancel(self) -> None:
+        """Request that the basket abort. Cascades to in-flight children
+        so their LLM calls stop at the next chunk boundary too."""
+        self._cancelled.set()
+        for child in list(self._active_children):
+            try:
+                child.cancel()
+            except Exception:
+                pass
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled.is_set()
 
     # ---- subscription API ----
 
@@ -96,19 +113,35 @@ class BatchRunner:
 
     def _run_one(self, idx: int, item: Dict[str, Any]) -> None:
         """Run a single ticker analysis to completion. Called from the worker pool."""
+        if self._cancelled.is_set():
+            self._update_item(idx, status="cancelled", completed_at=time.time())
+            return
         ticker = item["ticker"]
         form = {**self.batch["config"], "ticker": ticker, "analysis_date": self.batch["analysis_date"]}
         session = build_session(form)
+        # Stamp child sessions with the batch's user_id so the per-user
+        # storage filter accepts them.
+        if self.batch.get("user_id"):
+            session["user_id"] = self.batch["user_id"]
         storage.save(session)
 
         self._update_item(idx, session_id=session["id"], status="running", started_at=time.time())
 
         child = SessionRunner(session, self.loop)
+        # If a cancel has already been requested, propagate before start so
+        # the child aborts at the very first chunk.
+        if self._cancelled.is_set():
+            child.cancel()
+        with self._lock:
+            self._active_children.append(child)
         self.register_session(child)
         child.start()
 
         if child._thread is not None:
             child._thread.join()
+        with self._lock:
+            if child in self._active_children:
+                self._active_children.remove(child)
 
         final_session = child.snapshot()
         stats = final_session.get("stats") or {}
@@ -169,6 +202,8 @@ class BatchRunner:
 
         if max_workers == 1:
             for idx, item in items:
+                if self._cancelled.is_set():
+                    break
                 self._run_one(idx, item)
         else:
             with ThreadPoolExecutor(
@@ -183,6 +218,15 @@ class BatchRunner:
                         fut.result()
                     except Exception:
                         traceback.print_exc()
+
+        if self._cancelled.is_set():
+            # Mark any items that never started as cancelled so the UI
+            # doesn't leave them showing "pending" forever.
+            for it in self.batch["items"]:
+                if it.get("status") in (None, "pending"):
+                    it["status"] = "cancelled"
+            self._patch(status="cancelled", completed_at=time.time())
+            return
 
         self._patch(status="composing_report")
         try:
