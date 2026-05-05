@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -265,6 +265,77 @@ def delete_session(session_id: str) -> bool:
     if not _db_writable():
         return True
     return _delete_one("sessions", session_id)
+
+
+def find_cached_session(
+    user_id: str,
+    ticker: str,
+    analysis_date: str,
+    config_sig: str,
+    ttl_minutes: int = 30,
+) -> Optional[Dict[str, Any]]:
+    """Return the most recently completed session for this user matching
+    (ticker, analysis_date, config_sig) within the last ttl_minutes, or
+    None if there isn't one.
+
+    config_sig is an opaque string that distinguishes meaningfully different
+    runs (provider/models/depth/analysts/language). Different signatures
+    don't match — running AAPL with deep=Gemini-Pro is not the same analysis
+    as AAPL with deep=DeepSeek-V4.
+    """
+    if not user_id or user_id == ANONYMOUS_USER_ID:
+        return None
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(minutes=ttl_minutes)
+    cutoff_iso = cutoff.isoformat()
+
+    if _db_writable():
+        try:
+            params = (
+                f"user_id=eq.{user_id}"
+                f"&ticker=eq.{ticker}"
+                f"&analysis_date=eq.{analysis_date}"
+                f"&status=eq.completed"
+                f"&completed_at=gte.{cutoff_iso}"
+                f"&order=completed_at.desc"
+                f"&limit=5"
+                f"&select=data"
+            )
+            resp = _http.get(
+                f"{_rest_url('sessions')}?{params}",
+                headers=_service_headers(),
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                log.warning("supabase cache lookup -> %s: %s", resp.status_code, resp.text[:200])
+                return None
+            for row in resp.json():
+                data = row.get("data") or {}
+                if (data.get("config") or {}).get("__sig") == config_sig:
+                    return data
+            return None
+        except requests.RequestException as e:
+            log.warning("supabase cache lookup failed: %s", e)
+            return None
+
+    # In-memory fallback — scan _memstore.
+    for (table, _), sess in _memstore.items():
+        if table != "sessions":
+            continue
+        if sess.get("user_id") != user_id:
+            continue
+        if sess.get("ticker") != ticker or sess.get("analysis_date") != analysis_date:
+            continue
+        if sess.get("status") != "completed":
+            continue
+        completed_at = sess.get("completed_at")
+        if not completed_at:
+            continue
+        completed_dt = datetime.fromtimestamp(completed_at, tz=timezone.utc)
+        if completed_dt < cutoff:
+            continue
+        if (sess.get("config") or {}).get("__sig") == config_sig:
+            return sess
+    return None
 
 
 def save_batch(batch: Dict[str, Any]) -> None:

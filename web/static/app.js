@@ -1526,8 +1526,17 @@ window.fetch = async function patchedFetch(input, init) {
   try {
     const method = (init?.method || (typeof input !== "string" ? input.method : "GET") || "GET").toUpperCase();
     if (res.ok && method === "POST" && (url.endsWith("/api/sessions") || url.endsWith("/api/batches"))) {
+      // Clone so the original caller can still parse the body normally.
+      let cached = false;
+      try {
+        const peek = await res.clone().json();
+        cached = !!peek?.cached;
+      } catch {}
+      if (cached) {
+        console.info("AgenticWhales: cache hit — reused recent analysis, quota unchanged");
+      }
       const auth = getAuth();
-      if (auth && userState.current) {
+      if (!cached && auth && userState.current) {
         try {
           // For batches, count each ticker in the basket toward the quota so
           // a Novice can't bypass the cap by submitting a 50-ticker basket.

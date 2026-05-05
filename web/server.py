@@ -179,13 +179,53 @@ class CreateSessionPayload(BaseModel):
     output_language: str = "English"
 
 
+CACHE_TTL_MINUTES = 30
+
+
+def _config_signature(payload: Dict[str, Any]) -> str:
+    """Opaque signature distinguishing meaningfully different runs. Two
+    submissions with the same signature on the same (ticker, analysis_date)
+    inside CACHE_TTL_MINUTES will hit the cache instead of re-running."""
+    parts = (
+        (payload.get("llm_provider") or "").lower(),
+        (payload.get("quick_think_llm") or "").lower(),
+        (payload.get("deep_think_llm") or "").lower(),
+        int(payload.get("research_depth") or 0),
+        ",".join(sorted(payload.get("analysts") or [])),
+        (payload.get("output_language") or "").lower(),
+        (payload.get("google_thinking_level") or ""),
+        (payload.get("openai_reasoning_effort") or ""),
+        (payload.get("anthropic_effort") or ""),
+    )
+    return "|".join(str(p) for p in parts)
+
+
 @app.post("/api/sessions")
 async def create_session(
     payload: CreateSessionPayload,
     user_id: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
+    sig = _config_signature(payload.model_dump())
+
+    # Cache check: if this user ran the same ticker+date with the same config
+    # within CACHE_TTL_MINUTES and it completed successfully, hand them the
+    # existing session id. Saves LLM cost + doesn't burn quota.
+    cached = auth.find_cached_session(
+        user_id=user_id,
+        ticker=payload.ticker,
+        analysis_date=payload.analysis_date,
+        config_sig=sig,
+        ttl_minutes=CACHE_TTL_MINUTES,
+    )
+    if cached:
+        summary = _summary(cached)
+        summary["cached"] = True
+        return summary
+
     session = build_session(payload.model_dump())
     session["user_id"] = user_id
+    # Stamp the signature so future cache lookups can match it back.
+    session.setdefault("config", {})["__sig"] = sig
     storage.save(session)
     loop = asyncio.get_running_loop()
     runner = SessionRunner(session, loop)
