@@ -1419,27 +1419,38 @@ body {
   .welcome-body { padding: 12px; gap: 12px; }
   .welcome-tier-strip { grid-template-columns: 1fr; }
 
-  /* Mobile: drop the carousel UX entirely. All five steps stack vertically
-     and the user scrolls through them as part of the welcome modal scroll —
-     simpler, reliable, no clipping, no pagination required on a phone. */
-  .howitworks-track {
-    display: flex !important;
-    flex-direction: column;
-    gap: 12px;
+  /* Mobile: kill the carousel UX entirely. Stack all five steps vertically.
+     Selectors are intentionally high-specificity (#welcome-modal …) so
+     nothing in the desktop carousel block can win against them via cascade
+     or specificity, regardless of source order or later edits. */
+  #welcome-modal .howitworks {
+    overflow: visible !important;
   }
-  .how-card {
-    /* Override the desktop grid-stack + opacity rules so every step is
-       fully visible on mobile. */
-    grid-area: auto;
+  #welcome-modal .howitworks-track {
+    display: block !important;
+    grid-template-areas: none !important;
+    min-height: 0 !important;
+    position: static !important;
+  }
+  #welcome-modal .how-card,
+  #welcome-modal .how-card.active {
+    display: flex !important;
+    position: static !important;
+    grid-area: auto !important;
     opacity: 1 !important;
     transform: none !important;
     pointer-events: auto !important;
-    padding: 18px;
-    border-bottom: 1px solid var(--border);
+    padding: 18px !important;
+    margin-bottom: 12px !important;
+    border-bottom: 1px solid var(--border) !important;
+    inset: auto !important;
   }
-  .how-card:last-child { border-bottom: 0; }
-  .how-card h3 { font-size: 17px; }
-  .howitworks-controls { display: none; }
+  #welcome-modal .how-card:last-child {
+    border-bottom: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  #welcome-modal .how-card h3 { font-size: 17px; }
+  #welcome-modal .howitworks-controls { display: none !important; }
   .welcome-actions { flex-direction: column; }
   .welcome-actions .google-btn,
   .welcome-actions .ghost-btn { width: 100%; justify-content: center; }
