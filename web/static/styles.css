@@ -913,12 +913,15 @@ body {
   overflow: hidden;
 }
 .howitworks-track {
-  position: relative;
-  min-height: 200px;
+  /* Grid-stack pattern: every card lives in the same grid area, so the cell
+     sizes itself to the tallest card and inactive cards fade in place. This
+     avoids the absolute-positioning trap where a card whose text wraps to
+     many lines on a narrow phone overflows the track and gets clipped. */
+  display: grid;
+  grid-template-areas: "stack";
 }
 .how-card {
-  position: absolute;
-  inset: 0;
+  grid-area: stack;
   padding: 26px 28px;
   display: flex;
   flex-direction: column;
@@ -1415,7 +1418,7 @@ body {
   .welcome-card { width: calc(100% - 24px); max-width: 100%; }
   .welcome-body { padding: 12px; gap: 12px; }
   .welcome-tier-strip { grid-template-columns: 1fr; }
-  .howitworks-track { min-height: 240px; }
+  /* Grid-stack handles sizing now — no explicit min-height needed. */
   .how-card { padding: 18px 18px; }
   .how-card h3 { font-size: 17px; }
   .welcome-actions { flex-direction: column; }
