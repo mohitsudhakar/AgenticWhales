@@ -1328,11 +1328,10 @@ function showWelcomeModal(opts = {}) {
   const modal = $("#welcome-modal");
   if (!modal) return;
 
-  // Surface the "Firebase not configured" notice when relevant, and disable
+  // Surface the "Supabase not configured" notice when relevant, and disable
   // the Google button so users don't get a confusing error.
   const hint = $("#welcome-firebase-hint");
   const googleBtn = $("#welcome-google");
-  const guestBtn = $("#welcome-guest");
   if (auth && !auth.isConfigured) {
     if (hint) hint.hidden = false;
     if (googleBtn) googleBtn.disabled = true;
@@ -1358,13 +1357,11 @@ function hideWelcomeModal() {
 function initWelcomeModalControls() {
   const agree = $("#welcome-agree");
   const googleBtn = $("#welcome-google");
-  const guestBtn = $("#welcome-guest");
   const auth = getAuth();
 
   function updateButtons() {
     const ok = !!agree.checked;
     if (auth?.isConfigured) googleBtn.disabled = !ok;
-    guestBtn.disabled = !ok;
   }
   agree.addEventListener("change", updateButtons);
   updateButtons();
@@ -1382,18 +1379,6 @@ function initWelcomeModalControls() {
       alert(`Sign-in failed: ${err.message || err}`);
       googleBtn.disabled = false;
     }
-  });
-
-  guestBtn.addEventListener("click", () => {
-    if (auth?.signInAsGuest) {
-      auth.signInAsGuest("Guest");
-    } else {
-      // Supabase IS configured but the user picked guest — degrade to a local
-      // session (no cross-device tracking).
-      userState.current = { uid: `local-${Math.random().toString(36).slice(2,10)}`, displayName: "Guest", tier: "novice", isGuest: true };
-      reflectUserChip();
-    }
-    hideWelcomeModal();
   });
 }
 
