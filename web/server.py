@@ -67,8 +67,8 @@ def _register_session_runner(runner: SessionRunner) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    storage.ensure_dir()
-    batch_storage.ensure_dir()
+    # Sessions and batches now live in Supabase Postgres (or the in-memory
+    # fallback when Supabase isn't configured) — nothing to set up on disk.
     yield
 
 

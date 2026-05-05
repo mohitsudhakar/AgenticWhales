@@ -1,18 +1,18 @@
-"""Supabase auth + Postgres mirror helpers.
+"""Supabase auth + Postgres storage for sessions/batches.
 
 Two responsibilities:
   1. Validate a Supabase JWT (access token) and return the user id (UUID)
-     of the caller. We do this by calling Supabase's /auth/v1/user endpoint
-     instead of verifying the JWT locally — saves a dependency and the
-     JWT-secret env var. Adds one network round trip per request, which is
-     fine for a personal app.
-  2. Best-effort mirror of session/batch index rows to Supabase Postgres,
-     using the service_role key. Failures are swallowed — the JSON files
-     on disk remain the source of truth, so a Postgres outage doesn't
-     break the user's flow.
+     of the caller, via Supabase's /auth/v1/user endpoint. Saves the JWT
+     secret config and a `pyjwt` dep at the cost of one HTTP round trip
+     per request (cached for 60s in-process to soften that).
+  2. Read/write session and batch rows in Supabase Postgres using the
+     service_role key. Postgres is the source of truth — no JSON files
+     on disk anymore. RLS still protects user data on the read path
+     because every server endpoint validates the JWT and filters by uid.
 
-If Supabase isn't configured (env vars missing), get_current_user_id falls
-back to a single shared "anonymous" bucket so local development still works.
+If Supabase isn't configured at all, the storage helpers degrade to in-
+memory (process-lifetime) state so local dev works without a database;
+get_current_user_id falls back to a shared "anonymous" bucket.
 """
 
 from __future__ import annotations
@@ -24,18 +24,30 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
-from fastapi import Header, HTTPException, Query, WebSocket
+from fastapi import Header, HTTPException, WebSocket
 
 log = logging.getLogger(__name__)
 
 ANONYMOUS_USER_ID = "anonymous"
 
-# Tiny in-process cache for token → user_id to avoid hammering Supabase on
-# every API call. Tokens themselves expire (~1h), so a 60-second TTL is
-# plenty short.
+# Module-level requests session = HTTP keepalive across calls. Saves a
+# fresh TCP+TLS handshake on every save during a multi-agent run.
+_http = requests.Session()
+
+# Token-validation cache — Supabase tokens last ~1h, this is purely to
+# avoid hitting /auth/v1/user on every API call from the same client.
 _TOKEN_CACHE_TTL = 60.0
 _token_cache: Dict[str, tuple[float, str]] = {}
 
+# In-memory fallback for when Supabase isn't configured. Keyed by
+# (table, id) so sessions and batches don't collide. Process-local —
+# wipes on restart.
+_memstore: Dict[tuple[str, str], Dict[str, Any]] = {}
+
+
+# ------------------------------------------------------------------
+# env / config
+# ------------------------------------------------------------------
 
 def _supabase_url() -> Optional[str]:
     return os.getenv("AGENTICWHALES_SUPABASE_URL")
@@ -53,13 +65,17 @@ def _supabase_configured() -> bool:
     return bool(_supabase_url() and _supabase_anon_key())
 
 
+def _db_writable() -> bool:
+    """Postgres CRUD requires the service-role key. Without it we fall back
+    to the in-memory store so the rest of the app still works."""
+    return bool(_supabase_url() and _supabase_service_key())
+
+
 # ------------------------------------------------------------------
 # JWT validation
 # ------------------------------------------------------------------
 
 def _validate_token(token: str) -> Optional[str]:
-    """Hit Supabase /auth/v1/user with the bearer token; return user id on
-    success, None on any failure (invalid token, network error, etc)."""
     cached = _token_cache.get(token)
     if cached and cached[0] > time.time():
         return cached[1]
@@ -68,7 +84,7 @@ def _validate_token(token: str) -> Optional[str]:
     if not base or not anon:
         return None
     try:
-        resp = requests.get(
+        resp = _http.get(
             f"{base}/auth/v1/user",
             headers={"apikey": anon, "Authorization": f"Bearer {token}"},
             timeout=5,
@@ -87,7 +103,7 @@ def _validate_token(token: str) -> Optional[str]:
 def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
     """FastAPI dependency. Validates the Authorization: Bearer <jwt> header
     via Supabase and returns the user id. If Supabase isn't configured at
-    all, falls back to a shared 'anonymous' user so local dev still works."""
+    all, falls back to the shared 'anonymous' user so local dev still works."""
     if not _supabase_configured():
         return ANONYMOUS_USER_ID
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -100,8 +116,8 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
 
 
 async def authenticate_websocket(ws: WebSocket, token: Optional[str]) -> Optional[str]:
-    """Validate a WebSocket connection's ?token=... query param. On failure,
-    closes the socket with an appropriate code and returns None."""
+    """Validate a WebSocket's ?token=... param. Closes the socket and returns
+    None on failure. Returns 'anonymous' when Supabase isn't configured."""
     if not _supabase_configured():
         return ANONYMOUS_USER_ID
     if not token:
@@ -115,23 +131,23 @@ async def authenticate_websocket(ws: WebSocket, token: Optional[str]) -> Optiona
 
 
 # ------------------------------------------------------------------
-# Postgres mirror (best effort, service_role)
+# Postgres CRUD (service_role)
 # ------------------------------------------------------------------
 
-def _rest_url(table: str) -> Optional[str]:
-    base = _supabase_url()
-    return f"{base}/rest/v1/{table}" if base else None
+def _rest_url(table: str) -> str:
+    return f"{_supabase_url()}/rest/v1/{table}"
 
 
-def _service_headers() -> Optional[Dict[str, str]]:
+def _service_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     key = _supabase_service_key()
-    if not key:
-        return None
-    return {
+    h = {
         "apikey": key,
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
+    if extra:
+        h.update(extra)
+    return h
 
 
 def _ts_iso(epoch: Optional[float]) -> Optional[str]:
@@ -140,27 +156,83 @@ def _ts_iso(epoch: Optional[float]) -> Optional[str]:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
 
 
-def _post(table: str, rows: List[Dict[str, Any]]) -> None:
-    url = _rest_url(table)
-    headers = _service_headers()
-    if not url or not headers or url.endswith("YOUR-PROJECT-REF.supabase.co/rest/v1/" + table):
+def _upsert(table: str, row: Dict[str, Any]) -> None:
+    if not _db_writable():
         return
-    h = {**headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
+    headers = _service_headers({"Prefer": "resolution=merge-duplicates,return=minimal"})
     try:
-        resp = requests.post(url, headers=h, json=rows, timeout=5)
+        resp = _http.post(_rest_url(table), headers=headers, json=[row], timeout=10)
         if resp.status_code >= 300:
-            log.debug("supabase mirror %s -> %s: %s", table, resp.status_code, resp.text[:200])
+            log.warning("supabase upsert %s -> %s: %s", table, resp.status_code, resp.text[:200])
     except requests.RequestException as e:
-        log.debug("supabase mirror %s failed: %s", table, e)
+        log.warning("supabase upsert %s failed: %s", table, e)
 
 
-def mirror_session(session: Dict[str, Any]) -> None:
-    """Upsert a session row into public.sessions. Skipped silently if the
-    service_role key isn't configured."""
+def _select_one(table: str, row_id: str) -> Optional[Dict[str, Any]]:
+    if not _db_writable():
+        return None
+    try:
+        resp = _http.get(
+            f"{_rest_url(table)}?id=eq.{row_id}&select=data",
+            headers=_service_headers(),
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            log.warning("supabase select %s -> %s", table, resp.status_code)
+            return None
+        rows = resp.json()
+        if not rows:
+            return None
+        return rows[0].get("data")
+    except requests.RequestException as e:
+        log.warning("supabase select %s failed: %s", table, e)
+        return None
+
+
+def _select_for_user(table: str, user_id: str) -> List[Dict[str, Any]]:
+    if not _db_writable():
+        return []
+    try:
+        resp = _http.get(
+            f"{_rest_url(table)}?user_id=eq.{user_id}&select=data&order=created_at.desc",
+            headers=_service_headers(),
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            log.warning("supabase list %s -> %s: %s", table, resp.status_code, resp.text[:200])
+            return []
+        return [r["data"] for r in resp.json() if r.get("data")]
+    except requests.RequestException as e:
+        log.warning("supabase list %s failed: %s", table, e)
+        return []
+
+
+def _delete_one(table: str, row_id: str) -> bool:
+    if not _db_writable():
+        return False
+    try:
+        resp = _http.delete(
+            f"{_rest_url(table)}?id=eq.{row_id}",
+            headers=_service_headers(),
+            timeout=10,
+        )
+        return resp.status_code < 300
+    except requests.RequestException as e:
+        log.warning("supabase delete %s failed: %s", table, e)
+        return False
+
+
+# ------------------------------------------------------------------
+# Public storage interface — used by web/storage.py + web/batch_storage.py
+# ------------------------------------------------------------------
+
+def save_session(session: Dict[str, Any]) -> None:
     user_id = session.get("user_id")
-    if not user_id or user_id == ANONYMOUS_USER_ID:
+    if not _db_writable() or not user_id or user_id == ANONYMOUS_USER_ID:
+        # In-memory fallback so local dev without Supabase still works.
+        _memstore[("sessions", session["id"])] = session
         return
-    _post("sessions", [{
+    _upsert("sessions", {
         "id": session["id"],
         "user_id": user_id,
         "ticker": session.get("ticker"),
@@ -168,14 +240,39 @@ def mirror_session(session: Dict[str, Any]) -> None:
         "status": session.get("status"),
         "completed_at": _ts_iso(session.get("completed_at")),
         "data": session,
-    }])
+    })
 
 
-def mirror_batch(batch: Dict[str, Any]) -> None:
+def load_session(session_id: str) -> Optional[Dict[str, Any]]:
+    if _db_writable():
+        row = _select_one("sessions", session_id)
+        if row is not None:
+            return row
+    return _memstore.get(("sessions", session_id))
+
+
+def list_sessions(user_id: str) -> List[Dict[str, Any]]:
+    if _db_writable() and user_id and user_id != ANONYMOUS_USER_ID:
+        return _select_for_user("sessions", user_id)
+    return [
+        s for (table, _), s in _memstore.items()
+        if table == "sessions" and s.get("user_id") == user_id
+    ]
+
+
+def delete_session(session_id: str) -> bool:
+    _memstore.pop(("sessions", session_id), None)
+    if not _db_writable():
+        return True
+    return _delete_one("sessions", session_id)
+
+
+def save_batch(batch: Dict[str, Any]) -> None:
     user_id = batch.get("user_id")
-    if not user_id or user_id == ANONYMOUS_USER_ID:
+    if not _db_writable() or not user_id or user_id == ANONYMOUS_USER_ID:
+        _memstore[("batches", batch["id"])] = batch
         return
-    _post("batches", [{
+    _upsert("batches", {
         "id": batch["id"],
         "user_id": user_id,
         "analysis_date": batch.get("analysis_date"),
@@ -183,26 +280,28 @@ def mirror_batch(batch: Dict[str, Any]) -> None:
         "ticker_count": len(batch.get("items", [])),
         "completed_at": _ts_iso(batch.get("completed_at")),
         "data": batch,
-    }])
+    })
 
 
-def delete_session_row(sid: str) -> None:
-    url = _rest_url("sessions")
-    headers = _service_headers()
-    if not url or not headers:
-        return
-    try:
-        requests.delete(f"{url}?id=eq.{sid}", headers=headers, timeout=5)
-    except requests.RequestException:
-        pass
+def load_batch(batch_id: str) -> Optional[Dict[str, Any]]:
+    if _db_writable():
+        row = _select_one("batches", batch_id)
+        if row is not None:
+            return row
+    return _memstore.get(("batches", batch_id))
 
 
-def delete_batch_row(bid: str) -> None:
-    url = _rest_url("batches")
-    headers = _service_headers()
-    if not url or not headers:
-        return
-    try:
-        requests.delete(f"{url}?id=eq.{bid}", headers=headers, timeout=5)
-    except requests.RequestException:
-        pass
+def list_batches(user_id: str) -> List[Dict[str, Any]]:
+    if _db_writable() and user_id and user_id != ANONYMOUS_USER_ID:
+        return _select_for_user("batches", user_id)
+    return [
+        b for (table, _), b in _memstore.items()
+        if table == "batches" and b.get("user_id") == user_id
+    ]
+
+
+def delete_batch(batch_id: str) -> bool:
+    _memstore.pop(("batches", batch_id), None)
+    if not _db_writable():
+        return True
+    return _delete_one("batches", batch_id)
