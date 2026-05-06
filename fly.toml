@@ -6,18 +6,21 @@
 app = 'agenticwhales'
 primary_region = 'sjc'
 
+[processes]
+  app = "python -m web"
+
 [build]
 
 [http_service]
-  internal_port = 8765
+  internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = false
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '2gb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256
+  memory_mb = 2048
