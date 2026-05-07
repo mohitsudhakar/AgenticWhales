@@ -466,5 +466,5 @@ def main() -> None:
     import uvicorn
 
     host = os.getenv("AGENTICWHALES_WEB_HOST") or os.getenv("TRADINGAGENTS_WEB_HOST", "0.0.0.0")
-    port = int(os.getenv("AGENTICWHALES_WEB_PORT") or os.getenv("TRADINGAGENTS_WEB_PORT", "8765"))
+    port = int(os.getenv("AGENTICWHALES_WEB_PORT") or os.getenv("TRADINGAGENTS_WEB_PORT", "8080"))
     uvicorn.run("web.server:app", host=host, port=port, reload=False)
