@@ -65,11 +65,43 @@ def _register_session_runner(runner: SessionRunner) -> None:
     _runners[runner.session["id"]] = runner
 
 
+async def _reconcile_loop(interval_seconds: int) -> None:
+    """Periodically pull broker positions into portfolio.json.
+
+    Runs only when a broker is configured *and* the interval is positive.
+    Errors are logged and swallowed so a flaky broker doesn't kill the loop.
+    """
+    import logging
+    from tradingagents.execution import PortfolioMirror, build_broker
+    from tradingagents.execution.broker import BrokerError
+
+    log = logging.getLogger("web.reconcile")
+    while True:
+        try:
+            broker = build_broker()
+            PortfolioMirror(broker).sync()
+        except BrokerError as exc:
+            log.warning("reconcile skipped: %s", exc)
+        except Exception:  # noqa: BLE001 — last-resort guard for the daemon
+            log.exception("reconcile loop error")
+        await asyncio.sleep(interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Sessions and batches now live in Supabase Postgres (or the in-memory
     # fallback when Supabase isn't configured) — nothing to set up on disk.
-    yield
+    interval = int(os.getenv("AGENTICWHALES_RECONCILE_INTERVAL_SECONDS", "0") or 0)
+    task = asyncio.create_task(_reconcile_loop(interval)) if interval > 0 else None
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
 
 
 app = FastAPI(title="AgenticWhales Web", lifespan=lifespan)
@@ -458,6 +490,102 @@ async def put_portfolio(
 ) -> Dict[str, Any]:
     portfolio.save_all(payload.positions)
     return {"positions": portfolio.load_all()}
+
+
+# ---------------------------------------------------------------- broker
+# Optional: surfaces broker state (account, positions, orders) and lets the
+# user execute a completed session's decision against the configured broker.
+# When the broker isn't configured (no ALPACA_API_KEY in env), the endpoints
+# return HTTP 503 with a clear message rather than crashing the server.
+
+
+def _get_broker():
+    from tradingagents.execution import build_broker
+    from tradingagents.execution.broker import BrokerError
+    try:
+        return build_broker()
+    except BrokerError as exc:
+        raise HTTPException(status_code=503, detail=f"broker unavailable: {exc}")
+
+
+@app.get("/api/broker/account")
+async def broker_account(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    broker = _get_broker()
+    acct = broker.get_account()
+    return {"mode": broker.mode.value, "account": acct.model_dump()}
+
+
+@app.get("/api/broker/positions")
+async def broker_positions(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    broker = _get_broker()
+    positions = [p.model_dump() for p in broker.get_positions()]
+    return {"mode": broker.mode.value, "positions": positions}
+
+
+@app.post("/api/broker/sync")
+async def broker_sync(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """Pull positions from the broker and overwrite portfolio.json (the mirror)."""
+    from tradingagents.execution import PortfolioMirror
+    broker = _get_broker()
+    snapshot = PortfolioMirror(broker).sync()
+    return {"mode": broker.mode.value, "synced": snapshot}
+
+
+class ExecuteSessionPayload(BaseModel):
+    dry_run: bool = Field(default=False, description="Compute the trade but skip placing the order.")
+
+
+@app.post("/api/sessions/{sid}/execute")
+async def execute_session(
+    sid: str,
+    payload: ExecuteSessionPayload | None = None,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Execute the Portfolio Manager's decision from a completed session.
+
+    Reads the session's ``final_trade_decision`` markdown, translates it into
+    a typed PortfolioDecision, and runs it through the Executor against the
+    configured broker. Idempotent: re-running with the same (ticker, date,
+    rating) is a no-op because the executor's client_order_id stays the
+    same and the broker rejects duplicates.
+    """
+    from tradingagents.execution import (
+        Executor,
+        LivePipeline,
+        PortfolioMirror,
+        decision_from_markdown,
+    )
+
+    session = storage.load(sid)
+    _ensure_owner(session, user_id)
+    if session.get("status") != "completed":
+        raise HTTPException(409, "session is not completed")
+
+    decision_md = (
+        session.get("report_sections", {}).get("final_trade_decision")
+        or session.get("data", {}).get("report_sections", {}).get("final_trade_decision")
+    )
+    if not decision_md:
+        raise HTTPException(409, "session has no final_trade_decision yet")
+
+    broker = _get_broker()
+    decision = decision_from_markdown(decision_md)
+    result = Executor(broker).execute(
+        session["ticker"],
+        decision,
+        trade_date=session.get("analysis_date"),
+        dry_run=(payload.dry_run if payload else False),
+    )
+
+    if result.action in {"BUY", "SELL"} and result.order is not None:
+        PortfolioMirror(broker).sync()
+
+    # Persist the execution result alongside the session so the UI can show it.
+    session.setdefault("execution", {})
+    session["execution"] = result.model_dump()
+    storage.save(session)
+
+    return {"mode": broker.mode.value, "result": result.model_dump()}
 
 
 def main() -> None:

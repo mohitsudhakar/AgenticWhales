@@ -38,6 +38,9 @@ web = [
     "uvicorn[standard]>=0.30.0",
     "python-dotenv>=1.0.0",
 ]
+brokers = [
+    "alpaca-py>=0.30.0",
+]
 
 [project.scripts]
 agenticwhales = "cli.main:app"
@@ -62,4 +65,9 @@ markers = [
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
 ]

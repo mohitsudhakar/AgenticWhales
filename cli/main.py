@@ -1222,5 +1222,47 @@ def analyze(
     run_analysis(checkpoint=checkpoint)
 
 
+@app.command()
+def execute(
+    ticker: str = typer.Option(..., help="Ticker symbol, e.g. AAPL"),
+    date: Optional[str] = typer.Option(
+        None, "--date",
+        help="Analysis / trade date YYYY-MM-DD. Defaults to today.",
+    ),
+    mode: str = typer.Option(
+        "paper",
+        help="Broker mode: backtest, paper, or live. Live requires BROKERAGE_ALLOW_LIVE=1.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Run the graph and compute the trade but skip placing the order.",
+    ),
+):
+    """Run the agent graph for one ticker and execute the decision through the broker."""
+    import datetime as _dt
+    from tradingagents.execution import LivePipeline, build_broker
+
+    trade_date = date or _dt.date.today().isoformat()
+    console.print(f"[bold]Running agents for {ticker.upper()} on {trade_date}[/bold] (mode={mode})")
+
+    broker = build_broker(mode)
+    graph = TradingAgentsGraph(config=DEFAULT_CONFIG)
+    pipeline = LivePipeline(graph, broker, dry_run=dry_run)
+
+    _state, result = pipeline.run(ticker.upper(), trade_date)
+
+    console.print(Panel.fit(
+        f"[bold]Action:[/bold] {result.action}\n"
+        f"[bold]Rating:[/bold] {result.rating}\n"
+        f"[bold]Prev qty:[/bold] {result.prev_qty}\n"
+        f"[bold]Target qty:[/bold] {result.target_qty}\n"
+        f"[bold]Delta:[/bold] {result.delta_qty}\n"
+        f"[bold]Reference price:[/bold] {result.reference_price}\n"
+        f"[bold]Reason:[/bold] {result.reason or '-'}\n"
+        f"[bold]Order id:[/bold] {result.order.id if result.order else '-'}",
+        title=f"Execution result ({mode})",
+    ))
+
+
 if __name__ == "__main__":
     app()
