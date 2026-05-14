@@ -16,7 +16,7 @@ from tradingagents import portfolio
 from tradingagents.llm_clients.factory import create_llm_client
 
 from . import batch_storage, storage
-from .runner import SessionRunner, build_session
+from .runner import SessionRunner, build_session, config_signature
 
 
 # Type alias for the callback that registers a child SessionRunner so that
@@ -99,6 +99,12 @@ class BatchRunner:
         ticker = item["ticker"]
         form = {**self.batch["config"], "ticker": ticker, "analysis_date": self.batch["analysis_date"]}
         session = build_session(form)
+        # Mirror /api/sessions: stamp owner + cache signature so the row lands
+        # in Postgres (auth.save_session skips the DB when user_id is missing)
+        # and so future single-run requests for the same ticker/config can
+        # reuse this completed session via find_cached_session.
+        session["user_id"] = self.batch.get("user_id")
+        session.setdefault("config", {})["__sig"] = config_signature(form)
         storage.save(session)
 
         self._update_item(idx, session_id=session["id"], status="running", started_at=time.time())

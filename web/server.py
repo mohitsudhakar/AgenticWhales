@@ -29,6 +29,7 @@ from .runner import (
     SECTION_AGENT,
     SessionRunner,
     build_session,
+    config_signature,
 )
 
 load_dotenv()
@@ -197,30 +198,12 @@ except ValueError:
     CACHE_TTL_MINUTES = 30
 
 
-def _config_signature(payload: Dict[str, Any]) -> str:
-    """Opaque signature distinguishing meaningfully different runs. Two
-    submissions with the same signature on the same (ticker, analysis_date)
-    inside CACHE_TTL_MINUTES will hit the cache instead of re-running."""
-    parts = (
-        (payload.get("llm_provider") or "").lower(),
-        (payload.get("quick_think_llm") or "").lower(),
-        (payload.get("deep_think_llm") or "").lower(),
-        int(payload.get("research_depth") or 0),
-        ",".join(sorted(payload.get("analysts") or [])),
-        (payload.get("output_language") or "").lower(),
-        (payload.get("google_thinking_level") or ""),
-        (payload.get("openai_reasoning_effort") or ""),
-        (payload.get("anthropic_effort") or ""),
-    )
-    return "|".join(str(p) for p in parts)
-
-
 @app.post("/api/sessions")
 async def create_session(
     payload: CreateSessionPayload,
     user_id: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
-    sig = _config_signature(payload.model_dump())
+    sig = config_signature(payload.model_dump())
 
     # Cache check: if this user ran the same ticker+date with the same config
     # within CACHE_TTL_MINUTES and it completed successfully, hand them the
@@ -367,10 +350,6 @@ async def create_batch(
 ) -> Dict[str, Any]:
     batch = build_batch(payload.model_dump())
     batch["user_id"] = user_id
-    # Stamp every child session with the same user_id so the SessionRunner
-    # writes propagate the ownership when it persists each one.
-    for item in batch.get("items", []):
-        item.setdefault("user_id", user_id)
     batch_storage.save(batch)
     loop = asyncio.get_running_loop()
     runner = BatchRunner(batch, loop, register_session=_register_session_runner)

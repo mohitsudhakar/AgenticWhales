@@ -426,6 +426,24 @@ def _compact_args(args: Any, limit: int = 120) -> str:
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
+def config_signature(payload: Dict[str, Any]) -> str:
+    """Opaque signature distinguishing meaningfully different runs. Two
+    submissions with the same signature on the same (user, ticker,
+    analysis_date) within the cache TTL hit the cache instead of re-running."""
+    parts = (
+        (payload.get("llm_provider") or "").lower(),
+        (payload.get("quick_think_llm") or "").lower(),
+        (payload.get("deep_think_llm") or "").lower(),
+        int(payload.get("research_depth") or 0),
+        ",".join(sorted(payload.get("analysts") or [])),
+        (payload.get("output_language") or "").lower(),
+        (payload.get("google_thinking_level") or ""),
+        (payload.get("openai_reasoning_effort") or ""),
+        (payload.get("anthropic_effort") or ""),
+    )
+    return "|".join(str(p) for p in parts)
+
+
 def build_session(form: Dict[str, Any]) -> Dict[str, Any]:
     """Create a fresh session record from validated form data."""
     analysts = form.get("analysts") or list(ANALYST_ORDER)
