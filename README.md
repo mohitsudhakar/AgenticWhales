@@ -27,7 +27,6 @@
 
 # AgenticWhales: Multi-Agent Financial Intelligence
 
-> **AgenticWhales** is a fork/rebrand of the upstream [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) project. The Python package (`agenticwhales`), class names (`AgenticWhalesGraph`), and CLI entry points have been renamed; the on-disk data directory remains `~/.tradingagents/` for backward compatibility with existing installations.
 
 ### Auth & quota (Supabase)
 
