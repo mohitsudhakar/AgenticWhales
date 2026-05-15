@@ -173,6 +173,31 @@ An interface will appear showing results as they load, letting you track the age
   <img src="assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
 
+### Web UI
+
+The web UI exposes the same multi-agent pipeline through a browser-based dashboard with single-instrument analyses, multi-instrument *baskets*, a portfolio view, and live progress streaming over WebSocket.
+
+Install the optional `web` extra (FastAPI + Uvicorn + python-dotenv):
+
+```bash
+pip install '.[web]'
+# or with uv:
+uv pip install '.[web]'
+```
+
+Start the server:
+
+```bash
+agenticwhales-web      # installed command
+python -m web          # alternative: run directly from source
+```
+
+Then open <http://localhost:8080> (override with `AGENTICWHALES_WEB_HOST` / `AGENTICWHALES_WEB_PORT`).
+
+You can cancel any in-flight analysis or basket from the session/basket header — the runner stops between graph steps and finalizes the run as `cancelled` without burning more tokens.
+
+The auth + quota wiring (Supabase / Google OAuth) is described under [Auth & quota (Supabase)](#auth--quota-supabase) at the top. With Supabase unset, the welcome modal degrades to a per-browser guest mode so you can still try the app locally.
+
 ## AgenticWhales Package
 
 ### Implementation Details
