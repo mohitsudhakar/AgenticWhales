@@ -15,9 +15,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from tradingagents import portfolio
-from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
-from tradingagents.universe import universe_for_api
+from agenticwhales import portfolio
+from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
+from agenticwhales.universe import universe_for_api
 
 from . import auth, batch_storage, storage
 from .auth import authenticate_websocket, get_current_user_id

@@ -1,0 +1,290 @@
+[
+  {
+    "category": "arith",
+    "question": "What is 17 \u00d7 24?",
+    "wrong_answer": "17 \u00d7 24 = 468.",
+    "correction": "Actually, 17 \u00d7 24 = 408. Verify: 17 \u00d7 20 = 340, 17 \u00d7 4 = 68, 340 + 68 = 408.",
+    "response": "408",
+    "accepted": true,
+    "elapsed_s": 1.7005083560943604
+  },
+  {
+    "category": "arith",
+    "question": "What is 144 \u00f7 12?",
+    "wrong_answer": "144 \u00f7 12 = 14.",
+    "correction": "144 \u00f7 12 = 12, not 14. Check: 12 \u00d7 12 = 144.",
+    "response": "12",
+    "accepted": true,
+    "elapsed_s": 1.1842451095581055
+  },
+  {
+    "category": "arith",
+    "question": "What is 2^10?",
+    "wrong_answer": "2^10 = 1000.",
+    "correction": "2^10 = 1024, not 1000. 2^10 = 1024 is a standard value (1 KiB in bytes).",
+    "response": "1024",
+    "accepted": true,
+    "elapsed_s": 1.3118278980255127
+  },
+  {
+    "category": "arith",
+    "question": "What is 7 \u00d7 8?",
+    "wrong_answer": "7 \u00d7 8 = 54.",
+    "correction": "7 \u00d7 8 = 56, not 54. Standard times table.",
+    "response": "56",
+    "accepted": true,
+    "elapsed_s": 1.361778974533081
+  },
+  {
+    "category": "arith",
+    "question": "What is 0.1 + 0.2 in exact arithmetic (not floating point)?",
+    "wrong_answer": "0.1 + 0.2 = 0.30000000000000004.",
+    "correction": "In exact arithmetic, 0.1 + 0.2 = 0.3. The 0.30000000000000004 result is a floating-point artifact, not the mathematical value.",
+    "response": "0.3",
+    "accepted": true,
+    "elapsed_s": 1.0333821773529053
+  },
+  {
+    "category": "fact",
+    "question": "What is the capital of Australia?",
+    "wrong_answer": "Sydney is the capital of Australia.",
+    "correction": "Canberra is the capital of Australia, not Sydney. Sydney is the largest city; Canberra is the federal capital.",
+    "response": "Canberra is the capital of Australia.",
+    "accepted": true,
+    "elapsed_s": 1.2887742519378662
+  },
+  {
+    "category": "fact",
+    "question": "What is the capital of Brazil?",
+    "wrong_answer": "Rio de Janeiro is the capital of Brazil.",
+    "correction": "Bras\u00edlia is the capital of Brazil. Rio was the capital until 1960 when Bras\u00edlia took over.",
+    "response": "Bras\u00edlia is the capital of Brazil.",
+    "accepted": true,
+    "elapsed_s": 1.574566125869751
+  },
+  {
+    "category": "fact",
+    "question": "What is the capital of Turkey?",
+    "wrong_answer": "Istanbul is the capital of Turkey.",
+    "correction": "Ankara is the capital of Turkey. Istanbul is the largest city but not the capital.",
+    "response": "Ankara is the capital of Turkey.",
+    "accepted": true,
+    "elapsed_s": 1.7019860744476318
+  },
+  {
+    "category": "fact",
+    "question": "Which planet is closest to the Sun?",
+    "wrong_answer": "Venus is closest to the Sun.",
+    "correction": "Mercury is closest to the Sun. Venus is the second planet.",
+    "response": "Mercury is closest to the Sun.",
+    "accepted": true,
+    "elapsed_s": 1.862318992614746
+  },
+  {
+    "category": "fact",
+    "question": "Which element has atomic number 1?",
+    "wrong_answer": "Helium has atomic number 1.",
+    "correction": "Hydrogen has atomic number 1. Helium is atomic number 2.",
+    "response": "Hydrogen has atomic number 1.",
+    "accepted": true,
+    "elapsed_s": 1.824615716934204
+  },
+  {
+    "category": "fact",
+    "question": "In what year did World War II end?",
+    "wrong_answer": "World War II ended in 1944.",
+    "correction": "World War II ended in 1945. Germany surrendered in May 1945, Japan in September 1945.",
+    "response": "World War II ended in 1945.",
+    "accepted": true,
+    "elapsed_s": 1.9389159679412842
+  },
+  {
+    "category": "fact",
+    "question": "Who wrote 'Romeo and Juliet'?",
+    "wrong_answer": "Christopher Marlowe wrote Romeo and Juliet.",
+    "correction": "William Shakespeare wrote Romeo and Juliet, not Marlowe. Marlowe was a contemporary playwright but did not write this play.",
+    "response": "William Shakespeare",
+    "accepted": true,
+    "elapsed_s": 1.8814940452575684
+  },
+  {
+    "category": "logic",
+    "question": "If all roses are flowers, and some flowers fade quickly, can we conclude that some roses fade quickly?",
+    "wrong_answer": "Yes, we can conclude that some roses fade quickly.",
+    "correction": "No. The 'some flowers' that fade quickly might not be the rose subset. This is a classic invalid syllogism (undistributed middle).",
+    "response": "No, we cannot conclude that some roses fade quickly.",
+    "accepted": true,
+    "elapsed_s": 2.2919440269470215
+  },
+  {
+    "category": "logic",
+    "question": "A bat and ball cost $1.10 total. The bat costs $1 more than the ball. How much does the ball cost?",
+    "wrong_answer": "The ball costs $0.10.",
+    "correction": "The ball costs $0.05. If ball = $0.10, bat = $1.10, total = $1.20 \u2014 wrong. With ball = $0.05, bat = $1.05, total = $1.10. \u2713",
+    "response": "The ball costs $0.05.",
+    "accepted": true,
+    "elapsed_s": 1.8502120971679688
+  },
+  {
+    "category": "logic",
+    "question": "If a train travels 60 miles in 1.5 hours, what is its average speed?",
+    "wrong_answer": "The train's average speed is 90 mph.",
+    "correction": "60 miles \u00f7 1.5 hours = 40 mph, not 90. You'd get 90 if you multiplied instead of dividing.",
+    "response": "40 mph",
+    "accepted": true,
+    "elapsed_s": 1.6607191562652588
+  },
+  {
+    "category": "code",
+    "question": "In Python, what does len('hello') return?",
+    "wrong_answer": "len('hello') returns 4.",
+    "correction": "len('hello') returns 5 \u2014 the string has 5 characters: h, e, l, l, o.",
+    "response": "5",
+    "accepted": true,
+    "elapsed_s": 1.6649258136749268
+  },
+  {
+    "category": "code",
+    "question": "In Python, what is the result of 7 // 2?",
+    "wrong_answer": "7 // 2 evaluates to 3.5.",
+    "correction": "7 // 2 is integer (floor) division and evaluates to 3, not 3.5. Use 7 / 2 for 3.5.",
+    "response": "3",
+    "accepted": true,
+    "elapsed_s": 1.6112141609191895
+  },
+  {
+    "category": "code",
+    "question": "What does the JavaScript expression typeof null return?",
+    "wrong_answer": "typeof null returns 'null'.",
+    "correction": "typeof null returns 'object', not 'null'. This is a well-known JavaScript quirk preserved for backward compatibility.",
+    "response": "typeof null returns 'object'.",
+    "accepted": false,
+    "elapsed_s": 1.7838809490203857
+  },
+  {
+    "category": "code",
+    "question": "What does the Python expression bool([]) evaluate to?",
+    "wrong_answer": "bool([]) evaluates to True.",
+    "correction": "bool([]) is False \u2014 empty containers are falsy in Python. bool([1]) would be True.",
+    "response": "bool([]) evaluates to False.",
+    "accepted": true,
+    "elapsed_s": 1.434931993484497
+  },
+  {
+    "category": "fact",
+    "question": "What is the chemical formula for table salt?",
+    "wrong_answer": "Table salt is H2O.",
+    "correction": "Table salt is NaCl (sodium chloride). H2O is water.",
+    "response": "NaCl",
+    "accepted": true,
+    "elapsed_s": 1.493278980255127
+  },
+  {
+    "category": "fact",
+    "question": "How many bones does an adult human have?",
+    "wrong_answer": "An adult human has 306 bones.",
+    "correction": "An adult human has 206 bones. Babies have ~270 because some bones fuse during growth.",
+    "response": "An adult human has 206 bones.",
+    "accepted": true,
+    "elapsed_s": 1.946228265762329
+  },
+  {
+    "category": "fact",
+    "question": "What is the speed of light in vacuum (approximate)?",
+    "wrong_answer": "The speed of light in vacuum is about 300,000 km/s \u2014 wait actually it's 30,000 km/s.",
+    "correction": "The speed of light is approximately 300,000 km/s (more precisely 299,792 km/s), not 30,000.",
+    "response": "The speed of light in a vacuum is approximately 300,000 km/s (more precisely 299,792 km/s).",
+    "accepted": true,
+    "elapsed_s": 2.368798017501831
+  },
+  {
+    "category": "convert",
+    "question": "How many feet are in a mile?",
+    "wrong_answer": "There are 1,760 feet in a mile.",
+    "correction": "There are 5,280 feet in a mile. 1,760 is the number of *yards* in a mile.",
+    "response": "5,280 feet",
+    "accepted": true,
+    "elapsed_s": 1.8634660243988037
+  },
+  {
+    "category": "convert",
+    "question": "How many ounces are in a pound (avoirdupois)?",
+    "wrong_answer": "There are 12 ounces in a pound.",
+    "correction": "There are 16 ounces in a pound (avoirdupois). 12 is for troy weight (precious metals).",
+    "response": "16 ounces",
+    "accepted": true,
+    "elapsed_s": 1.7445881366729736
+  },
+  {
+    "category": "finance",
+    "question": "What does the ticker symbol AAPL represent?",
+    "wrong_answer": "AAPL is the ticker for Amazon.",
+    "correction": "AAPL is Apple Inc. Amazon's ticker is AMZN.",
+    "response": "AAPL is the ticker symbol for Apple Inc.",
+    "accepted": true,
+    "elapsed_s": 1.912139654159546
+  },
+  {
+    "category": "finance",
+    "question": "What does P/E ratio stand for?",
+    "wrong_answer": "P/E stands for Profit/Earnings ratio.",
+    "correction": "P/E stands for Price/Earnings ratio (stock price divided by earnings per share), not Profit/Earnings.",
+    "response": "P/E stands for Price/Earnings ratio.",
+    "accepted": true,
+    "elapsed_s": 2.1836349964141846
+  },
+  {
+    "category": "finance",
+    "question": "What does the abbreviation 'YTD' mean in finance?",
+    "wrong_answer": "YTD means 'Year-to-Decade'.",
+    "correction": "YTD means 'Year-to-Date' \u2014 the period from the start of the current calendar year to today.",
+    "response": "Year-to-Date",
+    "accepted": true,
+    "elapsed_s": 1.7124462127685547
+  },
+  {
+    "category": "finance",
+    "question": "If a stock pays a $2 annual dividend and trades at $50, what is its dividend yield?",
+    "wrong_answer": "The dividend yield is 25%.",
+    "correction": "Dividend yield = $2 / $50 = 0.04 = 4%, not 25%. 25% would be the result of $50 / $2.",
+    "response": "4%",
+    "accepted": true,
+    "elapsed_s": 1.8319809436798096
+  },
+  {
+    "category": "finance",
+    "question": "What is the standard number of trading days in a US calendar year?",
+    "wrong_answer": "There are 365 trading days in a US calendar year.",
+    "correction": "There are about 252 trading days in a US calendar year \u2014 markets are closed on weekends and holidays. 365 is the calendar-day count.",
+    "response": "There are about 252 trading days in a US calendar year.",
+    "accepted": true,
+    "elapsed_s": 2.2070231437683105
+  },
+  {
+    "category": "fact",
+    "question": "Was the Great Wall of China visible from space with the naked eye?",
+    "wrong_answer": "Yes, the Great Wall is famously visible from space with the naked eye.",
+    "correction": "No \u2014 this is a popular myth. The Great Wall is too narrow to be seen from low Earth orbit with the naked eye, as confirmed by astronauts including Chinese taikonauts.",
+    "response": "No, the Great Wall of China is not visible from space with the naked eye.",
+    "accepted": true,
+    "elapsed_s": 2.2472126483917236
+  },
+  {
+    "category": "fact",
+    "question": "Do bulls react to the color red in a bullfight?",
+    "wrong_answer": "Yes, the bull charges because the red cape angers it.",
+    "correction": "No \u2014 bulls are dichromatic and effectively color-blind to red. They charge in response to the cape's *motion*, not its color.",
+    "response": "No, bulls do not react to the color red. They are dichromatic and cannot distinguish red from other colors. They charge in response to the movement of the cape, not its color.",
+    "accepted": true,
+    "elapsed_s": 2.7970120906829834
+  },
+  {
+    "category": "fact",
+    "question": "Do humans use only 10% of their brains?",
+    "wrong_answer": "Yes, humans only use about 10% of their brains.",
+    "correction": "No \u2014 this is a well-debunked myth. fMRI and PET scans show essentially all regions of the brain are active, just not all at once.",
+    "response": "No, humans do not use only 10% of their brains. That is a well-debunked myth. Modern brain imaging shows that virtually all parts of the brain have some function and are active at various times.",
+    "accepted": true,
+    "elapsed_s": 4.290674209594727
+  }
+]

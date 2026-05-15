@@ -24,8 +24,8 @@ WORKDIR /home/appuser/app
 
 COPY --from=builder --chown=appuser:appuser /build .
 
-ENV TRADINGAGENTS_WEB_HOST=0.0.0.0 \
-    TRADINGAGENTS_WEB_PORT=8080
+ENV AGENTICWHALES_WEB_HOST=0.0.0.0 \
+    AGENTICWHALES_WEB_PORT=8080
 EXPOSE 8080
 
 CMD ["python", "-m", "web"]

@@ -12,8 +12,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from tradingagents import portfolio
-from tradingagents.llm_clients.factory import create_llm_client
+from agenticwhales import portfolio
+from agenticwhales.llm_clients.factory import create_llm_client
 
 from . import batch_storage, storage
 from .runner import SessionRunner, build_session, config_signature

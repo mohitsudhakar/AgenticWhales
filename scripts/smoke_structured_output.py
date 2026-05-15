@@ -24,11 +24,11 @@ import argparse
 import os
 import sys
 
-from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
-from tradingagents.agents.managers.research_manager import create_research_manager
-from tradingagents.agents.trader.trader import create_trader
-from tradingagents.graph.signal_processing import SignalProcessor
-from tradingagents.llm_clients import create_llm_client
+from agenticwhales.agents.managers.portfolio_manager import create_portfolio_manager
+from agenticwhales.agents.managers.research_manager import create_research_manager
+from agenticwhales.agents.trader.trader import create_trader
+from agenticwhales.graph.signal_processing import SignalProcessor
+from agenticwhales.llm_clients import create_llm_client
 
 
 PROVIDER_DEFAULTS = {

@@ -1,1 +1,1 @@
-"""TradingAgents web UI — a fun browser-based companion to the CLI."""
+"""AgenticWhales web UI — a fun browser-based companion to the CLI."""

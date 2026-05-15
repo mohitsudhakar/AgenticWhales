@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to TradingAgents are documented here.
+All notable changes to AgenticWhales are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -251,7 +251,7 @@ PRs from late 2025 also landed here.
 
 ### Added
 
-- **Initial public release** of the TradingAgents multi-agent trading
+- **Initial public release** of the AgenticWhales multi-agent trading
   framework: market / sentiment / news / fundamentals analysts; bull and bear
   researchers; trader; aggressive, conservative, and neutral risk debaters;
   portfolio manager. LangGraph orchestration, yfinance data, per-agent

@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tradingagents.agents.managers.research_manager import create_research_manager
-from tradingagents.agents.schemas import (
+from agenticwhales.agents.managers.research_manager import create_research_manager
+from agenticwhales.agents.schemas import (
     PortfolioRating,
     ResearchPlan,
     TraderAction,
@@ -20,7 +20,7 @@ from tradingagents.agents.schemas import (
     render_research_plan,
     render_trader_proposal,
 )
-from tradingagents.agents.trader.trader import create_trader
+from agenticwhales.agents.trader.trader import create_trader
 
 
 # ---------------------------------------------------------------------------

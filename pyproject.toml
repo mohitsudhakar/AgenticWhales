@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tradingagents"
+name = "agenticwhales"
 version = "0.2.4"
 description = "Agentic Whales: Multi-Agent Financial Intelligence Platform"
 readme = "README.md"
@@ -42,11 +42,9 @@ web = [
 [project.scripts]
 agenticwhales = "cli.main:app"
 agenticwhales-web = "web.server:main"
-tradingagents = "cli.main:app"
-tradingagents-web = "web.server:main"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*", "web*"]
+include = ["agenticwhales*", "cli*", "web*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]

@@ -27,7 +27,7 @@
 
 # AgenticWhales: Multi-Agent Financial Intelligence
 
-> **AgenticWhales** is a fork/rebrand of the upstream [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) project. The Python package, class names, and import paths still use `tradingagents` for compatibility with upstream — only the user-facing product is renamed.
+> **AgenticWhales** is a fork/rebrand of the upstream [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) project. The Python package (`agenticwhales`), class names (`AgenticWhalesGraph`), and CLI entry points have been renamed; the on-disk data directory remains `~/.tradingagents/` for backward compatibility with existing installations.
 
 ### Auth & quota (Supabase)
 
@@ -48,10 +48,10 @@ To wire it up after creating your Supabase project:
 If you skip step 3, the welcome modal degrades to a *guest mode* (per-browser localStorage cap; no cross-device tracking) so the app still works.
 
 ## News
-- [2026-04] **TradingAgents v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix. See [CHANGELOG.md](CHANGELOG.md) for the full list.
-- [2026-03] **TradingAgents v0.2.3** released with multi-language support, GPT-5.4 family models, unified model catalog, backtesting date fidelity, and proxy support.
-- [2026-03] **TradingAgents v0.2.2** released with GPT-5.4/Gemini 3.1/Claude 4.6 model coverage, five-tier rating scale, OpenAI Responses API, Anthropic effort control, and cross-platform stability.
-- [2026-02] **TradingAgents v0.2.0** released with multi-provider LLM support (GPT-5.x, Gemini 3.x, Claude 4.x, Grok 4.x) and improved system architecture.
+- [2026-04] **AgenticWhales v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix. See [CHANGELOG.md](CHANGELOG.md) for the full list.
+- [2026-03] **AgenticWhales v0.2.3** released with multi-language support, GPT-5.4 family models, unified model catalog, backtesting date fidelity, and proxy support.
+- [2026-03] **AgenticWhales v0.2.2** released with GPT-5.4/Gemini 3.1/Claude 4.6 model coverage, five-tier rating scale, OpenAI Responses API, Anthropic effort control, and cross-platform stability.
+- [2026-02] **AgenticWhales v0.2.0** released with multi-provider LLM support (GPT-5.x, Gemini 3.x, Claude 4.x, Grok 4.x) and improved system architecture.
 - [2026-01] **Trading-R1** [Technical Report](https://arxiv.org/abs/2509.11420) released, with [Terminal](https://github.com/TauricResearch/Trading-R1) expected to land soon.
 
 <div align="center">
@@ -59,7 +59,7 @@ If you skip step 3, the welcome modal degrades to a *guest mode* (per-browser lo
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date&theme=dark" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date" />
-   <img alt="TradingAgents Star History" src="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date" style="width: 80%; height: auto;" />
+   <img alt="AgenticWhales Star History" src="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date" style="width: 80%; height: auto;" />
  </picture>
 </a>
 </div>
@@ -70,7 +70,7 @@ If you skip step 3, the welcome modal degrades to a *guest mode* (per-browser lo
 
 <div align="center">
 
-🚀 [TradingAgents](#tradingagents-framework) | ⚡ [Installation & CLI](#installation-and-cli) | 🎬 [Demo](https://www.youtube.com/watch?v=90gr5lwjIho) | 📦 [Package Usage](#tradingagents-package) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
+🚀 [AgenticWhales](#agenticwhales-framework) | ⚡ [Installation & CLI](#installation-and-cli) | 🎬 [Demo](https://www.youtube.com/watch?v=90gr5lwjIho) | 📦 [Package Usage](#agenticwhales-package) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
 
 </div>
 
@@ -82,7 +82,7 @@ AgenticWhales is a multi-agent trading framework that mirrors the dynamics of re
   <img src="assets/schema.png" style="width: 100%; height: auto;">
 </p>
 
-> TradingAgents framework is designed for research purposes. Trading performance may vary based on many factors, including the chosen backbone language models, model temperature, trading periods, the quality of data, and other non-deterministic factors. [It is not intended as financial, investment, or trading advice.](https://tauric.ai/disclaimer/)
+> AgenticWhales framework is designed for research purposes. Trading performance may vary based on many factors, including the chosen backbone language models, model temperature, trading periods, the quality of data, and other non-deterministic factors. [It is not intended as financial, investment, or trading advice.](https://tauric.ai/disclaimer/)
 
 Our framework decomposes complex trading tasks into specialized roles. This ensures the system achieves a robust, scalable approach to market analysis and decision-making.
 
@@ -122,16 +122,16 @@ Our framework decomposes complex trading tasks into specialized roles. This ensu
 
 ### Installation
 
-Clone TradingAgents:
+Clone AgenticWhales:
 ```bash
 git clone https://github.com/TauricResearch/TradingAgents.git
-cd TradingAgents
+cd AgenticWhales
 ```
 
 Create a virtual environment in any of your favorite environment managers:
 ```bash
-conda create -n tradingagents python=3.13
-conda activate tradingagents
+conda create -n agenticwhales python=3.13
+conda activate agenticwhales
 ```
 
 Install the package and its dependencies:
@@ -144,17 +144,17 @@ pip install .
 Alternatively, run with Docker:
 ```bash
 cp .env.example .env  # add your API keys
-docker compose run --rm tradingagents
+docker compose run --rm agenticwhales
 ```
 
 For local models with Ollama:
 ```bash
-docker compose --profile ollama run --rm tradingagents-ollama
+docker compose --profile ollama run --rm agenticwhales-ollama
 ```
 
 ### Required APIs
 
-TradingAgents supports multiple LLM providers. Set the API key for your chosen provider:
+AgenticWhales supports multiple LLM providers. Set the API key for your chosen provider:
 
 ```bash
 export OPENAI_API_KEY=...          # OpenAI (GPT)
@@ -181,7 +181,7 @@ cp .env.example .env
 
 Launch the interactive CLI:
 ```bash
-tradingagents          # installed command
+agenticwhales          # installed command
 python -m cli.main     # alternative: run directly from source
 ```
 You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
@@ -200,21 +200,21 @@ An interface will appear showing results as they load, letting you track the age
   <img src="assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
 
-## TradingAgents Package
+## AgenticWhales Package
 
 ### Implementation Details
 
-We built TradingAgents with LangGraph to ensure flexibility and modularity. The framework supports multiple LLM providers: OpenAI, Google, Anthropic, xAI, DeepSeek, Qwen (Alibaba DashScope), GLM (Zhipu), OpenRouter, Ollama for local models, and Azure OpenAI for enterprise.
+We built AgenticWhales with LangGraph to ensure flexibility and modularity. The framework supports multiple LLM providers: OpenAI, Google, Anthropic, xAI, DeepSeek, Qwen (Alibaba DashScope), GLM (Zhipu), OpenRouter, Ollama for local models, and Azure OpenAI for enterprise.
 
 ### Python Usage
 
-To use TradingAgents inside your code, you can import the `tradingagents` module and initialize a `TradingAgentsGraph()` object. The `.propagate()` function will return a decision. You can run `main.py`, here's also a quick example:
+To use AgenticWhales inside your code, you can import the `agenticwhales` module and initialize a `AgenticWhalesGraph()` object. The `.propagate()` function will return a decision. You can run `main.py`, here's also a quick example:
 
 ```python
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.default_config import DEFAULT_CONFIG
+from agenticwhales.graph.trading_graph import AgenticWhalesGraph
+from agenticwhales.default_config import DEFAULT_CONFIG
 
-ta = TradingAgentsGraph(debug=True, config=DEFAULT_CONFIG.copy())
+ta = AgenticWhalesGraph(debug=True, config=DEFAULT_CONFIG.copy())
 
 # forward propagate
 _, decision = ta.propagate("NVDA", "2026-01-15")
@@ -224,8 +224,8 @@ print(decision)
 You can also adjust the default configuration to set your own choice of LLMs, debate rounds, etc.
 
 ```python
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.default_config import DEFAULT_CONFIG
+from agenticwhales.graph.trading_graph import AgenticWhalesGraph
+from agenticwhales.default_config import DEFAULT_CONFIG
 
 config = DEFAULT_CONFIG.copy()
 config["llm_provider"] = "openai"        # openai, google, anthropic, xai, deepseek, qwen, glm, openrouter, ollama, azure
@@ -233,38 +233,38 @@ config["deep_think_llm"] = "gpt-5.4"     # Model for complex reasoning
 config["quick_think_llm"] = "gpt-5.4-mini" # Model for quick tasks
 config["max_debate_rounds"] = 2
 
-ta = TradingAgentsGraph(debug=True, config=config)
+ta = AgenticWhalesGraph(debug=True, config=config)
 _, decision = ta.propagate("NVDA", "2026-01-15")
 print(decision)
 ```
 
-See `tradingagents/default_config.py` for all configuration options.
+See `agenticwhales/default_config.py` for all configuration options.
 
 ## Persistence and Recovery
 
-TradingAgents persists two kinds of state across runs.
+AgenticWhales persists two kinds of state across runs.
 
 ### Decision log
 
-The decision log is always on. Each completed run appends its decision to `~/.tradingagents/memory/trading_memory.md`. On the next run for the same ticker, TradingAgents fetches the realised return (raw and alpha vs SPY), generates a one-paragraph reflection, and injects the most recent same-ticker decisions plus recent cross-ticker lessons into the Portfolio Manager prompt, so each analysis carries forward what worked and what didn't.
+The decision log is always on. Each completed run appends its decision to `~/.tradingagents/memory/trading_memory.md`. On the next run for the same ticker, AgenticWhales fetches the realised return (raw and alpha vs SPY), generates a one-paragraph reflection, and injects the most recent same-ticker decisions plus recent cross-ticker lessons into the Portfolio Manager prompt, so each analysis carries forward what worked and what didn't.
 
-Override the path with `TRADINGAGENTS_MEMORY_LOG_PATH`.
+Override the path with `AGENTICWHALES_MEMORY_LOG_PATH` (the legacy `TRADINGAGENTS_MEMORY_LOG_PATH` is still honoured as a fallback).
 
 ### Checkpoint resume
 
 Checkpoint resume is opt-in via `--checkpoint`. When enabled, LangGraph saves state after each node so a crashed or interrupted run resumes from the last successful step instead of starting over. On a resume run you will see `Resuming from step N for <TICKER> on <date>` in the logs; on a new run you will see `Starting fresh`. Checkpoints are cleared automatically on successful completion.
 
-Per-ticker SQLite databases live at `~/.tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `TRADINGAGENTS_CACHE_DIR`). Use `--clear-checkpoints` to reset all of them before a run.
+Per-ticker SQLite databases live at `~/.tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `AGENTICWHALES_CACHE_DIR`; legacy `TRADINGAGENTS_CACHE_DIR` is honoured as a fallback). Use `--clear-checkpoints` to reset all of them before a run.
 
 ```bash
-tradingagents analyze --checkpoint           # enable for this run
-tradingagents analyze --clear-checkpoints    # reset before running
+agenticwhales analyze --checkpoint           # enable for this run
+agenticwhales analyze --clear-checkpoints    # reset before running
 ```
 
 ```python
 config = DEFAULT_CONFIG.copy()
 config["checkpoint_enabled"] = True
-ta = TradingAgentsGraph(config=config)
+ta = AgenticWhalesGraph(config=config)
 _, decision = ta.propagate("NVDA", "2026-01-15")
 ```
 
@@ -276,11 +276,11 @@ Past contributions, including code, design feedback, and bug reports, are credit
 
 ## Citation
 
-Please reference our work if you find *TradingAgents* provides you with some help :)
+Please reference our work if you find *AgenticWhales* provides you with some help :)
 
 ```
 @misc{xiao2025tradingagentsmultiagentsllmfinancial,
-      title={TradingAgents: Multi-Agents LLM Financial Trading Framework}, 
+      title={AgenticWhales: Multi-Agents LLM Financial Trading Framework}, 
       author={Yijia Xiao and Edward Sun and Di Luo and Wei Wang},
       year={2025},
       eprint={2412.20138},

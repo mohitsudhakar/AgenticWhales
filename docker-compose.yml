@@ -1,5 +1,5 @@
 services:
-  tradingagents:
+  agenticwhales:
     build: .
     env_file:
       - .env
@@ -15,7 +15,7 @@ services:
     profiles:
       - ollama
 
-  tradingagents-ollama:
+  agenticwhales-ollama:
     build: .
     env_file:
       - .env

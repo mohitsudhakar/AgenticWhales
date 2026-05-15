@@ -36,7 +36,7 @@ def mock_llm_client():
     client = MagicMock()
     client.get_llm.return_value = MagicMock()
     with patch(
-        "tradingagents.llm_clients.factory.create_llm_client",
+        "agenticwhales.llm_clients.factory.create_llm_client",
         return_value=client,
     ):
         yield client

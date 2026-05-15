@@ -1,4 +1,4 @@
-"""Background analysis runner: drives TradingAgentsGraph and streams events."""
+"""Background analysis runner: drives AgenticWhalesGraph and streams events."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents import portfolio
-from tradingagents.market_snapshot import fetch_snapshot_block
+from agenticwhales.default_config import DEFAULT_CONFIG
+from agenticwhales.graph.trading_graph import AgenticWhalesGraph
+from agenticwhales import portfolio
+from agenticwhales.market_snapshot import fetch_snapshot_block
 
 from cli.stats_handler import StatsCallbackHandler
 
@@ -225,7 +225,7 @@ class SessionRunner:
 
         analysts: List[str] = sel["analysts"]
         stats_handler = StatsCallbackHandler()
-        graph = TradingAgentsGraph(
+        graph = AgenticWhalesGraph(
             analysts, config=config, debug=False, callbacks=[stats_handler]
         )
 
