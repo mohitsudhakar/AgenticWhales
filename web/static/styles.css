@@ -346,6 +346,38 @@ body {
 .status-pill.completed { color: var(--good); border-color: rgba(52,211,153,0.4); }
 .status-pill.running   { color: var(--accent-2); border-color: rgba(96,165,250,0.4); }
 .status-pill.failed    { color: var(--bad); border-color: rgba(248,113,113,0.4); }
+.status-pill.cancelled { color: var(--text-faint); border-color: var(--border); }
+.status-pill.composing_report { color: var(--accent-2); border-color: rgba(96,165,250,0.4); }
+
+.status-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.cancel-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: transparent;
+  color: var(--bad);
+  border: 1px solid rgba(248,113,113,0.4);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.cancel-btn:hover:not(:disabled) {
+  background: rgba(248,113,113,0.12);
+}
+.cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.session-status.cancelled { color: var(--text-faint); }
 
 .final-card {
   background: linear-gradient(160deg, rgba(110,231,183,0.10), rgba(96,165,250,0.06) 60%, rgba(244,114,182,0.06));

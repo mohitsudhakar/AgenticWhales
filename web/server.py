@@ -268,6 +268,20 @@ async def delete_session(sid: str, user_id: str = Depends(get_current_user_id)) 
     return {"deleted": True}
 
 
+@app.post("/api/sessions/{sid}/cancel")
+async def cancel_session(sid: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    runner = _runners.get(sid)
+    if not runner:
+        # No in-flight runner — either it already finished or the process restarted.
+        # Both cases are 409 (nothing actively running to cancel).
+        _ensure_owner(storage.load(sid), user_id)
+        raise HTTPException(409, "Session is not running")
+    _ensure_owner(runner.session, user_id)
+    if not runner.cancel():
+        raise HTTPException(409, "Session is not in a cancellable state")
+    return runner.snapshot()
+
+
 @app.websocket("/api/sessions/{sid}/stream")
 async def stream(ws: WebSocket, sid: str, token: Optional[str] = Query(None)) -> None:
     await ws.accept()
@@ -383,6 +397,18 @@ async def delete_batch(bid: str, user_id: str = Depends(get_current_user_id)) ->
         _batch_runners.pop(bid, None)
     batch_storage.delete(bid)
     return {"deleted": True}
+
+
+@app.post("/api/batches/{bid}/cancel")
+async def cancel_batch(bid: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    runner = _batch_runners.get(bid)
+    if not runner:
+        _ensure_owner(batch_storage.load(bid), user_id)
+        raise HTTPException(409, "Batch is not running")
+    _ensure_owner(runner.batch, user_id)
+    if not runner.cancel():
+        raise HTTPException(409, "Batch is not in a cancellable state")
+    return runner.snapshot()
 
 
 @app.websocket("/api/batches/{bid}/stream")

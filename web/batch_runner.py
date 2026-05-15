@@ -39,6 +39,8 @@ class BatchRunner:
         self.subscribers: List[asyncio.Queue] = []
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
+        self._cancel_requested = threading.Event()
+        self._children: List[SessionRunner] = []
 
     # ---- subscription API ----
 
@@ -83,10 +85,31 @@ class BatchRunner:
         self._thread = threading.Thread(target=self._run_safe, daemon=True)
         self._thread.start()
 
+    def cancel(self) -> bool:
+        """Request cancellation. Cascades to any in-flight child SessionRunners."""
+        with self._lock:
+            status = self.batch.get("status")
+            if status not in ("pending", "running", "composing_report"):
+                return False
+            children = list(self._children)
+        self._cancel_requested.set()
+        for child in children:
+            try:
+                child.cancel()
+            except Exception:
+                pass
+        return True
+
+    def is_cancelled(self) -> bool:
+        return self._cancel_requested.is_set()
+
     def _run_safe(self) -> None:
         try:
             self._run()
         except Exception as exc:
+            if self._cancel_requested.is_set():
+                self._finalize_cancelled()
+                return
             self._patch(
                 status="failed",
                 error=str(exc),
@@ -94,8 +117,22 @@ class BatchRunner:
                 completed_at=time.time(),
             )
 
+    def _finalize_cancelled(self) -> None:
+        """Mark the batch and any still-pending items as cancelled."""
+        with self._lock:
+            for idx, item in enumerate(self.batch["items"]):
+                if item.get("status") in ("pending", "running"):
+                    item["status"] = "cancelled"
+                    if not item.get("completed_at"):
+                        item["completed_at"] = time.time()
+        self._patch(status="cancelled", completed_at=time.time())
+
     def _run_one(self, idx: int, item: Dict[str, Any]) -> None:
         """Run a single ticker analysis to completion. Called from the worker pool."""
+        if self._cancel_requested.is_set():
+            self._update_item(idx, status="cancelled", completed_at=time.time())
+            return
+
         ticker = item["ticker"]
         form = {**self.batch["config"], "ticker": ticker, "analysis_date": self.batch["analysis_date"]}
         session = build_session(form)
@@ -111,10 +148,22 @@ class BatchRunner:
 
         child = SessionRunner(session, self.loop)
         self.register_session(child)
+        with self._lock:
+            self._children.append(child)
+        # If a cancel landed between the check above and registration, propagate
+        # it to the child immediately so it doesn't waste a graph.stream() call.
+        if self._cancel_requested.is_set():
+            child.cancel()
         child.start()
 
         if child._thread is not None:
             child._thread.join()
+
+        with self._lock:
+            try:
+                self._children.remove(child)
+            except ValueError:
+                pass
 
         final_session = child.snapshot()
         stats = final_session.get("stats") or {}
@@ -168,6 +217,10 @@ class BatchRunner:
         self._broadcast({"type": "totals", "totals": totals, "team_totals": team_acc})
 
     def _run(self) -> None:
+        if self._cancel_requested.is_set():
+            self._finalize_cancelled()
+            return
+
         self._patch(status="running", started_at=time.time())
 
         max_workers = max(1, int(self.batch["config"].get("max_concurrency", 4)))
@@ -175,6 +228,8 @@ class BatchRunner:
 
         if max_workers == 1:
             for idx, item in items:
+                if self._cancel_requested.is_set():
+                    break
                 self._run_one(idx, item)
         else:
             with ThreadPoolExecutor(
@@ -190,11 +245,18 @@ class BatchRunner:
                     except Exception:
                         traceback.print_exc()
 
+        if self._cancel_requested.is_set():
+            self._finalize_cancelled()
+            return
+
         self._patch(status="composing_report")
         try:
             report = self._compose_report()
             self._patch(report=report, status="completed", completed_at=time.time())
         except Exception as exc:
+            if self._cancel_requested.is_set():
+                self._finalize_cancelled()
+                return
             self._patch(
                 status="completed_no_report",
                 report_error=str(exc),

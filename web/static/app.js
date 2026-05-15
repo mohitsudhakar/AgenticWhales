@@ -39,6 +39,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("#agent-modal").addEventListener("click", (e) => {
     if (e.target.id === "agent-modal") closeAgentModal();
   });
+  $("#s-cancel").addEventListener("click", cancelActiveSession);
+  $("#b-cancel").addEventListener("click", cancelActiveBatch);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       closeAgentModal();
@@ -170,6 +172,7 @@ function statusLabel(s) {
   if (s === "running")   return "● live";
   if (s === "completed") return "✓ done";
   if (s === "failed")    return "✕ failed";
+  if (s === "cancelled") return "⊘ cancelled";
   return "queued";
 }
 
@@ -382,6 +385,11 @@ function renderSession() {
   const pill = $("#s-status");
   pill.textContent = s.status;
   pill.className = `status-pill ${s.status}`;
+  const cancelBtn = $("#s-cancel");
+  const cancellable = s.status === "running" || s.status === "pending";
+  cancelBtn.classList.toggle("hidden", !cancellable);
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "Cancel";
   renderSessionStats();
   renderFinal();
   renderAgents();
@@ -390,6 +398,60 @@ function renderSession() {
 function renderSessionStats() {
   $("#s-stats").innerHTML = formatStatsLine(state.session?.stats);
   $("#s-team-timings").innerHTML = formatTeamTimings(state.session?.team_timings);
+}
+
+async function cancelActiveSession() {
+  const id = state.activeSessionId;
+  if (!id) return;
+  if (!confirm("Cancel this analysis? Work done so far will be discarded.")) return;
+  const btn = $("#s-cancel");
+  btn.disabled = true;
+  btn.textContent = "Cancelling…";
+  try {
+    const res = await fetch(`/api/sessions/${id}/cancel`, { method: "POST" });
+    if (!res.ok) {
+      const msg = await res.text();
+      alert(`Cancel failed: ${msg || res.statusText}`);
+      btn.disabled = false;
+      btn.textContent = "Cancel";
+      return;
+    }
+    state.session = await res.json();
+    renderSession();
+    renderSessionList();
+  } catch (e) {
+    console.error("cancel failed:", e);
+    alert(`Cancel failed: ${e.message || e}`);
+    btn.disabled = false;
+    btn.textContent = "Cancel";
+  }
+}
+
+async function cancelActiveBatch() {
+  const id = state.activeBatchId;
+  if (!id) return;
+  if (!confirm("Cancel this basket run? In-flight tickers will stop and remaining tickers will be skipped.")) return;
+  const btn = $("#b-cancel");
+  btn.disabled = true;
+  btn.textContent = "Cancelling…";
+  try {
+    const res = await fetch(`/api/batches/${id}/cancel`, { method: "POST" });
+    if (!res.ok) {
+      const msg = await res.text();
+      alert(`Cancel failed: ${msg || res.statusText}`);
+      btn.disabled = false;
+      btn.textContent = "Cancel";
+      return;
+    }
+    state.batch = await res.json();
+    renderBatch();
+    renderBatchList();
+  } catch (e) {
+    console.error("cancel failed:", e);
+    alert(`Cancel failed: ${e.message || e}`);
+    btn.disabled = false;
+    btn.textContent = "Cancel";
+  }
 }
 
 function formatTeamTimings(timings) {
@@ -456,6 +518,10 @@ function renderFinal() {
     if (s.status === "failed") {
       body.textContent = `Analysis failed: ${s.error || "unknown error"}`;
       tag.textContent = "failed";
+      tag.className = "final-card-tag";
+    } else if (s.status === "cancelled") {
+      body.textContent = "Analysis was cancelled before a recommendation was produced.";
+      tag.textContent = "cancelled";
       tag.className = "final-card-tag";
     } else if (s.status === "running") {
       body.textContent = "Agents are still deliberating…";
@@ -595,7 +661,7 @@ function handleEvent(event) {
     state.session = event.session;
     renderSession();
     loadSessions();      // refresh sidebar status
-    if (event.session.status === "completed" || event.session.status === "failed") {
+    if (["completed", "failed", "cancelled"].includes(event.session.status)) {
       closeWebsocket();
     }
     return;
@@ -703,6 +769,7 @@ function batchStatusLabel(s) {
   if (s === "completed")         return "✓ done";
   if (s === "failed")            return "✕ failed";
   if (s === "completed_no_report") return "✓ partial";
+  if (s === "cancelled")         return "⊘ cancelled";
   return "queued";
 }
 
@@ -945,6 +1012,11 @@ function renderBatch() {
   const pill = $("#b-status");
   pill.textContent = batchStatusLabel(b.status);
   pill.className = `status-pill ${b.status}`;
+  const cancelBtn = $("#b-cancel");
+  const cancellable = ["pending", "running", "composing_report"].includes(b.status);
+  cancelBtn.classList.toggle("hidden", !cancellable);
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "Cancel";
   renderBatchTotals();
   renderBatchItems();
   renderBatchReport();
@@ -1023,6 +1095,10 @@ function renderBatchReport() {
   } else if (b.status === "failed") {
     body.textContent = `Batch failed: ${b.error || "unknown error"}`;
     tag.textContent = "failed";
+  } else if (b.status === "cancelled") {
+    const done = b.items.filter((it) => it.status === "completed" || it.status === "failed").length;
+    body.textContent = `Basket was cancelled. ${done} of ${b.items.length} instruments completed; no consolidated report was generated.`;
+    tag.textContent = "cancelled";
   } else {
     const done = b.items.filter((it) => it.status === "completed" || it.status === "failed").length;
     body.textContent = `${done} of ${b.items.length} instruments analyzed. Report appears once all are done.`;
@@ -1196,7 +1272,7 @@ function handleBatchEvent(event) {
     state.batch = event.batch;
     renderBatch();
     loadBatches();
-    if (["completed", "failed", "completed_no_report"].includes(event.batch.status)) {
+    if (["completed", "failed", "completed_no_report", "cancelled"].includes(event.batch.status)) {
       closeBatchWebsocket();
     }
     return;

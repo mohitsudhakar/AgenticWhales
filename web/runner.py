@@ -81,6 +81,7 @@ class SessionRunner:
         self.subscribers: List[asyncio.Queue] = []
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
+        self._cancel_requested = threading.Event()
 
     # ---- subscription API ----
 
@@ -198,16 +199,37 @@ class SessionRunner:
         self._thread = threading.Thread(target=self._run_safe, daemon=True)
         self._thread.start()
 
+    def cancel(self) -> bool:
+        """Request cancellation. Returns True if the request was accepted."""
+        with self._lock:
+            status = self.session.get("status")
+            if status not in ("pending", "running"):
+                return False
+        self._cancel_requested.set()
+        return True
+
+    def is_cancelled(self) -> bool:
+        return self._cancel_requested.is_set()
+
     def _run_safe(self) -> None:
         try:
             self._run()
         except Exception as exc:
+            # Treat exceptions raised after a cancel as cancellation, not failure
+            # — the inner stream() can blow up arbitrarily when the host process
+            # tears down its session/connection.
+            if self._cancel_requested.is_set():
+                self._finalize_cancelled()
+                return
             self._set_session(
                 status="failed",
                 error=str(exc),
                 error_traceback=traceback.format_exc(),
                 completed_at=time.time(),
             )
+
+    def _finalize_cancelled(self) -> None:
+        self._set_session(status="cancelled", completed_at=time.time())
 
     def _run(self) -> None:
         sel = self.session["config"]
@@ -228,6 +250,10 @@ class SessionRunner:
         graph = AgenticWhalesGraph(
             analysts, config=config, debug=False, callbacks=[stats_handler]
         )
+
+        if self._cancel_requested.is_set():
+            self._finalize_cancelled()
+            return
 
         self._set_session(status="running", started_at=time.time())
         if analysts:
@@ -257,6 +283,9 @@ class SessionRunner:
         }
 
         for chunk in graph.graph.stream(init_state, **args):
+            if self._cancel_requested.is_set():
+                self._finalize_cancelled()
+                return
             for message in chunk.get("messages", []):
                 mid = getattr(message, "id", None)
                 if mid is not None:
