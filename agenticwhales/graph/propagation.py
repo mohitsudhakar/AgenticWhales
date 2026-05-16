@@ -22,6 +22,8 @@ class Propagator:
         past_context: str = "",
         current_position: str = "",
         market_snapshot: str = "",
+        recent_performance: str = "",
+        quant_radar: str = "",
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
         return {
@@ -31,6 +33,8 @@ class Propagator:
             "past_context": past_context,
             "current_position": current_position,
             "market_snapshot": market_snapshot,
+            "recent_performance": recent_performance,
+            "quant_radar": quant_radar,
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",
@@ -59,6 +63,9 @@ class Propagator:
             "fundamentals_report": "",
             "sentiment_report": "",
             "news_report": "",
+            "investment_plan": "",
+            "trader_investment_plan": "",
+            "final_trade_decision": "",
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:

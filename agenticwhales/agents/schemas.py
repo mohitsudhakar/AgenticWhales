@@ -200,10 +200,126 @@ class PortfolioDecision(BaseModel):
         default=None,
         description="Optional target price in the instrument's quote currency.",
     )
+    stop_loss: Optional[float] = Field(
+        default=None,
+        description=(
+            "Recommended stop-loss level in the instrument's quote currency. "
+            "Required for any directional rating (Buy / Overweight / Underweight / "
+            "Sell) — defining an explicit invalidation level improves execution "
+            "quality and gives the post-trade reflector a concrete prediction "
+            "to score against. Leave null only for Hold."
+        ),
+    )
+    take_profit: Optional[float] = Field(
+        default=None,
+        description=(
+            "Recommended take-profit level in the instrument's quote currency. "
+            "Required for any directional rating; the implied risk-reward ratio "
+            "(take_profit vs stop_loss vs current price) should be at least 1.2:1 "
+            "(QuantAgent 2025 default). Leave null only for Hold."
+        ),
+    )
     time_horizon: Optional[str] = Field(
         default=None,
         description="Optional recommended holding period, e.g. '3-6 months'.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Quant Analyst (radar signal)
+# ---------------------------------------------------------------------------
+
+
+class QuantRadar(BaseModel):
+    """6-dimensional structured radar from the Quant Analyst.
+
+    Adapts QuantAgent (Xiong et al. 2025) Figure 2: condenses raw price /
+    indicator data into a compact multi-dimensional signal that downstream
+    synthesizers can read without parsing prose. Each axis is on a 1-10
+    integer scale — coarse enough that small noise doesn't swing it,
+    fine enough to discriminate setups.
+    """
+
+    volatility_risk: int = Field(
+        ge=1, le=10,
+        description=(
+            "Magnitude of recent price fluctuations on a 1-10 scale. "
+            "1 = stable / coiled; 10 = extreme volatility / large gaps. "
+            "Anchor in ATR, Bollinger bandwidth, or realized volatility."
+        ),
+    )
+    sr_strength: int = Field(
+        ge=1, le=10,
+        description=(
+            "Integrity / strength of nearby support and resistance zones, 1-10. "
+            "1 = no defined levels; 10 = multi-tested, structurally strong levels. "
+            "Reference recent swing highs / lows, VWAP, and round-number levels."
+        ),
+    )
+    breakout_likelihood: int = Field(
+        ge=1, le=10,
+        description=(
+            "Probability of price escaping current consolidation, 1-10. "
+            "1 = range-bound and likely to remain; 10 = clear breakout imminent. "
+            "Consider Bollinger band squeeze, declining volatility, and volume buildup."
+        ),
+    )
+    momentum_strength: int = Field(
+        ge=1, le=10,
+        description=(
+            "Speed and persistence of the prevailing price movement, 1-10. "
+            "1 = no momentum / chop; 10 = strong, sustained directional momentum. "
+            "Anchor in MACD histogram, RSI distance from 50, RoC, and slope of EMAs."
+        ),
+    )
+    pattern_reliability: int = Field(
+        ge=1, le=10,
+        description=(
+            "Validity and completion of any active chart pattern, 1-10. "
+            "1 = no recognizable pattern; 10 = textbook-complete formation. "
+            "Examples: double bottom, descending triangle, flag. If no pattern is "
+            "active, score 1."
+        ),
+    )
+    trend_certainty: int = Field(
+        ge=1, le=10,
+        description=(
+            "Clarity and consistency of directional bias, 1-10. "
+            "1 = sideways / undefined; 10 = unambiguous uptrend or downtrend. "
+            "Anchor in 50/200 SMA relationship, fitted support/resistance slopes, "
+            "and absence of failed swings."
+        ),
+    )
+    direction: str = Field(
+        description=(
+            "Net directional bias the radar implies. Exactly one of "
+            "'long', 'short', or 'neutral'."
+        ),
+    )
+    reasoning: str = Field(
+        description=(
+            "Two to four sentences justifying the six scores and the direction "
+            "call. Cite specific indicator readings (e.g. 'RSI 62, MACD histogram "
+            "expanding, ATR at 1.8% of price')."
+        ),
+    )
+
+
+def render_quant_radar(radar: QuantRadar) -> str:
+    """Render a QuantRadar as a compact markdown block for downstream prompts."""
+    lines = [
+        "**Quant Radar (1-10):**",
+        f"- Volatility Risk: {radar.volatility_risk}",
+        f"- S/R Strength: {radar.sr_strength}",
+        f"- Breakout Likelihood: {radar.breakout_likelihood}",
+        f"- Momentum Strength: {radar.momentum_strength}",
+        f"- Pattern Reliability: {radar.pattern_reliability}",
+        f"- Trend Certainty: {radar.trend_certainty}",
+        f"- Direction: **{radar.direction}**",
+        "",
+        f"**Reasoning:** {radar.reasoning}",
+    ]
+    return "\n".join(lines)
 
 
 def render_pm_decision(decision: PortfolioDecision) -> str:
@@ -223,6 +339,10 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
     ]
     if decision.price_target is not None:
         parts.extend(["", f"**Price Target**: {decision.price_target}"])
+    if decision.stop_loss is not None:
+        parts.extend(["", f"**Stop Loss**: {decision.stop_loss}"])
+    if decision.take_profit is not None:
+        parts.extend(["", f"**Take Profit**: {decision.take_profit}"])
     if decision.time_horizon:
         parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
     return "\n".join(parts)

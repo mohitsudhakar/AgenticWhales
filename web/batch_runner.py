@@ -443,7 +443,7 @@ def build_batch(form: Dict[str, Any]) -> Dict[str, Any]:
             "openai_reasoning_effort": form.get("openai_reasoning_effort"),
             "anthropic_effort": form.get("anthropic_effort"),
             "output_language": form.get("output_language", "English"),
-            "analysts": form.get("analysts") or ["market", "social", "news", "fundamentals"],
+            "analysts": form.get("analysts") or ["market", "quant", "social", "news", "fundamentals"],
             "max_concurrency": int(form.get("max_concurrency", 4)),
         },
     }

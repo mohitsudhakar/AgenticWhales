@@ -1,6 +1,11 @@
 
 
-def create_bear_researcher(llm):
+def create_bear_researcher(llm, blind_first_round: bool = False):
+    """Build the Bear Analyst node.
+
+    ``blind_first_round`` enforces independence on the opening turn (see
+    :func:`create_bull_researcher` for the rationale).
+    """
     def bear_node(state) -> dict:
         investment_debate_state = state["investment_debate_state"]
         history = investment_debate_state.get("history", "")
@@ -15,6 +20,20 @@ def create_bear_researcher(llm):
         snapshot_block = (state.get("market_snapshot") or "").strip()
         prefix_parts = [b for b in (snapshot_block, position_block) if b]
         position_prefix = "\n\n".join(prefix_parts) + "\n\n" if prefix_parts else ""
+
+        count = investment_debate_state.get("count", 0)
+        is_blind = blind_first_round and count <= 1
+        if is_blind:
+            history_block = ""
+            opponent_block = (
+                "This is your independent opening — write your bear case based on the "
+                "research alone, without anchoring on any prior bull argument."
+            )
+            engagement_clause = "open the debate by laying out the strongest possible bear case"
+        else:
+            history_block = f"Conversation history of the debate: {history}\n"
+            opponent_block = f"Last bull argument: {current_response}"
+            engagement_clause = "deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock"
 
         prompt = f"""{position_prefix}You are a Bear Analyst making the case against investing in the stock. Your goal is to present a well-reasoned argument emphasizing risks, challenges, and negative indicators. Leverage the provided research and data to highlight potential downsides and counter bullish arguments effectively. If the user already has a position above, frame your bear case as what it implies for that specific position (using the vocabulary listed in the position block).
 
@@ -32,9 +51,8 @@ Market research report: {market_research_report}
 Social media sentiment report: {sentiment_report}
 Latest world affairs news: {news_report}
 Company fundamentals report: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bull argument: {current_response}
-Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock.
+{history_block}{opponent_block}
+Use this information to {engagement_clause}.
 """
 
         response = llm.invoke(prompt)

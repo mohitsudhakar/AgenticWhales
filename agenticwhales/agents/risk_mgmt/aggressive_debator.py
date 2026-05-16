@@ -1,6 +1,13 @@
 
 
-def create_aggressive_debator(llm):
+def create_aggressive_debator(llm, blind_first_round: bool = False):
+    """Build the Aggressive Risk Analyst node.
+
+    ``blind_first_round`` hides peer responses and the prior debate history
+    when the risk debate has just opened (count <= 2, i.e. the first three
+    turns are independent openings from Aggressive, Conservative, Neutral).
+    From round 2 (count >= 3), full peer history is visible for rebuttal.
+    """
     def aggressive_node(state) -> dict:
         risk_debate_state = state["risk_debate_state"]
         history = risk_debate_state.get("history", "")
@@ -20,19 +27,44 @@ def create_aggressive_debator(llm):
         prefix_parts = [b for b in (snapshot_block, position_block) if b]
         position_prefix = "\n\n".join(prefix_parts) + "\n\n" if prefix_parts else ""
 
-        prompt = f"""{position_prefix}As the Aggressive Risk Analyst, your role is to actively champion high-reward, high-risk opportunities, emphasizing bold strategies and competitive advantages. When evaluating the trader's decision or plan, focus intently on the potential upside, growth potential, and innovative benefits—even when these come with elevated risk. Use the provided market data and sentiment analysis to strengthen your arguments and challenge the opposing views. Specifically, respond directly to each point made by the conservative and neutral analysts, countering with data-driven rebuttals and persuasive reasoning. Highlight where their caution might miss critical opportunities or where their assumptions may be overly conservative. If the user has a position above, argue for the most aggressive *delta* to that specific position the data supports — using the vocabulary in the position block. Here is the trader's decision:
+        count = risk_debate_state.get("count", 0)
+        is_blind = blind_first_round and count <= 2
+        if is_blind:
+            peer_block = (
+                "This is your independent opening — make the strongest possible "
+                "case for the aggressive view based solely on the trader's plan and the "
+                "underlying research, without anchoring on what conservative or neutral "
+                "analysts might say."
+            )
+            engagement_clause = (
+                "open the debate by laying out the strongest aggressive position based on the data"
+            )
+        else:
+            peer_block = (
+                f"Here is the current conversation history: {history} "
+                f"Here are the last arguments from the conservative analyst: {current_conservative_response} "
+                f"Here are the last arguments from the neutral analyst: {current_neutral_response}. "
+                "If there are no responses from the other viewpoints yet, present your own argument based on the available data."
+            )
+            engagement_clause = (
+                "Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, "
+                "and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating "
+                "and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal"
+            )
+
+        prompt = f"""{position_prefix}As the Aggressive Risk Analyst, your role is to actively champion high-reward, high-risk opportunities, emphasizing bold strategies and competitive advantages. When evaluating the trader's decision or plan, focus intently on the potential upside, growth potential, and innovative benefits—even when these come with elevated risk. Use the provided market data and sentiment analysis to strengthen your arguments. If the user has a position above, argue for the most aggressive *delta* to that specific position the data supports — using the vocabulary in the position block. Here is the trader's decision:
 
 {trader_decision}
 
-Your task is to create a compelling case for the trader's decision by questioning and critiquing the conservative and neutral stances to demonstrate why your high-reward perspective offers the best path forward. Incorporate insights from the following sources into your arguments:
+Your task is to create a compelling case for the trader's decision. Incorporate insights from the following sources:
 
 Market Research Report: {market_research_report}
 Social Media Sentiment Report: {sentiment_report}
 Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
-Here is the current conversation history: {history} Here are the last arguments from the conservative analyst: {current_conservative_response} Here are the last arguments from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
+{peer_block}
 
-Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting."""
+{engagement_clause}. Output conversationally as if you are speaking without any special formatting."""
 
         response = llm.invoke(prompt)
 

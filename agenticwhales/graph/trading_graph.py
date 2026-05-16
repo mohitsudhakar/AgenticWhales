@@ -52,7 +52,7 @@ class AgenticWhalesGraph:
 
     def __init__(
         self,
-        selected_analysts=["market", "social", "news", "fundamentals"],
+        selected_analysts=["market", "quant", "social", "news", "fundamentals"],
         debug=False,
         config: Dict[str, Any] = None,
         callbacks: Optional[List] = None,
@@ -98,8 +98,18 @@ class AgenticWhalesGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        self.portfolio_manager_llm = self._build_portfolio_manager_llm()
-        
+        # Heterogeneity Mandate (Shehata & Li 2026, Cor. 1): both synthesizers
+        # — Research Manager and Portfolio Manager — should be architecturally
+        # distinct from upstream agents. Build them from the synthesizer
+        # preference list independently so each gets the highest-priority
+        # available provider that differs from upstream.
+        self.research_manager_llm = self._build_diversified_synthesizer_llm("research_manager")
+        self.portfolio_manager_llm = self._build_diversified_synthesizer_llm("portfolio_manager")
+        # Debater diversification: spread Bull/Bear and the three risk
+        # debaters across non-synthesizer providers to break the kinship-
+        # locked upstream pattern (Peer Pressure configurations in Table 1).
+        self.debater_llms = self._build_debater_llms()
+
         self.memory_log = TradingMemoryLog(self.config)
 
         # Create tool nodes
@@ -115,7 +125,10 @@ class AgenticWhalesGraph:
             self.deep_thinking_llm,
             self.tool_nodes,
             self.conditional_logic,
+            research_manager_llm=self.research_manager_llm,
             portfolio_manager_llm=self.portfolio_manager_llm,
+            debater_llms=self.debater_llms,
+            blind_first_round=self.config.get("blind_first_round", False),
         )
 
         self.propagator = Propagator()
@@ -154,10 +167,10 @@ class AgenticWhalesGraph:
 
         return kwargs
 
-    # API-key env var for each provider that can serve as the Portfolio
-    # Manager synthesizer. Used to skip preference-list candidates whose
+    # API-key env var for each provider that can serve as a diversified
+    # synthesizer or debater. Used to skip preference-list candidates whose
     # credentials are not configured.
-    _PM_PROVIDER_ENV_KEY = {
+    _PROVIDER_ENV_KEY = {
         "deepseek": "DEEPSEEK_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "google": "GOOGLE_API_KEY",
@@ -165,57 +178,137 @@ class AgenticWhalesGraph:
         "xai": "XAI_API_KEY",
     }
 
-    def _build_portfolio_manager_llm(self) -> Any:
-        """Return the LLM the Portfolio Manager node should use.
+    def _provider_has_credentials(self, provider: str) -> bool:
+        """True when the provider has API credentials configured."""
+        env_key = self._PROVIDER_ENV_KEY.get(provider.lower())
+        if env_key is None:
+            return True  # unknown providers: trust the caller
+        return bool(os.environ.get(env_key))
 
-        The Portfolio Manager is the swarm's final decision-maker. Shehata &
-        Li (2026) show that synthesizer accuracy is gated by its
-        receptive-logic (Tribalism Coefficient τ) — a synthesizer drawn from
-        the same model family as upstream agents inherits their correlated
-        biases and rubber-stamps consensus errors. So we pick the synthesizer
-        from a configured preference list, skipping any candidate that
-        matches the upstream provider (no diversity gain) or whose API key
-        is not set. Falls back to the default deep-think LLM when no
-        candidate is usable, so missing optional credentials never break a
-        run.
+    def _create_provider_llm(self, provider: str, mode: str = "deep") -> Optional[Any]:
+        """Create an LLM for a provider using the catalog's top model in mode.
+
+        ``mode`` is "deep" or "quick". Returns None if the provider has no
+        catalog entry (e.g. an unusable custom provider) or if credentials
+        are missing.
         """
-        if not self.config.get("diversify_portfolio_manager"):
+        provider = provider.lower()
+        if not self._provider_has_credentials(provider):
+            return None
+        options = MODEL_OPTIONS.get(provider, {}).get(mode) or []
+        if not options:
+            return None
+        model = options[0][1]
+
+        extra: Dict[str, Any] = {}
+        if self.callbacks:
+            extra["callbacks"] = self.callbacks
+        return create_llm_client(
+            provider=provider, model=model, base_url=None, **extra,
+        ).get_llm()
+
+    def _build_diversified_synthesizer_llm(self, role: str) -> Any:
+        """Return the LLM the named synthesizer (research or portfolio mgr) should use.
+
+        Both synthesizers are subject to the Synthesizer Gating Theorem
+        (Shehata & Li 2026, Thm 1) — terminal swarm integrity is gated by
+        the synthesizer's receptive logic (Tribalism Coefficient τ), not by
+        upstream agent quality. A synthesizer drawn from the same model
+        family as upstream agents inherits their correlated biases and the
+        Attention Latch (Λ → 2) collapses the swarm toward μ = 1.0.
+
+        We walk ``synthesizer_provider_preference`` and pick the first
+        provider that (a) differs from the upstream provider (otherwise no
+        diversity gain) and (b) has credentials configured. Falls back to
+        the default deep-think LLM when no candidate is usable, so missing
+        optional credentials never break a run.
+        """
+        if not self.config.get("diversify_synthesizers"):
             return self.deep_thinking_llm
 
         upstream = self.config.get("llm_provider", "").lower()
-        preference = self.config.get("pm_provider_preference") or []
+        preference = self.config.get("synthesizer_provider_preference") or []
 
         for candidate in preference:
             candidate = candidate.lower()
             if candidate == upstream:
                 continue  # same family as upstream — no diversity gain
-            env_key = self._PM_PROVIDER_ENV_KEY.get(candidate)
-            if env_key and not os.environ.get(env_key):
-                continue  # credentials missing
-            deep_options = MODEL_OPTIONS.get(candidate, {}).get("deep") or []
-            if not deep_options:
+            llm = self._create_provider_llm(candidate, mode="deep")
+            if llm is None:
                 continue
-            model = deep_options[0][1]
-
-            extra: Dict[str, Any] = {}
-            if self.callbacks:
-                extra["callbacks"] = self.callbacks
-
             logger.info(
-                "Portfolio Manager diversification active: final decision "
-                "will use %s/%s instead of %s.",
-                candidate, model, upstream,
+                "%s diversification active: synthesizer will use %s (instead of %s).",
+                role, candidate, upstream,
             )
-            return create_llm_client(
-                provider=candidate, model=model, base_url=None, **extra,
-            ).get_llm()
+            return llm
 
         logger.info(
-            "Portfolio Manager diversification: no usable candidate in "
-            "pm_provider_preference (upstream=%s); using default deep-think LLM.",
-            upstream,
+            "%s diversification: no usable candidate in synthesizer_provider_preference "
+            "(upstream=%s); falling back to default deep-think LLM.",
+            role, upstream,
         )
         return self.deep_thinking_llm
+
+    def _build_debater_llms(self) -> Dict[str, Any]:
+        """Return per-debater LLMs keyed by agent name.
+
+        Returns a dict with keys: "bull", "bear", "aggressive", "conservative",
+        "neutral". Each value is an LLM instance to bind to that agent's node.
+        When ``diversify_debaters`` is off or no preference providers are
+        usable, all five fall back to ``quick_thinking_llm`` (the previous
+        behaviour).
+
+        Assignment policy (Shehata & Li 2026, Table 1): assign providers
+        from ``debater_provider_preference`` to break the "Peer Pressure"
+        united-front upstream pattern. Bull and Bear get providers[0] and
+        providers[1 % len]; the three risk debaters cycle through with
+        modular indexing so adjacent debaters in the round-robin never
+        match. Providers with missing credentials are filtered out — if
+        only one remains, debaters within a single team still differ from
+        each other where possible (otherwise they fall back to the upstream
+        quick-thinking LLM for that slot).
+        """
+        default = self.quick_thinking_llm
+        debaters = ["bull", "bear", "aggressive", "conservative", "neutral"]
+        result: Dict[str, Any] = {name: default for name in debaters}
+
+        if not self.config.get("diversify_debaters"):
+            return result
+
+        preference = self.config.get("debater_provider_preference") or []
+        usable: list = []
+        for candidate in preference:
+            candidate = candidate.lower()
+            if not self._provider_has_credentials(candidate):
+                continue
+            llm = self._create_provider_llm(candidate, mode="quick")
+            if llm is None:
+                continue
+            usable.append((candidate, llm))
+
+        if not usable:
+            logger.info(
+                "Debater diversification: no usable providers in "
+                "debater_provider_preference; all debaters use upstream quick LLM."
+            )
+            return result
+
+        # Pair assignment for Bull/Bear (avoid both same provider if 2+ available).
+        # Cycle assignment for the three risk debaters.
+        bull_idx, bear_idx = 0, 1 % len(usable)
+        result["bull"] = usable[bull_idx][1]
+        result["bear"] = usable[bear_idx][1]
+        result["aggressive"] = usable[0 % len(usable)][1]
+        result["conservative"] = usable[1 % len(usable)][1]
+        result["neutral"] = usable[2 % len(usable)][1]
+
+        # Emit a one-line summary of which provider each debater landed on.
+        assignment = {
+            name: next(p for p, llm in usable if llm is result[name])
+            for name in debaters
+        }
+        logger.info("Debater diversification active: %s", assignment)
+        return result
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
@@ -249,6 +342,15 @@ class AgenticWhalesGraph:
                     get_balance_sheet,
                     get_cashflow,
                     get_income_statement,
+                ]
+            ),
+            "quant": ToolNode(
+                [
+                    # Quant Analyst shares price + indicator tools with the
+                    # market analyst — its output shape (6-dim radar) is the
+                    # differentiator, not the inputs.
+                    get_stock_data,
+                    get_indicators,
                 ]
             ),
         }
@@ -371,7 +473,18 @@ class AgenticWhalesGraph:
         from agenticwhales import portfolio as _portfolio
         from agenticwhales.market_snapshot import fetch_snapshot_block as _fetch_snap
 
-        past_context = self.memory_log.get_past_context(company_name)
+        # Layered scored retrieval when the per-layer budget is configured,
+        # else the legacy count-based context. The scored path returns
+        # top-K per layer (FinMem optimum K=5) using recency + relevance +
+        # importance, and bumps access counters for retrieved entries.
+        top_k = self.config.get("memory_top_k_per_layer")
+        if top_k:
+            past_context = self.memory_log.get_scored_context(
+                company_name, top_k_per_layer=top_k,
+            )
+        else:
+            past_context = self.memory_log.get_past_context(company_name)
+        recent_performance = self.memory_log.get_recent_performance_block(company_name)
         current_position = _portfolio.format_for_prompt(company_name)
         market_snapshot = _fetch_snap(company_name, trade_date)
         init_agent_state = self.propagator.create_initial_state(
@@ -380,6 +493,7 @@ class AgenticWhalesGraph:
             past_context=past_context,
             current_position=current_position,
             market_snapshot=market_snapshot,
+            recent_performance=recent_performance,
         )
         args = self.propagator.get_graph_args()
 
@@ -413,6 +527,12 @@ class AgenticWhalesGraph:
             final_trade_decision=final_state["final_trade_decision"],
         )
 
+        # Periodic extended reflection: every N trading days, synthesize
+        # recent immediate reflections into a deep-layer lesson (Yu et al.
+        # 2023 §3.2.1). Cheap when the window is empty — one LLM call only
+        # when actually triggered.
+        self._maybe_run_extended_reflection(trade_date)
+
         # Clear checkpoint on successful completion to avoid stale state.
         if self.config.get("checkpoint_enabled"):
             clear_checkpoint(
@@ -420,6 +540,55 @@ class AgenticWhalesGraph:
             )
 
         return final_state, self.process_signal(final_state["final_trade_decision"])
+
+    def _maybe_run_extended_reflection(self, trade_date) -> None:
+        """Run an M-day retrospective when enough days have elapsed.
+
+        Cadence is controlled by ``extended_reflection_interval_days``
+        (None disables the pass). The retrospective window is set by
+        ``extended_reflection_window_days``.
+        """
+        interval = self.config.get("extended_reflection_interval_days")
+        if not interval:
+            return
+
+        since = self.memory_log.days_since_last_extended_reflection()
+        # Either never run before, or enough time has passed.
+        if since is not None and since < interval:
+            return
+
+        window = self.config.get("extended_reflection_window_days", 30)
+        all_entries = [
+            e for e in self.memory_log.load_entries()
+            if not e.get("pending") and e.get("ticker") != "_EXTENDED_"
+        ]
+        if not all_entries:
+            return
+
+        try:
+            cutoff = datetime.strptime(str(trade_date), "%Y-%m-%d") - timedelta(days=window)
+            recent = [
+                e for e in all_entries
+                if datetime.strptime(e["date"], "%Y-%m-%d") >= cutoff
+            ]
+        except ValueError:
+            recent = all_entries[-10:]  # safe fallback
+
+        if not recent:
+            return
+
+        try:
+            content = self.reflector.extended_reflection(recent)
+        except Exception as e:
+            logger.warning("Extended reflection failed (%s); skipping this cycle.", e)
+            return
+
+        if content and content.strip():
+            self.memory_log.store_extended_reflection(str(trade_date), content.strip())
+            logger.info(
+                "Stored extended reflection covering %d entries over the last %d days.",
+                len(recent), window,
+            )
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""

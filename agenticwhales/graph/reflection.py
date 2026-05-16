@@ -1,6 +1,6 @@
 # AgenticWhales/graph/reflection.py
 
-from typing import Any
+from typing import Any, List
 
 
 class Reflector:
@@ -10,6 +10,7 @@ class Reflector:
         """Initialize the reflector with an LLM."""
         self.quick_thinking_llm = quick_thinking_llm
         self.log_reflection_prompt = self._get_log_reflection_prompt()
+        self.extended_reflection_prompt = self._get_extended_reflection_prompt()
 
     def _get_log_reflection_prompt(self) -> str:
         """Concise prompt for reflect_on_final_decision (Phase B log entries).
@@ -27,6 +28,58 @@ class Reflector:
             "Be specific and terse. Your output will be stored verbatim in a decision log "
             "and re-read by future analysts, so every word must earn its place."
         )
+
+    def _get_extended_reflection_prompt(self) -> str:
+        """Prompt for the M-day retrospective (Yu et al. 2023 §3.2.1).
+
+        Synthesizes recent immediate reflections into a higher-order
+        lesson that goes into the deep memory layer. The output is
+        re-read by future analyses, so it must be terse and
+        pattern-oriented rather than episodic.
+        """
+        return (
+            "You are a trading analyst writing a multi-day retrospective. "
+            "You will be shown a window of recent (resolved) decisions and "
+            "the post-outcome reflections written for each. Your job is "
+            "to find the PATTERN across them — the recurring mistakes, "
+            "the recurring wins, and the conditions that distinguish them.\n\n"
+            "Write 3-5 sentences of plain prose (no bullets, no headers).\n\n"
+            "Cover, in order:\n"
+            "1. The dominant pattern in correct calls vs. wrong calls "
+            "(what conditions or evidence types separate them).\n"
+            "2. One mistake you keep making, named concretely.\n"
+            "3. One operating heuristic to apply going forward.\n\n"
+            "This goes into the deep memory layer and will be retrieved "
+            "across many future analyses — every word must earn its place."
+        )
+
+    def extended_reflection(self, recent_entries: List[dict]) -> str:
+        """Produce an M-day retrospective from a window of resolved entries.
+
+        Used by the periodic extended-reflection pass. ``recent_entries``
+        is the list of resolved memory entries (as returned by
+        ``TradingMemoryLog.load_entries``) inside the configured window.
+        """
+        if not recent_entries:
+            return ""
+        lines = []
+        for e in recent_entries:
+            tag = (
+                f"[{e.get('date', '?')} | {e.get('ticker', '?')} | "
+                f"{e.get('rating', '?')} | "
+                f"raw {e.get('raw') or 'n/a'} | alpha {e.get('alpha') or 'n/a'}]"
+            )
+            reflection = e.get("reflection") or "(no reflection)"
+            lines.append(f"{tag}\nReflection: {reflection}")
+        window = "\n\n".join(lines)
+        messages = [
+            ("system", self.extended_reflection_prompt),
+            (
+                "human",
+                f"Window of {len(recent_entries)} recent resolved decisions:\n\n{window}",
+            ),
+        ]
+        return self.quick_thinking_llm.invoke(messages).content
 
     def reflect_on_final_decision(
         self,

@@ -73,3 +73,5 @@ class AgentState(MessagesState):
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
     current_position: Annotated[str, "Optional pre-formatted description of the user's current position in this instrument (empty when flat)"]
     market_snapshot: Annotated[str, "Pre-formatted directive block with the latest close + recent OHLC range, injected at run start to anchor agent prompts against price hallucination"]
+    recent_performance: Annotated[str, "Pre-formatted block summarising recent same-ticker outcomes (used by Portfolio Manager for self-adaptive risk; empty when no history)"]
+    quant_radar: Annotated[str, "Optional pre-formatted radar block from the Quant Analyst (6-dim signal: volatility, S/R, breakout, momentum, pattern, trend). Empty when the quant analyst is not selected."]

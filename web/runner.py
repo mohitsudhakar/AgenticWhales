@@ -22,10 +22,11 @@ from . import storage
 
 # ---- Mirrors cli/main.py MessageBuffer mappings ----
 
-ANALYST_ORDER = ["market", "social", "news", "fundamentals"]
+ANALYST_ORDER = ["market", "quant", "social", "news", "fundamentals"]
 
 ANALYST_AGENT_NAMES = {
     "market": "Market Analyst",
+    "quant": "Quant Analyst",
     "social": "Social Analyst",
     "news": "News Analyst",
     "fundamentals": "Fundamentals Analyst",
@@ -33,6 +34,7 @@ ANALYST_AGENT_NAMES = {
 
 ANALYST_REPORT_MAP = {
     "market": "market_report",
+    "quant": "quant_radar",
     "social": "sentiment_report",
     "news": "news_report",
     "fundamentals": "fundamentals_report",

@@ -19,29 +19,57 @@ class GraphSetup:
         deep_thinking_llm: Any,
         tool_nodes: Dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
+        research_manager_llm: Optional[Any] = None,
         portfolio_manager_llm: Optional[Any] = None,
+        debater_llms: Optional[Dict[str, Any]] = None,
+        blind_first_round: bool = False,
     ):
         """Initialize with required components.
 
-        ``portfolio_manager_llm`` lets the caller supply a different model
-        for the final decision-maker (architectural diversity reduces
-        correlated failures vs. running every agent on one model family).
-        Falls back to ``deep_thinking_llm`` when not provided.
+        ``research_manager_llm`` and ``portfolio_manager_llm`` let the caller
+        supply different models for each synthesizer; falls back to
+        ``deep_thinking_llm`` when not provided.
+
+        ``debater_llms`` is an optional dict keyed by debater name
+        (``"bull"``, ``"bear"``, ``"aggressive"``, ``"conservative"``,
+        ``"neutral"``) mapping each agent to its bound LLM. Missing entries
+        fall back to ``quick_thinking_llm``.
+
+        Architectural diversity at both synthesizers and across the upstream
+        debaters reduces correlated failures (Shehata & Li 2026,
+        Heterogeneity Mandate) versus running every agent on one model
+        family.
         """
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
+        self.research_manager_llm = research_manager_llm or deep_thinking_llm
         self.portfolio_manager_llm = portfolio_manager_llm or deep_thinking_llm
 
+        debater_llms = debater_llms or {}
+        self.bull_llm = debater_llms.get("bull", quick_thinking_llm)
+        self.bear_llm = debater_llms.get("bear", quick_thinking_llm)
+        self.aggressive_llm = debater_llms.get("aggressive", quick_thinking_llm)
+        self.conservative_llm = debater_llms.get("conservative", quick_thinking_llm)
+        self.neutral_llm = debater_llms.get("neutral", quick_thinking_llm)
+
+        # When True, round 1 of each debate hides the opponents' arguments
+        # and prior debate history — each debater writes its opening
+        # independently. From round 2 onward, full history is visible for
+        # genuine rebuttal. Preserves the independence condition for
+        # crowd-wisdom on the prior.
+        self.blind_first_round = blind_first_round
+
     def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
+        self, selected_analysts=["market", "quant", "social", "news", "fundamentals"]
     ):
         """Set up and compile the agent workflow graph.
 
         Args:
             selected_analysts (list): List of analyst types to include. Options are:
                 - "market": Market analyst
+                - "quant": Quant Analyst (QuantAgent 2025-style 6-dim radar)
                 - "social": Social media analyst
                 - "news": News analyst
                 - "fundamentals": Fundamentals analyst
@@ -82,16 +110,42 @@ class GraphSetup:
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
-        # Create researcher and manager nodes
-        bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
-        bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
-        research_manager_node = create_research_manager(self.deep_thinking_llm)
+        if "quant" in selected_analysts:
+            # Quant Analyst produces a structured 6-dim radar (QuantAgent
+            # 2025-style). Uses the same price + indicator tools as the
+            # market analyst; final output is a typed QuantRadar.
+            analyst_nodes["quant"] = create_quant_analyst(
+                self.quick_thinking_llm
+            )
+            delete_nodes["quant"] = create_msg_delete()
+            tool_nodes["quant"] = self.tool_nodes["quant"]
+
+        # Create researcher and manager nodes.
+        # Bull/Bear may be on different model families when debater
+        # diversification is on (breaks the kinship-locked upstream pattern
+        # — Shehata & Li 2026 Table 1, Peer Pressure configurations).
+        bull_researcher_node = create_bull_researcher(
+            self.bull_llm, blind_first_round=self.blind_first_round
+        )
+        bear_researcher_node = create_bear_researcher(
+            self.bear_llm, blind_first_round=self.blind_first_round
+        )
+        research_manager_node = create_research_manager(self.research_manager_llm)
         trader_node = create_trader(self.quick_thinking_llm)
 
-        # Create risk analysis nodes
-        aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
-        neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
-        conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
+        # Create risk analysis nodes. Each debater gets its own bound LLM
+        # so the three perspectives are sourced from different model
+        # families; the Portfolio Manager synthesizes from a fourth
+        # (architecturally distinct) family.
+        aggressive_analyst = create_aggressive_debator(
+            self.aggressive_llm, blind_first_round=self.blind_first_round
+        )
+        neutral_analyst = create_neutral_debator(
+            self.neutral_llm, blind_first_round=self.blind_first_round
+        )
+        conservative_analyst = create_conservative_debator(
+            self.conservative_llm, blind_first_round=self.blind_first_round
+        )
         portfolio_manager_node = create_portfolio_manager(self.portfolio_manager_llm)
 
         # Create workflow

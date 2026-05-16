@@ -1,6 +1,16 @@
 
 
-def create_bull_researcher(llm):
+def create_bull_researcher(llm, blind_first_round: bool = False):
+    """Build the Bull Analyst node.
+
+    ``blind_first_round`` enforces independence on the opening turn: when
+    True and the debate has just started (count <= 1, i.e. this is Bull's
+    opening or Bear's reply right after Bull opens), the prompt hides the
+    prior debate history and the opponent's last argument. Bull writes its
+    opening from research alone — preserving the independence condition
+    for crowd-wisdom on the prior, per Shehata & Li (2026). From round 2,
+    full history is visible for genuine rebuttal.
+    """
     def bull_node(state) -> dict:
         investment_debate_state = state["investment_debate_state"]
         history = investment_debate_state.get("history", "")
@@ -16,6 +26,20 @@ def create_bull_researcher(llm):
         prefix_parts = [b for b in (snapshot_block, position_block) if b]
         position_prefix = "\n\n".join(prefix_parts) + "\n\n" if prefix_parts else ""
 
+        count = investment_debate_state.get("count", 0)
+        is_blind = blind_first_round and count <= 1
+        if is_blind:
+            history_block = ""
+            opponent_block = (
+                "This is your independent opening — write your bull case based on the "
+                "research alone, without anchoring on any prior bear argument."
+            )
+            engagement_clause = "open the debate by laying out the strongest possible bull case"
+        else:
+            history_block = f"Conversation history of the debate: {history}\n"
+            opponent_block = f"Last bear argument: {current_response}"
+            engagement_clause = "deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position"
+
         prompt = f"""{position_prefix}You are a Bull Analyst advocating for investing in the stock. Your task is to build a strong, evidence-based case emphasizing growth potential, competitive advantages, and positive market indicators. Leverage the provided research and data to address concerns and counter bearish arguments effectively. If the user already has a position above, frame your bull case as what it implies for that specific position (using the vocabulary listed in the position block).
 
 Key points to focus on:
@@ -30,9 +54,8 @@ Market research report: {market_research_report}
 Social media sentiment report: {sentiment_report}
 Latest world affairs news: {news_report}
 Company fundamentals report: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bear argument: {current_response}
-Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position.
+{history_block}{opponent_block}
+Use this information to {engagement_clause}.
 """
 
         response = llm.invoke(prompt)
