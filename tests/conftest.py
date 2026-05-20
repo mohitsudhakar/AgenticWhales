@@ -31,6 +31,26 @@ def _dummy_api_keys(monkeypatch):
         monkeypatch.setenv(env_var, os.environ.get(env_var, "placeholder"))
 
 
+# Unit tests must never hit the real Supabase. The integration suite under
+# tests/integ/ uses testcontainers and opts in via `@pytest.mark.integration`.
+# If the developer has real creds in `.env` (recommended for the running
+# server), strip them during unit-test collection so `_db_writable()` returns
+# False and `_memstore` is the source of truth.
+_FORCE_OFFLINE_ENV_VARS = (
+    "AGENTICWHALES_SUPABASE_URL",
+    "AGENTICWHALES_SUPABASE_ANON_KEY",
+    "AGENTICWHALES_SUPABASE_SERVICE_KEY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _force_offline_supabase(monkeypatch, request):
+    if "integration" in request.keywords:
+        return  # the integration suite manages its own DB lifecycle
+    for env_var in _FORCE_OFFLINE_ENV_VARS:
+        monkeypatch.delenv(env_var, raising=False)
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

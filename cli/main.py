@@ -39,6 +39,38 @@ app = typer.Typer(
     add_completion=True,  # Enable shell completion
 )
 
+# Phase 1 sub-apps — registered eagerly so `agenticwhales recipe ...`,
+# `agenticwhales paper ...`, `agenticwhales cost ...` work alongside the
+# existing top-level `analyze` flow.
+try:
+    from cli import cost as _cost_app
+    from cli import paper as _paper_app
+    from cli import recipes as _recipes_app
+
+    app.add_typer(_recipes_app.app, name="recipe")
+    app.add_typer(_paper_app.app, name="paper")
+    app.add_typer(_cost_app.app, name="cost")
+except Exception as _exc:  # pragma: no cover - defensive
+    # Don't break the existing CLI if Phase 1 wiring fails to import.
+    import logging as _log
+    _log.getLogger(__name__).warning("phase 1 CLI sub-apps not loaded: %s", _exc)
+
+# Phase 3 backtest sub-app — registered separately so a missing yfinance /
+# pandas dep doesn't break the rest of the Phase 1 CLI.
+try:
+    from cli import backtest as _backtest_app
+    app.add_typer(_backtest_app.app, name="backtest")
+except Exception as _exc:  # pragma: no cover - defensive
+    import logging as _log
+    _log.getLogger(__name__).warning("phase 3 backtest CLI not loaded: %s", _exc)
+
+try:
+    from cli import stream as _stream_app
+    app.add_typer(_stream_app.app, name="stream")
+except Exception as _exc:  # pragma: no cover - defensive
+    import logging as _log
+    _log.getLogger(__name__).warning("phase 3 stream CLI not loaded: %s", _exc)
+
 
 # Create a deque to store recent messages with a maximum length
 class MessageBuffer:
@@ -1165,7 +1197,10 @@ def run_analysis(checkpoint: bool = False):
 
         # Get final state and decision
         final_state = trace[-1]
-        decision = graph.process_signal(final_state["final_trade_decision"])
+        decision = graph.process_signal(
+            final_state["final_trade_decision"],
+            final_state.get("pm_decision"),
+        )
 
         # Update all agent statuses to completed
         for agent in message_buffer.agent_status:

@@ -30,6 +30,11 @@ dependencies = [
     "tqdm>=4.67.1",
     "typing-extensions>=4.14.0",
     "yfinance>=0.2.63",
+    # Phase 1: autonomy + observability
+    "apscheduler>=3.10",
+    "exchange-calendars>=4.5",
+    "prometheus-client>=0.20",
+    "structlog>=24.1",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +42,12 @@ web = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "python-dotenv>=1.0.0",
+]
+# Integration test deps — only needed when running `pytest -m integration`
+# (real Postgres via testcontainers). Default unit-test runs don't pull these.
+integration = [
+    "testcontainers[postgres]>=4.7",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.scripts]
@@ -52,11 +63,15 @@ web = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+# Default pytest run excludes integration tests (need Docker + the
+# `integration` extras) and eval harnesses (LLM cost + slow). Explicitly
+# opt in via `pytest -m integration` or `pytest tests/evals -m eval`.
+addopts = "-ra --strict-markers -m 'not integration and not eval'"
 markers = [
     "unit: fast isolated unit tests",
     "integration: tests requiring external services",
     "smoke: quick sanity-check tests",
+    "eval: measurement harnesses (diversity engine, layered memory, etc.) — slow, may call LLMs",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

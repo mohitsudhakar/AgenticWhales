@@ -36,9 +36,10 @@ class GraphSetup:
         fall back to ``quick_thinking_llm``.
 
         Architectural diversity at both synthesizers and across the upstream
-        debaters reduces correlated failures (Shehata & Li 2026,
-        Heterogeneity Mandate) versus running every agent on one model
-        family.
+        debaters is a design heuristic to reduce correlated failures
+        compared with running every agent on one model family — same-family
+        agents tend to share priors and converge on a united front. The
+        empirical claim is measured by tests/evals/diversity_engine_eval.py.
         """
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
@@ -122,8 +123,8 @@ class GraphSetup:
 
         # Create researcher and manager nodes.
         # Bull/Bear may be on different model families when debater
-        # diversification is on (breaks the kinship-locked upstream pattern
-        # — Shehata & Li 2026 Table 1, Peer Pressure configurations).
+        # diversification is on (avoids the all-same-family upstream
+        # united-front pattern; see default_config.py for the rationale).
         bull_researcher_node = create_bull_researcher(
             self.bull_llm, blind_first_round=self.blind_first_round
         )

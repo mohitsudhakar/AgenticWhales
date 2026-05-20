@@ -7,9 +7,9 @@ def create_bull_researcher(llm, blind_first_round: bool = False):
     True and the debate has just started (count <= 1, i.e. this is Bull's
     opening or Bear's reply right after Bull opens), the prompt hides the
     prior debate history and the opponent's last argument. Bull writes its
-    opening from research alone — preserving the independence condition
-    for crowd-wisdom on the prior, per Shehata & Li (2026). From round 2,
-    full history is visible for genuine rebuttal.
+    opening from research alone, so the first round captures two
+    independent priors rather than two anchored-on-each-other priors.
+    From round 2, full history is visible for genuine rebuttal.
     """
     def bull_node(state) -> dict:
         investment_debate_state = state["investment_debate_state"]

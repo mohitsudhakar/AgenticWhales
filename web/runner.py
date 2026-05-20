@@ -13,6 +13,15 @@ from typing import Any, Dict, List, Optional, Tuple
 from agenticwhales.default_config import DEFAULT_CONFIG
 from agenticwhales.graph.trading_graph import AgenticWhalesGraph
 from agenticwhales import portfolio
+from agenticwhales.agents.schemas import (
+    GuardOutcome,
+    OrderSide,
+    OutputPolicy,
+    PaperAccount,
+    PaperPosition,
+    PortfolioDecision,
+    PortfolioRating,
+)
 from agenticwhales.market_snapshot import fetch_snapshot_block
 
 from cli.stats_handler import StatsCallbackHandler
@@ -233,6 +242,467 @@ class SessionRunner:
     def _finalize_cancelled(self) -> None:
         self._set_session(status="cancelled", completed_at=time.time())
 
+    # ---- Phase 1 post-decision hook ----
+
+    def _post_decision_hook(self) -> None:
+        """After a recipe-fired session completes, drive RiskGuard + paper-trade.
+
+        Honors the recipe's `output_policy`:
+          - "notify" / "assist_only" — no order, no event.
+          - "alert_conviction" — broadcast a "conviction_alert" WS event if
+            the conviction score crosses the recipe's threshold; no order.
+          - "paper_trade" — RiskGuard.evaluate → place_order → record conviction.
+
+        For ad-hoc sessions (no recipe_id), records a conviction score against
+        the user's portfolio but does NOT place orders — paper-trade is recipe-
+        scoped only.
+        """
+        from agenticwhales import paper, risk as risk_mod, recipes as recipes_mod
+        from agenticwhales.audit import impersonate
+        from agenticwhales.observability import METRICS
+        from . import auth
+
+        pm_dict = self.session.get("pm_decision")
+        if not pm_dict:
+            return  # No structured decision (free-text fallback fired).
+
+        user_id = self.session.get("user_id")
+        if not user_id:
+            return
+
+        decision = PortfolioDecision.model_validate(pm_dict)
+        ticker = self.session["ticker"].upper()
+        recipe_id = self.session.get("recipe_id")
+        fire_id = self.session.get("fire_id") or self.session["id"]
+        session_id = self.session["id"]
+
+        # Pull recipe (if any) for output_policy + conviction_threshold.
+        recipe = recipes_mod.load(recipe_id) if recipe_id else None
+        output_policy = (
+            OutputPolicy(recipe.output_policy.value)
+            if recipe and hasattr(recipe.output_policy, "value")
+            else OutputPolicy(recipe.output_policy) if recipe
+            else OutputPolicy.NOTIFY
+        )
+        conviction = paper.score_from_decision(decision)
+
+        # Always record the conviction score — useful timeseries for the UI.
+        auth.insert_conviction_score({
+            "user_id": user_id,
+            "recipe_id": recipe_id,
+            "session_id": session_id,
+            "ticker": ticker,
+            "rating": decision.rating.value if hasattr(decision.rating, "value") else str(decision.rating),
+            "conviction_score": conviction,
+            "expected_return_pct": decision.expected_return_pct,
+            "expected_volatility_pct": decision.expected_volatility_pct,
+            "prob_of_profit": decision.prob_of_profit,
+            "recorded_at": datetime.utcnow().isoformat(),
+        })
+
+        # Phase 2: auto-draft a journal entry on every completed session.
+        # The user can open, edit, and commit it (flipping is_draft=false) on
+        # /fund. Drafts are the cheapest entry point into the journaling
+        # habit — there's something there waiting, not a blank page.
+        try:
+            self._auto_draft_journal(
+                user_id=user_id, session_id=session_id, recipe_id=recipe_id,
+                decision=decision, ticker=ticker, conviction=conviction,
+            )
+        except Exception:
+            traceback.print_exc()
+
+        # Notify-only / assist-only: stop here.
+        if output_policy in (OutputPolicy.NOTIFY, OutputPolicy.ASSIST_ONLY):
+            return
+
+        if output_policy == OutputPolicy.ALERT_CONVICTION:
+            threshold = recipe.conviction_threshold if recipe else 7
+            if conviction >= threshold:
+                self._broadcast({
+                    "type": "conviction_alert",
+                    "ticker": ticker,
+                    "rating": decision.rating.value if hasattr(decision.rating, "value") else str(decision.rating),
+                    "conviction_score": conviction,
+                    "threshold": threshold,
+                })
+            return
+
+        # paper_trade policy: gate → size → place. Everything inside the
+        # impersonation block is audit-logged.
+        from agenticwhales.audit import impersonate
+        impersonation = impersonate(user_id, "scheduler_fire", fire_id=fire_id)
+        token = impersonation.__enter__()
+        try:
+            self._do_paper_trade(
+                token=token, decision=decision, ticker=ticker, conviction=conviction,
+                recipe_id=recipe_id, fire_id=fire_id, session_id=session_id,
+            )
+        finally:
+            impersonation.__exit__(None, None, None)
+
+    def _do_paper_trade(
+        self,
+        token,
+        decision: PortfolioDecision,
+        ticker: str,
+        conviction: int,
+        recipe_id: Optional[str],
+        fire_id: str,
+        session_id: str,
+    ) -> None:
+        from agenticwhales import behavioral, paper, risk as risk_mod
+        from agenticwhales.observability import METRICS
+        from . import auth
+
+        user_id = token.user_id
+
+        # Phase 2 #5: tilt/revenge cooldown circuit-breaker. Opt-in. If the
+        # user has consented AND a tilt/revenge finding fired in the last 60
+        # min, block this order with a `tilt_cooldown` risk event. Detection
+        # itself runs by default; the *action* (blocking) is gated.
+        cooldown_finding = behavioral.cooldown_in_effect(user_id)
+        if cooldown_finding:
+            risk_mod.record_event(
+                token, recipe_id=recipe_id, session_id=session_id, ticker=ticker,
+                rule="tilt_cooldown",
+                details={
+                    "pattern": cooldown_finding.get("pattern"),
+                    "severity": cooldown_finding.get("severity"),
+                    "summary": (cooldown_finding.get("evidence") or {}).get("summary"),
+                    "cooldown_minutes": behavioral.COOLDOWN_MIN,
+                },
+            )
+            self._broadcast({
+                "type": "risk_event", "rule": "tilt_cooldown",
+                "ticker": ticker, "pattern": cooldown_finding.get("pattern"),
+            })
+            return
+
+        limits_row = auth.load_risk_limits(user_id) or auth._default_risk_limits_row(user_id)
+        limits = risk_mod.RiskLimits(
+            max_position_pct=float(limits_row.get("max_position_pct", 0.10)),
+            max_daily_drawdown_pct=float(limits_row.get("max_daily_drawdown_pct", 0.03)),
+            max_slippage_bps=int(limits_row.get("max_slippage_bps", 10)),
+            kelly_fraction_cap=float(limits_row.get("kelly_fraction_cap", 0.10)),
+            global_kill_switch=bool(limits_row.get("global_kill_switch", False)),
+            allow_shorts=bool(limits_row.get("allow_shorts", False)),
+        )
+
+        account_row = auth.load_paper_account(user_id) or {
+            "user_id": user_id,
+            "cash": paper.DEFAULT_STARTING_CASH,
+            "starting_cash": paper.DEFAULT_STARTING_CASH,
+            "realized_pnl": 0.0,
+            "short_collateral_reserved": 0.0,
+            "nav_open_today": None,
+            "nav_open_today_date": None,
+        }
+        account = PaperAccount(
+            user_id=user_id,
+            starting_cash=float(account_row.get("starting_cash", paper.DEFAULT_STARTING_CASH)),
+            cash=float(account_row["cash"]),
+            short_collateral_reserved=float(account_row.get("short_collateral_reserved", 0.0)),
+            realized_pnl=float(account_row.get("realized_pnl", 0.0)),
+            nav_open_today=float(account_row["nav_open_today"]) if account_row.get("nav_open_today") else None,
+            nav_open_today_date=account_row.get("nav_open_today_date"),
+        )
+
+        position_rows = auth.list_paper_positions(user_id)
+        positions = [
+            PaperPosition(
+                user_id=user_id, ticker=r["ticker"], qty=float(r["qty"]),
+                avg_cost=float(r["avg_cost"]),
+                last_price=float(r["last_price"]) if r.get("last_price") is not None else None,
+            ) for r in position_rows
+        ]
+
+        last_price = self._latest_price_for(ticker)
+        sizing = paper.kelly_sizing(
+            decision, nav=account.cash + sum(p.qty * (p.last_price or p.avg_cost) for p in positions),
+            last_price=last_price,
+            kelly_fraction_cap=limits.kelly_fraction_cap,
+            user_id=user_id,                    # Phase 2 #3: apply calibration if opted in
+        )
+
+        if sizing.qty == 0:
+            # Demis review D2/D9 — surface the *reason* the system abstained.
+            # Otherwise a user firing a recipe with output_policy='paper_trade'
+            # sees no order land and has no way to debug whether (a) Kelly
+            # said no bet, (b) PM scalars were missing, (c) rating was Hold,
+            # or (d) last_price lookup returned 0.
+            reason = self._abstain_reason(decision, sizing, last_price)
+            risk_mod.record_event(
+                token, recipe_id=recipe_id, session_id=session_id, ticker=ticker,
+                rule="abstain",
+                details={
+                    "reason": reason,
+                    "rating": decision.rating.value if hasattr(decision.rating, "value") else str(decision.rating),
+                    "prob_of_profit": decision.prob_of_profit,
+                    "expected_return_pct": decision.expected_return_pct,
+                    "expected_volatility_pct": decision.expected_volatility_pct,
+                    "kelly_fraction": sizing.fraction,
+                    "last_price": last_price,
+                },
+            )
+            self._broadcast({
+                "type": "risk_event", "rule": "abstain",
+                "ticker": ticker, "reason": reason,
+            })
+            return
+
+    def _auto_draft_journal(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        recipe_id: Optional[str],
+        decision: PortfolioDecision,
+        ticker: str,
+        conviction: int,
+    ) -> None:
+        """Compose a journal-entry draft from the PM decision the user can
+        edit + commit. The draft text is intentionally bullet-y rather than
+        prose — gives the user a scaffold without putting words in their
+        mouth.
+
+        Drafts are deduplicated per session: if one already exists for this
+        session, we don't write another."""
+        import uuid as _uuid
+        from . import auth
+
+        existing = auth.list_journal_entries(
+            user_id, session_id=session_id, kind="auto_draft", limit=1,
+        )
+        if existing:
+            return
+
+        rating = decision.rating.value if hasattr(decision.rating, "value") else str(decision.rating)
+        lines = [
+            f"## {ticker} — {rating} (conviction {conviction}/10)",
+            "",
+            "**The fund's read:**",
+            "- " + (decision.executive_summary or "(no executive summary)").replace("\n", "\n  ").strip(),
+            "",
+            "**Key scalars:**",
+            f"- Expected return: {decision.expected_return_pct}%" if decision.expected_return_pct is not None else "- Expected return: not provided",
+            f"- Volatility: {decision.expected_volatility_pct}% annualized" if decision.expected_volatility_pct is not None else "- Volatility: not provided",
+            f"- Probability of profit: {decision.prob_of_profit:.0%}" if decision.prob_of_profit is not None else "- Probability of profit: not provided",
+            f"- Expected hold: {decision.expected_hold_days} days" if decision.expected_hold_days is not None else "- Expected hold: not provided",
+            "",
+            "**Your read:** _replace with what you actually think — agree, disagree, what you'd do differently._",
+        ]
+        now = datetime.utcnow().isoformat()
+        auth.save_journal_entry({
+            "id": _uuid.uuid4().hex,
+            "user_id": user_id,
+            "session_id": session_id,
+            "paper_order_id": None,
+            "thesis_id": recipe_id,
+            "kind": "auto_draft",
+            "body": "\n".join(lines),
+            "sentiment_score": None,
+            "is_draft": True,
+            "created_at": now,
+            "updated_at": now,
+        })
+
+    def _maybe_apply_adaptive_depth(self, config: dict) -> None:
+        """Phase 2 #9. Run a 3-sample quick-model pre-pass; escalate this
+        fire if the samples disagree above the user's threshold.
+
+        Skips entirely when:
+          - no `user_id` is set (anonymous CLI runs aren't tracked anyway)
+          - the user's `risk_limits.adaptive_depth_variance_threshold` is 0
+          - `agenticwhales.llm_clients.factory.create_llm_client` errors
+            (no key, missing provider) — we just keep the original config
+
+        On escalation we mutate the per-fire config dict in place:
+          - `quick_think_llm` ← `deep_think_llm` (analysts upgrade to deep)
+          - `max_debate_rounds` += 1 (one extra Bull/Bear round)
+        """
+        from agenticwhales.adaptive import should_escalate, DEFAULT_VARIANCE_THRESHOLD
+        from . import auth
+
+        user_id = self.session.get("user_id")
+        if not user_id:
+            return
+        limits = auth.load_risk_limits(user_id) or auth._default_risk_limits_row(user_id)
+        threshold = float(limits.get("adaptive_depth_variance_threshold", 0) or 0)
+        if threshold <= 0:
+            return
+
+        # Generate 3 quick samples. Best-effort — provider errors get
+        # swallowed because the main debate is what matters.
+        samples: list[str] = []
+        try:
+            from agenticwhales.llm_clients.factory import create_llm_client
+            client = create_llm_client(
+                provider=config["llm_provider"],
+                quick_think_llm=config["quick_think_llm"],
+                deep_think_llm=config["deep_think_llm"],
+                backend_url=config.get("backend_url"),
+            )
+            quick = client.get_quick_thinking_llm()
+        except Exception:
+            return  # No client — keep original config.
+
+        ticker = self.session["ticker"]
+        date = self.session["analysis_date"]
+        prompt = (
+            f"You are scanning {ticker} as of {date}. In one sentence, "
+            f"give your bias (long / short / neutral) and your top reason. "
+            "Be concise — under 25 words."
+        )
+        for _ in range(3):
+            try:
+                resp = quick.invoke(prompt)
+                text = getattr(resp, "content", None) or str(resp)
+                if text:
+                    samples.append(text)
+            except Exception:
+                # Single-sample failure → skip; the gate is over the
+                # samples we DO get.
+                continue
+        if len(samples) < 2:
+            return
+
+        if should_escalate(samples, threshold=threshold):
+            # Escalate.
+            old_quick = config["quick_think_llm"]
+            old_rounds = config.get("max_debate_rounds", 1)
+            config["quick_think_llm"] = config["deep_think_llm"]
+            config["max_debate_rounds"] = old_rounds + 1
+            config["max_risk_discuss_rounds"] = config.get("max_risk_discuss_rounds", 1) + 1
+            self._broadcast({
+                "type": "adaptive_depth_escalation",
+                "samples": samples,
+                "old_quick": old_quick,
+                "new_quick": config["quick_think_llm"],
+                "rounds": config["max_debate_rounds"],
+            })
+
+    def _abstain_reason(self, decision: PortfolioDecision, sizing, last_price: float) -> str:
+        """Human-readable explanation for why Kelly returned zero. Drives the
+        UI abstain card so users aren't left wondering 'did anything happen?'."""
+        if decision.rating == PortfolioRating.HOLD:
+            return "Rating is Hold — no directional view, intentional no-trade."
+        if last_price is None or last_price <= 0:
+            return f"Last price lookup failed ({last_price}); can't size order."
+        if decision.prob_of_profit is None:
+            return "PM omitted prob_of_profit; Kelly needs it to size."
+        if decision.expected_return_pct is None:
+            return "PM omitted expected_return_pct; Kelly needs it to size."
+        if sizing.fraction == 0:
+            return (
+                f"Kelly math says no bet: p={decision.prob_of_profit}, "
+                f"er={decision.expected_return_pct}% — fractional Kelly is "
+                f"≤0, meaning the expected edge doesn't justify the risk."
+            )
+        return "Kelly returned zero quantity (rounding floor)."
+
+        guard = risk_mod.RiskGuard(
+            user_id=user_id, limits=limits, account=account, positions=positions,
+        )
+        outcome = guard.evaluate(
+            decision=decision, ticker=ticker,
+            target_qty=abs(sizing.qty),
+            last_price=self._latest_price_for(ticker),
+        )
+
+        if outcome.rule:
+            # Either a hard block or a partial clamp — surface the event.
+            risk_mod.record_event(
+                token,
+                recipe_id=recipe_id, session_id=session_id, ticker=ticker,
+                rule=outcome.rule,
+                details={
+                    "target_qty": abs(sizing.qty),
+                    "allowed_qty": outcome.allowed_qty,
+                    "reason": outcome.reason,
+                },
+            )
+            self._broadcast({
+                "type": "risk_event",
+                "rule": outcome.rule,
+                "ticker": ticker,
+                "target_qty": abs(sizing.qty),
+                "allowed_qty": outcome.allowed_qty,
+                "reason": outcome.reason,
+            })
+            if METRICS.enabled:
+                METRICS.risk_event.labels(rule=outcome.rule).inc()
+            if not outcome.allowed:
+                return
+
+        # Pick the side from existing position + direction.
+        side = self._side_for(sizing.direction, positions, ticker)
+        result = paper.place_order(
+            token,
+            fire_id=fire_id, session_id=session_id, recipe_id=recipe_id,
+            ticker=ticker, side=side, qty=abs(sizing.qty),
+            market_price=self._latest_price_for(ticker),
+            slippage_bps=limits.max_slippage_bps,
+            decision=decision, conviction=conviction,
+            kelly_fraction=sizing.fraction, guard=outcome,
+        )
+        if METRICS.enabled:
+            METRICS.paper_order.labels(side=side.value, status=result.status.value).inc()
+
+        self._broadcast({
+            "type": "paper_order",
+            "order_id": result.order_id,
+            "status": result.status.value,
+            "ticker": ticker, "side": side.value,
+            "qty": result.qty, "fill_price": result.fill_price,
+            "idempotent": result.idempotent,
+        })
+
+    def _latest_price_for(self, ticker: str) -> float:
+        """Best-effort last price from market_snapshot + paper_positions cache."""
+        # Try the position's cached last_price first.
+        for line in (self.session.get("market_snapshot") or "").splitlines():
+            if "Latest close" in line or "latest close" in line:
+                try:
+                    # Heuristic: pull the first float after the colon.
+                    after = line.split(":", 1)[1]
+                    for tok in after.replace("$", " ").replace(",", " ").split():
+                        try:
+                            return float(tok)
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+        # Fall back to a sentinel that won't trigger a non-zero order.
+        return 0.0
+
+    def _side_for(
+        self,
+        direction: int,
+        positions: list,
+        ticker: str,
+    ) -> OrderSide:
+        """Map a Kelly direction onto a paper-order side given current holdings.
+
+        direction > 0:
+          - flat / long → BUY
+          - short → COVER
+        direction < 0:
+          - flat / short → SHORT (only if allow_shorts; caller should already
+            have skipped sizing if not)
+          - long → SELL
+        """
+        existing_qty = 0.0
+        for p in positions:
+            if p.ticker.upper() == ticker.upper():
+                existing_qty = p.qty
+                break
+        if direction > 0:
+            return OrderSide.COVER if existing_qty < 0 else OrderSide.BUY
+        if direction < 0:
+            return OrderSide.SELL if existing_qty > 0 else OrderSide.SHORT
+        return OrderSide.BUY  # caller should not reach here with direction=0
+
     def _run(self) -> None:
         sel = self.session["config"]
         config = DEFAULT_CONFIG.copy()
@@ -249,9 +719,26 @@ class SessionRunner:
 
         analysts: List[str] = sel["analysts"]
         stats_handler = StatsCallbackHandler()
+
+        # Phase 2 #9 wiring: adaptive depth pre-pass. Three cheap
+        # quick-model samples on a one-shot rating prompt; if they disagree
+        # above the user's threshold we upgrade THIS fire to use the deep
+        # model for the analysts AND bump research_depth by one round. The
+        # cost of three samples is ~0.5% of a typical full-debate cost, so
+        # the pre-pass pays for itself when it catches even one hard call
+        # that would otherwise have gotten the cheap-and-wrong treatment.
+        try:
+            self._maybe_apply_adaptive_depth(config)
+        except Exception:
+            traceback.print_exc()
+
         graph = AgenticWhalesGraph(
             analysts, config=config, debug=False, callbacks=[stats_handler]
         )
+        # Phase 2 #4 wiring: stamp the runner's user_id onto the graph so
+        # `_augment_with_memory_v2` can scope retrieval to this user's
+        # journal corpus. The graph is per-session; safe to mutate.
+        graph.user_id = self.session.get("user_id")
 
         if self._cancel_requested.is_set():
             self._finalize_cancelled()
@@ -372,6 +859,12 @@ class SessionRunner:
 
             if chunk.get("final_trade_decision"):
                 self._set_report("final_trade_decision", chunk["final_trade_decision"])
+                # Phase 1: capture the structured PortfolioDecision so the
+                # post-decision hook can drive paper-trade placement. The
+                # dict form survives the LangGraph state serialization.
+                if chunk.get("pm_decision"):
+                    with self._lock:
+                        self.session["pm_decision"] = chunk["pm_decision"]
 
             # Snapshot accumulated token / call counts after each chunk so the UI
             # streams progress instead of waiting for completion.
@@ -381,6 +874,129 @@ class SessionRunner:
             self._set_status(name, "completed")
         self._set_stats(stats_handler.get_stats())
         self._set_session(status="completed", completed_at=time.time())
+
+        # Phase 1: record fire cost (debits recipe_usage + user_spend_daily
+        # + llm_call_log). Best-effort — never blocks the completed session.
+        try:
+            from agenticwhales.llm_clients.cost_middleware import record_fire_cost
+            cfg = self.session.get("config") or {}
+            user_id = self.session.get("user_id")
+            started_at = self.session.get("started_at") or self.session.get("created_at")
+            completed_at = self.session.get("completed_at") or time.time()
+            wall_ms = int((completed_at - started_at) * 1000) if started_at else None
+            if user_id:
+                record_fire_cost(
+                    user_id=user_id,
+                    recipe_id=self.session.get("recipe_id"),
+                    session_id=self.session["id"],
+                    provider=cfg.get("llm_provider", ""),
+                    quick_model=cfg.get("quick_think_llm", ""),
+                    deep_model=cfg.get("deep_think_llm", ""),
+                    stats=self.session.get("stats") or {},
+                    wall_time_ms=wall_ms,
+                )
+        except Exception:
+            traceback.print_exc()
+
+        # Phase 1 post-decision hook: if this session was recipe-fired with a
+        # paper-trade output policy AND the PM produced a structured decision,
+        # run RiskGuard + paper-order placement. Failures here are isolated —
+        # the user-visible session is already "completed" by the time we
+        # reach this point, so a hook error becomes a risk_event, not a
+        # session-failure status flip.
+        # Phase 3 #3 — when this session is one leg of a multi-TF fan-out,
+        # the orchestrator runs the hook once against the merged decision.
+        if self.session.get("skip_post_decision"):
+            return
+        try:
+            self._post_decision_hook()
+        except Exception as exc:
+            traceback.print_exc()
+            self._broadcast({
+                "type": "risk_event",
+                "rule": "hook_error",
+                "details": {"error": str(exc)},
+            })
+
+        # Phase 2 #5: behavioral pattern scan. Cheap (single user, ≤500 rows)
+        # so we run it after every session rather than only nightly. Findings
+        # surface immediately on /fund; cooldown circuit-breaker reads them
+        # on the *next* paper-trade fire.
+        try:
+            from agenticwhales import behavioral
+            user_id = self.session.get("user_id")
+            if user_id:
+                behavioral.scan_user(user_id)
+        except Exception:
+            traceback.print_exc()
+
+        # Phase 2 #7: record Bull/Bear disagreement + optionally inject the
+        # Classical Analyst as a third voice. Cosine similarity over the
+        # debate histories — deterministic, fast, no provider calls.
+        try:
+            self._record_disagreement_and_maybe_inject_classical()
+        except Exception:
+            traceback.print_exc()
+
+    def _record_disagreement_and_maybe_inject_classical(self) -> None:
+        """Phase 2 #7. Compute disagreement index + auto-inject Classical
+        when configured. Best-effort; failures never fail the user's session."""
+        from agenticwhales import disagreement, classical, recipes as recipes_mod
+
+        user_id = self.session.get("user_id")
+        if not user_id:
+            return
+        sections = self.session.get("report_sections") or {}
+        bull = sections.get("bull_history") or ""
+        bear = sections.get("bear_history") or ""
+        if not bull and not bear:
+            return  # debate didn't run (analysts-only flow)
+
+        recipe_id = self.session.get("recipe_id")
+        recipe_row: dict = {}
+        if recipe_id:
+            try:
+                rec = recipes_mod.load(recipe_id)
+                if rec:
+                    recipe_row = rec.model_dump(mode="json")
+            except Exception:
+                pass
+
+        snapshot = disagreement.record_disagreement(
+            user_id=user_id,
+            session_id=self.session["id"],
+            bull_history=bull, bear_history=bear,
+            bull_model=recipe_row.get("bull_model"),
+            bear_model=recipe_row.get("bear_model"),
+            recipe_id=recipe_id,
+        )
+        self._broadcast({
+            "type": "disagreement",
+            "similarity": snapshot.similarity,
+            "rating_agreement": snapshot.rating_agreement,
+            "auto_injecting_classical": disagreement.should_auto_inject(recipe_row, snapshot.similarity),
+        })
+
+        # Auto-inject the Classical Analyst as a third voice when Bull/Bear
+        # are too consensus-y. Stash its decision on the session so the UI
+        # can surface "Classical disagrees" cards.
+        if disagreement.should_auto_inject(recipe_row, snapshot.similarity):
+            try:
+                result = classical.analyze_classical(
+                    self.session["ticker"], self.session["analysis_date"],
+                )
+                if result is not None:
+                    with self._lock:
+                        self.session["classical_decision"] = result.decision.model_dump(mode="json")
+                        self.session["classical_radar"] = result.radar.model_dump(mode="json")
+                        self.session["classical_score"] = result.aggregate_score
+                    self._broadcast({
+                        "type": "classical_voice",
+                        "rating": result.decision.rating.value,
+                        "aggregate_score": result.aggregate_score,
+                    })
+            except Exception:
+                traceback.print_exc()
 
     def _update_analyst_statuses(self, chunk: Dict[str, Any], analysts: List[str]) -> None:
         found_active = False

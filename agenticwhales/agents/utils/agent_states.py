@@ -75,3 +75,4 @@ class AgentState(MessagesState):
     market_snapshot: Annotated[str, "Pre-formatted directive block with the latest close + recent OHLC range, injected at run start to anchor agent prompts against price hallucination"]
     recent_performance: Annotated[str, "Pre-formatted block summarising recent same-ticker outcomes (used by Portfolio Manager for self-adaptive risk; empty when no history)"]
     quant_radar: Annotated[str, "Optional pre-formatted radar block from the Quant Analyst (6-dim signal: volatility, S/R, breakout, momentum, pattern, trend). Empty when the quant analyst is not selected."]
+    pm_decision: Annotated[dict, "Phase 1: structured PortfolioDecision dict emitted by the Portfolio Manager. None when free-text fallback fired. Read by the runner's post-decision hook to drive RiskGuard + paper-order placement."]

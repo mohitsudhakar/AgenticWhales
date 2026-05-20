@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="darkreader-lock" />
+  <title>AgenticWhales — Sign in</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script type="module" src="/static/supabase-client.js"></script>
+  <script src="/static/landing.js" defer></script>
+</head>
+
+<body class="landing-body">
+  <!-- The welcome modal IS the landing surface. It cannot be dismissed
+       until the user signs in with Google after acknowledging the
+       Privacy Policy and Terms of Use. Once Supabase reports a signed-in
+       user, landing.js redirects to /fund. -->
+  <div id="welcome-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+    <div class="modal-card welcome-card">
+      <header class="modal-head welcome-head">
+        <div>
+          <div class="welcome-eyebrow subtle">🐳 AgenticWhales</div>
+          <h2 id="welcome-title">Your personal AI hedge fund.</h2>
+          <p class="subtle welcome-tagline">A pod of agents debates every trade. Persistent recipes scan the market
+            around the clock. A cognitive journal catches your behavioural leaks. Paper-trading sandbox today —
+            sign in to enter.</p>
+        </div>
+      </header>
+
+      <div class="welcome-body">
+        <div class="howitworks" data-howitworks>
+          <div class="howitworks-track" id="how-track">
+            <article class="how-card" data-step="1">
+              <div class="how-step-num">01</div>
+              <h3>Run a paper-trading fund.</h3>
+              <p>Set a starting NAV, allocate to positions, watch realised and unrealised P&amp;L update as the agents
+                trade. Cash, exposure, drawdown — all tracked live. No real broker, no real money — yet.</p>
+            </article>
+            <article class="how-card" data-step="2">
+              <div class="how-step-num">02</div>
+              <h3>A pod of agents debates every move.</h3>
+              <p>Market, quant, news and fundamental analysts each file a brief. A bull and a bear researcher argue it
+                out over multiple rounds. A portfolio manager weighs the evidence and publishes a structured
+                BUY / SELL / HOLD with a full audit trail you can inspect agent by agent.</p>
+            </article>
+            <article class="how-card" data-step="3">
+              <div class="how-step-num">03</div>
+              <h3>Persistent recipes run 24/7.</h3>
+              <p>Describe a thesis in plain English — <em>"if SMCI breaks $1,200 on more than 2&times; average volume,
+                fade it."</em> The strategy agent turns it into rules, the scheduler watches the tape, and the pod
+                fires a fresh debate the moment conditions converge.</p>
+            </article>
+            <article class="how-card" data-step="4">
+              <div class="how-step-num">04</div>
+              <h3>A cognitive journal that catches your leaks.</h3>
+              <p>Every decision and override lands in the journal. NLP flags tilt, revenge trades, and confirmation
+                bias. Ask plain-English questions — <em>"why do I lose money on Fridays?"</em> — and get an answer
+                grounded in your own history.</p>
+            </article>
+            <article class="how-card" data-step="5">
+              <div class="how-step-num">05</div>
+              <h3>Risk-first, with kill switches.</h3>
+              <p>Daily LLM-spend caps, drawdown rules, per-trade exposure limits, and a hard kill switch on anomalous
+                markets. Recipes pause themselves before they bleed; the Risk agent has veto power over the PM.
+                Calibration tracking turns every closed trade into a Brier score so the fund learns its edges.</p>
+            </article>
+          </div>
+          <div class="howitworks-controls">
+            <button type="button" class="how-arrow" id="how-prev" aria-label="Previous step">‹</button>
+            <div class="howitworks-dots" id="how-dots"></div>
+            <button type="button" class="how-arrow" id="how-next" aria-label="Next step">›</button>
+          </div>
+        </div>
+
+        <div class="welcome-tier-strip">
+          <div class="tier-strip-card novice highlighted">
+            <div class="tier-strip-flag">Current plan</div>
+            <div class="tier-strip-name">Novice</div>
+            <div class="tier-strip-meta">Free · 3 analyses / day</div>
+          </div>
+          <div class="tier-strip-card intermediate dimmed">
+            <div class="tier-strip-flag muted">Coming soon</div>
+            <div class="tier-strip-name">Intermediate</div>
+            <div class="tier-strip-meta">Pricing TBD</div>
+          </div>
+          <div class="tier-strip-card master dimmed">
+            <div class="tier-strip-flag muted">Coming soon</div>
+            <div class="tier-strip-name">Master</div>
+            <div class="tier-strip-meta">Pricing TBD</div>
+          </div>
+        </div>
+
+        <div class="welcome-form">
+          <label class="welcome-consent">
+            <input id="welcome-agree" type="checkbox" />
+            <span>I have read and agree to the
+              <button type="button" class="link-btn" data-open="disclaimer">Disclaimer</button>,
+              <button type="button" class="link-btn" data-open="privacy">Privacy Policy</button>,
+              and
+              <button type="button" class="link-btn" data-open="terms">Terms of Use</button>.
+            </span>
+          </label>
+          <p class="subtle" id="welcome-disclaimer-version" style="margin-top:0.25rem;font-size:0.78em">Version v1.0</p>
+
+          <div class="welcome-actions">
+            <button type="button" id="welcome-google" class="google-btn" disabled>
+              <svg class="google-g" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
+                <path fill="#FFC107"
+                  d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z" />
+                <path fill="#FF3D00"
+                  d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+                <path fill="#4CAF50"
+                  d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.1C29.2 35.4 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z" />
+                <path fill="#1976D2"
+                  d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.2 5.1C40.8 35.6 44 30.3 44 24c0-1.2-.1-2.3-.4-3.5z" />
+              </svg>
+              <span>Sign in with Google</span>
+            </button>
+          </div>
+          <p class="subtle welcome-firebase-hint" id="welcome-firebase-hint" hidden>
+            Supabase isn't configured yet — sign-in won't work until the deployment is configured with Supabase Auth
+            credentials.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disclaimer modal -->
+  <div id="disclaimer-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <div class="modal-team subtle">Legal</div>
+          <h2 id="disclaimer-title">Disclaimer</h2>
+        </div>
+        <button class="ghost-btn modal-close" data-close-modal="disclaimer-modal" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body legal" id="disclaimer-body">
+        <p><strong>Active version:</strong> <span id="disclaimer-version-label">v1.0</span></p>
+        <p>
+          AgenticWhales is <strong>paper-trading only</strong>. No real-money orders are placed. No
+          broker integration exists in this build.
+        </p>
+        <p>
+          Nothing produced by AgenticWhales — including ratings, debate transcripts, conviction
+          scores, paper orders, and journal drafts — constitutes financial, investment, legal, or
+          tax advice. The multi-agent debate is a research and education tool, not a fiduciary
+          recommendation.
+        </p>
+        <p>
+          You, not AgenticWhales, are responsible for any decisions you take outside this system.
+          By acknowledging this disclaimer you confirm that you understand its scope.
+        </p>
+        <p>
+          If the disclaimer is updated, you'll be asked to re-acknowledge before continuing to use
+          the Fund.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy Policy modal -->
+  <div id="privacy-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <div class="modal-team subtle">Legal</div>
+          <h2 id="privacy-title">Privacy Policy</h2>
+        </div>
+        <button class="ghost-btn modal-close" data-close-modal="privacy-modal" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body legal">
+        <p><strong>Effective:</strong> 2026-05-04</p>
+        <p>AgenticWhales is a multi-agent trading research tool. This page explains what data we collect and why.</p>
+        <h3>What we store</h3>
+        <ul>
+          <li><strong>Account data</strong> — if you sign in with Google, we receive your display name, email address,
+            and Google account ID. We use these to identify you across sessions and to attribute analyses to your
+            account.</li>
+          <li><strong>Usage counters</strong> — we record how many analyses you've started today, scoped per user. This
+            is what powers the daily quota for free (Novice) accounts.</li>
+          <li><strong>Tier &amp; preferences</strong> — your chosen display name and your subscription tier (Novice /
+            Intermediate / Master).</li>
+          <li><strong>Analysis history</strong> — the configuration and outputs of analyses you run are stored locally
+            on the server you deploy AgenticWhales to. They are not transmitted to AgenticWhales operators.</li>
+        </ul>
+        <h3>What we do NOT store</h3>
+        <ul>
+          <li>We do not store your Google password — sign-in is delegated to Google.</li>
+          <li>We do not collect payment information until you explicitly subscribe to a paid tier.</li>
+          <li>We do not sell or share personal data with third parties.</li>
+        </ul>
+        <h3>Third parties</h3>
+        <p>Authentication and the per-day usage counter are stored in <a href="https://supabase.com" class="link-btn"
+            target="_blank" rel="noopener">Supabase</a> (Auth + Postgres). Supabase's own privacy terms apply to data
+          they receive on our behalf. Google Sign-In is delegated to Google as the OAuth identity provider.</p>
+        <h3>Your rights</h3>
+        <p>You can sign out at any time from the sidebar. To delete your account or your stored usage data, contact the
+          operator of this AgenticWhales deployment.</p>
+        <h3>Disclaimer</h3>
+        <p>AgenticWhales is a research tool. Outputs are not financial, investment, or trading advice. You are solely
+          responsible for any decisions you make using this software.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terms of Use modal -->
+  <div id="terms-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="terms-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <div class="modal-team subtle">Legal</div>
+          <h2 id="terms-title">Terms of Use</h2>
+        </div>
+        <button class="ghost-btn modal-close" data-close-modal="terms-modal" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body legal">
+        <p><strong>Effective:</strong> 2026-05-04</p>
+        <h3>1. What AgenticWhales is</h3>
+        <p>AgenticWhales is a multi-agent LLM-powered research tool that simulates a trading-floor debate over a chosen
+          instrument. It is provided <em>as-is</em> for informational and research purposes only.</p>
+        <h3>2. Not financial advice</h3>
+        <p>Nothing produced by AgenticWhales — including the BUY / SELL / HOLD verdicts, the analyst briefs, the
+          researcher debates, the trader plans, or the risk team's commentary — constitutes financial, investment,
+          legal, accounting, or tax advice. You are solely responsible for any decision to buy, sell or hold any
+          security or other instrument.</p>
+        <h3>3. Tiers and quotas</h3>
+        <p>Free Novice accounts may run up to <strong>3 instrument analyses per day</strong> (rolling at 00:00 UTC).
+          Paid Intermediate and Master tiers will offer larger quotas; pricing will be announced separately. Quotas may
+          change at any time.</p>
+        <h3>4. Acceptable use</h3>
+        <p>You agree not to use AgenticWhales to: (a) generate market manipulation content; (b) abuse the underlying LLM
+          provider APIs; (c) reverse-engineer or attempt to bypass the per-day quota; or (d) violate any applicable laws
+          or the terms of any LLM provider you've configured.</p>
+        <h3>5. Data</h3>
+        <p>See the <button type="button" class="link-btn" data-open="privacy">Privacy Policy</button> for what we store
+          and why.</p>
+        <h3>6. No warranty</h3>
+        <p>AgenticWhales is provided without warranties of any kind. The operators are not liable for any losses, direct
+          or indirect, arising from your use of the tool.</p>
+        <h3>7. Changes</h3>
+        <p>These terms may be updated. Continued use after an update constitutes acceptance of the revised terms.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
