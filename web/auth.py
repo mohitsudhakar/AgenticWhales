@@ -30,14 +30,21 @@ log = logging.getLogger(__name__)
 
 ANONYMOUS_USER_ID = "anonymous"
 
+# Admin email used to gate the /api/admin/* endpoints (usage dashboard).
+# Compared case-insensitively against the Supabase user's email. Override
+# via env if a different operator should hold the keys.
+ADMIN_EMAIL = (os.getenv("AGENTICWHALES_ADMIN_EMAIL") or "mohit.sudhakar@gmail.com").strip().lower()
+
 # Module-level requests session = HTTP keepalive across calls. Saves a
 # fresh TCP+TLS handshake on every save during a multi-agent run.
 _http = requests.Session()
 
 # Token-validation cache — Supabase tokens last ~1h, this is purely to
 # avoid hitting /auth/v1/user on every API call from the same client.
+# Stores (expiry, uid, email) so the admin gate can check email without
+# a second round trip.
 _TOKEN_CACHE_TTL = 60.0
-_token_cache: Dict[str, tuple[float, str]] = {}
+_token_cache: Dict[str, tuple[float, str, Optional[str]]] = {}
 
 # In-memory fallback for when Supabase isn't configured. Keyed by
 # (table, id) so sessions and batches don't collide. Process-local —
@@ -75,10 +82,12 @@ def _db_writable() -> bool:
 # JWT validation
 # ------------------------------------------------------------------
 
-def _validate_token(token: str) -> Optional[str]:
+def _fetch_user(token: str) -> Optional[tuple[str, Optional[str]]]:
+    """Resolve a Supabase JWT to (uid, email). Cached for 60s. Returns None
+    when Supabase isn't configured or the token is invalid/expired."""
     cached = _token_cache.get(token)
     if cached and cached[0] > time.time():
-        return cached[1]
+        return cached[1], cached[2]
     base = _supabase_url()
     anon = _supabase_anon_key()
     if not base or not anon:
@@ -94,10 +103,18 @@ def _validate_token(token: str) -> Optional[str]:
         return None
     if resp.status_code != 200:
         return None
-    uid = (resp.json() or {}).get("id")
-    if uid:
-        _token_cache[token] = (time.time() + _TOKEN_CACHE_TTL, uid)
-    return uid
+    body = resp.json() or {}
+    uid = body.get("id")
+    if not uid:
+        return None
+    email = body.get("email")
+    _token_cache[token] = (time.time() + _TOKEN_CACHE_TTL, uid, email)
+    return uid, email
+
+
+def _validate_token(token: str) -> Optional[str]:
+    res = _fetch_user(token)
+    return res[0] if res else None
 
 
 def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
@@ -112,6 +129,27 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
     uid = _validate_token(token)
     if not uid:
         raise HTTPException(401, "Invalid or expired auth token")
+    return uid
+
+
+def require_admin(authorization: Optional[str] = Header(None)) -> str:
+    """FastAPI dependency for admin-only endpoints. Returns the admin user's
+    id. 401 if the token is missing/invalid; 403 if the authed user's email
+    doesn't match ADMIN_EMAIL.
+
+    Refuses to authorize when Supabase isn't configured — the admin gate
+    relies on real auth and the 'anonymous' fallback has no identity."""
+    if not _supabase_configured():
+        raise HTTPException(403, "Admin dashboard requires Supabase auth")
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "Missing Authorization bearer token")
+    token = authorization.split(None, 1)[1].strip()
+    res = _fetch_user(token)
+    if not res:
+        raise HTTPException(401, "Invalid or expired auth token")
+    uid, email = res
+    if not email or email.strip().lower() != ADMIN_EMAIL:
+        raise HTTPException(403, "Admin only")
     return uid
 
 
@@ -405,3 +443,139 @@ def delete_batch(batch_id: str) -> bool:
     if not _db_writable():
         return True
     return _delete_one("batches", batch_id)
+
+
+# ------------------------------------------------------------------
+# Admin-scope reads — used by the usage dashboard only. Service-role
+# bypasses RLS so we deliberately keep these behind require_admin.
+# ------------------------------------------------------------------
+
+# Postgres default row limit per PostgREST request. We pull up to 10k
+# sessions / batches for the dashboard; beyond that the dashboard would
+# need server-side aggregation (a SQL view or RPC).
+_ADMIN_MAX_ROWS = 10000
+
+
+def _admin_list_table(table: str, columns: str) -> List[Dict[str, Any]]:
+    if not _db_writable():
+        return []
+    try:
+        resp = _http.get(
+            f"{_rest_url(table)}?select={columns}&order=created_at.desc&limit={_ADMIN_MAX_ROWS}",
+            headers=_service_headers(),
+            timeout=20,
+        )
+        if resp.status_code != 200:
+            log.warning("admin list %s -> %s: %s", table, resp.status_code, resp.text[:200])
+            return []
+        return resp.json() or []
+    except requests.RequestException as e:
+        log.warning("admin list %s failed: %s", table, e)
+        return []
+
+
+def admin_list_sessions() -> List[Dict[str, Any]]:
+    """Slim per-session rows across all users for the dashboard. When Supabase
+    isn't configured, returns whatever the in-memory store has."""
+    if _db_writable():
+        return _admin_list_table(
+            "sessions",
+            "user_id,ticker,status,created_at,completed_at,tokens_in,tokens_out,llm_calls,tool_calls,quick_model,deep_model",
+        )
+    rows: List[Dict[str, Any]] = []
+    for (table, _), sess in _memstore.items():
+        if table != "sessions":
+            continue
+        stats = sess.get("stats") or {}
+        cfg = sess.get("config") or {}
+        rows.append({
+            "user_id": sess.get("user_id"),
+            "ticker": sess.get("ticker"),
+            "status": sess.get("status"),
+            "created_at": _ts_iso(sess.get("created_at")),
+            "completed_at": _ts_iso(sess.get("completed_at")),
+            "tokens_in": int(stats.get("tokens_in") or 0),
+            "tokens_out": int(stats.get("tokens_out") or 0),
+            "llm_calls": int(stats.get("llm_calls") or 0),
+            "tool_calls": int(stats.get("tool_calls") or 0),
+            "quick_model": cfg.get("quick_think_llm"),
+            "deep_model": cfg.get("deep_think_llm"),
+        })
+    return rows
+
+
+def admin_list_batches() -> List[Dict[str, Any]]:
+    if _db_writable():
+        return _admin_list_table(
+            "batches",
+            "user_id,status,created_at,completed_at,ticker_count,tokens_in,tokens_out,llm_calls,tool_calls,quick_model,deep_model",
+        )
+    rows: List[Dict[str, Any]] = []
+    for (table, _), b in _memstore.items():
+        if table != "batches":
+            continue
+        totals = b.get("totals") or {}
+        cfg = b.get("config") or {}
+        rows.append({
+            "user_id": b.get("user_id"),
+            "status": b.get("status"),
+            "created_at": _ts_iso(b.get("created_at")),
+            "completed_at": _ts_iso(b.get("completed_at")),
+            "ticker_count": len(b.get("items") or []),
+            "tokens_in": int(totals.get("tokens_in") or 0),
+            "tokens_out": int(totals.get("tokens_out") or 0),
+            "llm_calls": int(totals.get("llm_calls") or 0),
+            "tool_calls": int(totals.get("tool_calls") or 0),
+            "quick_model": cfg.get("quick_think_llm"),
+            "deep_model": cfg.get("deep_think_llm"),
+        })
+    return rows
+
+
+def admin_list_profiles() -> List[Dict[str, Any]]:
+    if not _db_writable():
+        return []
+    try:
+        resp = _http.get(
+            f"{_rest_url('profiles')}?select=id,username,tier,created_at&limit={_ADMIN_MAX_ROWS}",
+            headers=_service_headers(),
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.warning("admin list profiles -> %s: %s", resp.status_code, resp.text[:200])
+            return []
+        return resp.json() or []
+    except requests.RequestException as e:
+        log.warning("admin list profiles failed: %s", e)
+        return []
+
+
+def admin_list_users() -> List[Dict[str, Any]]:
+    """Page through Supabase's GoTrue admin /users endpoint. Returns up to
+    a few thousand users — well past anything this side project will see."""
+    if not _db_writable():
+        return []
+    users: List[Dict[str, Any]] = []
+    page = 1
+    while page <= 100:  # hard cap so a bad response can't spin forever
+        try:
+            resp = _http.get(
+                f"{_supabase_url()}/auth/v1/admin/users?page={page}&per_page=100",
+                headers=_service_headers(),
+                timeout=15,
+            )
+        except requests.RequestException as e:
+            log.warning("admin list users failed: %s", e)
+            break
+        if resp.status_code != 200:
+            log.warning("admin list users -> %s: %s", resp.status_code, resp.text[:200])
+            break
+        body = resp.json() or {}
+        batch = body.get("users") if isinstance(body, dict) else body
+        if not batch:
+            break
+        users.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return users

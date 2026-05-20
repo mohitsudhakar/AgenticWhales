@@ -19,8 +19,8 @@ from agenticwhales import portfolio
 from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
 from agenticwhales.universe import universe_for_api
 
-from . import auth, batch_storage, storage
-from .auth import authenticate_websocket, get_current_user_id
+from . import admin, auth, batch_storage, storage
+from .auth import authenticate_websocket, get_current_user_id, require_admin
 from .batch_runner import BatchRunner, build_batch
 from .runner import (
     ANALYST_AGENT_NAMES,
@@ -95,16 +95,27 @@ def _supabase_runtime_config_tag() -> str:
     )
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index() -> HTMLResponse:
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+def _render_static_page(filename: str) -> HTMLResponse:
+    """Read a static HTML file and inject the Supabase config tag before
+    </head> so supabase-client.js sees the global on first evaluation."""
+    html = (STATIC_DIR / filename).read_text(encoding="utf-8")
     config_tag = _supabase_runtime_config_tag()
     if config_tag:
-        # Inject before </head> so the classic script runs synchronously,
-        # which guarantees the global is set before supabase-client.js (which
-        # is a deferred ES module) evaluates.
         html = html.replace("</head>", config_tag + "</head>", 1)
     return HTMLResponse(html)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> HTMLResponse:
+    return _render_static_page("index.html")
+
+
+@app.get("/usage", response_class=HTMLResponse)
+async def usage_page() -> HTMLResponse:
+    """Standalone admin-only usage dashboard. The page itself is served to
+    anyone (it has to be, so the unauthenticated state can show a sign-in
+    prompt), but the data fetch behind it is gated by require_admin."""
+    return _render_static_page("usage.html")
 
 
 # Defaults applied to the new-analysis and basket forms. Driven by env vars
@@ -463,6 +474,19 @@ async def put_portfolio(
 ) -> Dict[str, Any]:
     portfolio.save_all(payload.positions)
     return {"positions": portfolio.load_all()}
+
+
+@app.get("/api/usage/me")
+async def usage_me(user_id: str = Depends(require_admin)) -> Dict[str, Any]:
+    """Tiny probe the /usage page uses to decide whether to render the
+    dashboard or a 'not authorised' message. 200 = caller is admin;
+    403 otherwise."""
+    return {"user_id": user_id, "admin_email": auth.ADMIN_EMAIL}
+
+
+@app.get("/api/usage/dashboard")
+async def usage_dashboard(user_id: str = Depends(require_admin)) -> Dict[str, Any]:
+    return admin.build_dashboard()
 
 
 def main() -> None:

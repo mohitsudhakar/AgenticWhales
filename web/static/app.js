@@ -75,6 +75,7 @@ async function reloadOnAuthChange() {
   renderSessionList();
   renderBatchList();
   if (!userState.current) {
+    $("#usage-link")?.classList.add("hidden");
     setView("empty");
     return;
   }
@@ -1599,6 +1600,26 @@ function reflectUserChip() {
   badge.textContent = TIER_LABEL[u.tier] || "Novice";
   badge.className = `tier-badge ${u.tier || "novice"}`;
   refreshUsageBadge();
+  refreshAdminNav();
+}
+
+// Server-side gate is the security boundary (require_admin in web/auth.py).
+// This is purely a UX call: hide the /usage link for everyone else so the
+// dashboard isn't a discoverable surface.
+async function refreshAdminNav() {
+  const link = $("#usage-link");
+  if (!link) return;
+  const u = userState.current;
+  if (!u || u.isGuest) {
+    link.classList.add("hidden");
+    return;
+  }
+  try {
+    const res = await fetch("/api/usage/me");
+    link.classList.toggle("hidden", !res.ok);
+  } catch {
+    link.classList.add("hidden");
+  }
 }
 
 async function refreshUsageBadge() {
