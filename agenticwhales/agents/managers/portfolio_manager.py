@@ -17,7 +17,7 @@ from agenticwhales.agents.utils.agent_utils import (
 )
 from agenticwhales.agents.utils.structured import (
     bind_structured,
-    invoke_structured_or_freetext,
+    invoke_structured_or_freetext_pair,
 )
 
 
@@ -83,6 +83,14 @@ If a USER'S CURRENT POSITION block is shown above, you MUST translate the rating
 **Bracket levels (required for any directional rating):**
 For every Buy / Overweight / Underweight / Sell decision, you MUST fill `stop_loss` and `take_profit` in the structured output, derived from the analysts' support/resistance and volatility readings. Aim for a take-profit / stop-loss risk-reward ratio of at least 1.2:1 (QuantAgent 2025 baseline). Leave both null only when rating is Hold.
 
+**Quantitative scalars (required for any directional rating — fuel for Kelly-flavored position sizing):**
+For every directional rating, you MUST also fill:
+- `expected_return_pct`: total return over the recommended holding period, net of fees. Signed (negative for Underweight/Sell). Be honest, not aspirational.
+- `expected_volatility_pct`: annualized stdev of the return distribution. Anchor in the Quant Radar volatility score and historical realized vol.
+- `prob_of_profit`: probability the trade closes positive PnL, in [0, 1]. *Be calibrated, not aspirational* — an 80% claim should hold up across many such calls. If you're not sure, prefer 0.55-0.65.
+- `expected_hold_days`: holding period in days. Should match `time_horizon`.
+These four scalars drive position sizing via a Kelly-flavored formula. Stale or inflated values lead directly to over-betting and capital loss.
+
 **Context:**
 - Research Manager's investment plan: **{research_plan}**
 - Trader's transaction proposal: **{trader_plan}**
@@ -94,7 +102,7 @@ For every Buy / Overweight / Underweight / Sell decision, you MUST fill `stop_lo
 
 Ground every conclusion in specific evidence from the analysts and weight the evidence by quality: concrete data (numbers, citations, filings) outweighs narrative, pattern-recognition, or sentiment. When one side's evidence is materially stronger — even if the other side raises some valid points — commit to that side. Reserve **Hold** for genuinely balanced cases or no-consensus among risk debaters. Both reflexive overcommitment and reflexive hedging destroy capital; calibrate to the actual evidence asymmetry.{get_language_instruction()}"""
 
-        final_trade_decision = invoke_structured_or_freetext(
+        final_trade_decision, pm_decision = invoke_structured_or_freetext_pair(
             structured_llm,
             llm,
             prompt,
@@ -115,9 +123,15 @@ Ground every conclusion in specific evidence from the analysts and weight the ev
             "count": risk_debate_state["count"],
         }
 
-        return {
+        out: dict = {
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": final_trade_decision,
         }
+        # Stash the typed Pydantic dict on the state so the runner's
+        # post-decision hook can drive RiskGuard + paper-order placement
+        # without re-parsing the markdown. None when free-text fallback fired.
+        if pm_decision is not None:
+            out["pm_decision"] = pm_decision.model_dump(mode="json")
+        return out
 
     return portfolio_manager_node

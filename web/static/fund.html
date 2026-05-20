@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="darkreader-lock" />
+  <title>AgenticWhales — Fund</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/fund.css" />
+  <script type="module" src="/static/supabase-client.js"></script>
+  <!-- Markdown renderer for the Investment Thesis pane (Act V) — same CDN
+       build /analyze uses, kept on `defer` so it loads in the same pass as
+       fund.js. fund.js feature-detects `marked` before calling it. -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <script src="/static/fund.js" defer></script>
+</head>
+
+<body class="fund-body">
+  <header class="mobile-topbar" role="banner">
+    <button id="nav-toggle" type="button" class="nav-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+      <span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span>
+    </button>
+    <div class="mobile-brand">
+      <img src="/static/favicon.svg" alt="" width="28" height="28" />
+      <span>Agentic Whales · Fund</span>
+    </div>
+  </header>
+
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+
+  <aside id="sidebar" class="sidebar">
+    <div class="brand">
+      <img class="brand-mark" src="/static/favicon.svg" alt="" width="38" height="38" />
+      <div>
+        <div class="brand-title">Agentic Whales</div>
+        <div class="brand-sub">FUND · PAPER · RISK</div>
+      </div>
+    </div>
+    <nav class="fund-nav" aria-label="Fund sections">
+      <button type="button" class="fund-nav-btn active" data-target="overview">
+        <span class="nav-glyph" aria-hidden="true">🐋</span>
+        <span class="nav-text"><span class="nav-label">Floor</span><span class="nav-sub">Live debate</span></span>
+      </button>
+      <button type="button" class="fund-nav-btn" data-target="analyses">
+        <span class="nav-glyph" aria-hidden="true">🔭</span>
+        <span class="nav-text"><span class="nav-label">Analyses</span><span class="nav-sub">Full transcripts</span></span>
+      </button>
+      <button type="button" class="fund-nav-btn" data-target="decisions">
+        <span class="nav-glyph" aria-hidden="true">📒</span>
+        <span class="nav-text"><span class="nav-label">Book</span><span class="nav-sub">Positions · trades</span></span>
+      </button>
+      <button type="button" class="fund-nav-btn" data-target="journal">
+        <span class="nav-glyph" aria-hidden="true">✍️</span>
+        <span class="nav-text"><span class="nav-label">Journal</span><span class="nav-sub">Reflections</span></span>
+      </button>
+      <button type="button" class="fund-nav-btn fund-nav-btn-lab" data-target="insights" data-lab="1">
+        <span class="nav-glyph" aria-hidden="true">🔬</span>
+        <span class="nav-text"><span class="nav-label">Lab</span><span class="nav-sub">Insights · risk · backtest</span></span>
+      </button>
+    </nav>
+
+    <a href="/analyze" class="primary-btn secondary sidebar-cross-nav" style="text-decoration:none;text-align:center">↗ /analyze (power user)</a>
+    <div id="user-chip" class="user-chip hidden">
+      <div class="user-chip-row">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <div class="user-meta">
+          <div class="user-name" id="user-name">Guest</div>
+          <div class="user-tier"><span id="user-tier-badge" class="tier-badge novice">Novice</span></div>
+        </div>
+        <button type="button" id="signout-btn" class="signout-btn" title="Sign out" aria-label="Sign out">
+          <span aria-hidden="true">⎋</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main fund-main">
+    <!-- Paper-only banner: always visible until Phase 4 unlocks real money. -->
+    <div class="fund-banner">
+      <strong>📄 Paper-trading sandbox.</strong>
+      Recipes and orders here are simulated against snapshot data. No real broker, no real money.
+      <a href="#risk" data-target="risk">Risk controls →</a>
+    </div>
+
+    <!-- ==================== Overview ==================== -->
+    <section class="fund-section" data-section="overview">
+      <header class="fund-section-head">
+        <h1>Overview</h1>
+        <div class="fund-toolbar">
+          <button type="button" id="ov-refresh" class="ghost-btn">↻ Refresh</button>
+          <button type="button" id="ov-resolve" class="ghost-btn">↻ Resolve outcomes</button>
+        </div>
+      </header>
+
+      <!-- ============== Live debate arena (the showpiece) ============== -->
+      <section id="hero-card" class="hero-arena">
+        <div class="hero-arena-bg" aria-hidden="true">
+          <div class="hero-stars"></div>
+          <div class="hero-grid-floor"></div>
+          <div class="hero-glow hero-glow-left"></div>
+          <div class="hero-glow hero-glow-right"></div>
+        </div>
+
+        <!-- IDLE -->
+        <div id="hero-idle" class="hero-state">
+          <div class="hero-idle-grid">
+            <div class="hero-idle-copy">
+              <span class="hero-eyebrow">Live multi-agent debate</span>
+              <h1 class="hero-headline">Pick a ticker.<br/>Watch the whales argue.</h1>
+              <p class="hero-lede">
+                Bull and Bear researchers face off, three analysts feed them ammo, the risk team
+                weighs in, and the Portfolio Manager renders a verdict. <strong>60–120 seconds</strong>,
+                deterministic, fully audited. Paper sandbox — no real broker.
+              </p>
+              <form class="hero-form" id="hero-form" novalidate>
+                <label class="hero-ticker-input">
+                  <span class="hero-ticker-label">Ticker</span>
+                  <input type="text" id="hero-ticker" value="AAPL" maxlength="10" autocomplete="off" spellcheck="false" />
+                </label>
+                <button type="button" id="hero-start-btn" class="hero-go">
+                  <span>Start the debate</span>
+                  <span class="hero-go-spark" aria-hidden="true">⚔</span>
+                </button>
+              </form>
+              <div id="hero-error" class="phase1-error"></div>
+              <div class="hero-idle-meta">
+                <span class="hero-pill">⚡ Streaming</span>
+                <span class="hero-pill">🛡 Audited</span>
+                <span class="hero-pill">📄 Paper-only</span>
+                <a class="hero-power-link" href="/analyze">Power user? → /analyze</a>
+              </div>
+            </div>
+
+            <div class="hero-idle-roster" aria-hidden="true">
+              <div class="hero-roster-slot pose-bull"  data-pose="bull"></div>
+              <div class="hero-roster-slot pose-pm"    data-pose="pm"></div>
+              <div class="hero-roster-slot pose-bear"  data-pose="bear"></div>
+              <div class="hero-roster-versus">VS</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RUNNING — phased battle stage. JS sets data-phase on .hero-running
+             which CSS uses to swap which act is in focus. -->
+        <div id="hero-running" class="hero-state" data-phase="recon" hidden>
+          <header class="hero-arena-head">
+            <div class="hero-arena-title">
+              <span class="hero-ticker-chip" id="hero-running-ticker">—</span>
+              <span class="hero-arena-status" id="hero-progress-text">Spinning up agents…</span>
+            </div>
+            <button type="button" id="hero-cancel-btn" class="hero-cancel">✕ Cancel</button>
+          </header>
+
+          <!-- Phase rail: 5 acts. Active phase glows; finished ones go dim+checked. -->
+          <nav class="hero-phase-rail" aria-label="Debate phases">
+            <button type="button" class="hero-phase-pip" data-phase-pip="recon">
+              <span class="hero-phase-num">1</span>
+              <span class="hero-phase-name">Recon</span>
+              <span class="hero-phase-sub">Analysts gather intel</span>
+            </button>
+            <button type="button" class="hero-phase-pip" data-phase-pip="debate">
+              <span class="hero-phase-num">2</span>
+              <span class="hero-phase-name">Bull vs Bear</span>
+              <span class="hero-phase-sub">Researchers argue · 2 rounds</span>
+            </button>
+            <button type="button" class="hero-phase-pip" data-phase-pip="trader">
+              <span class="hero-phase-num">3</span>
+              <span class="hero-phase-name">Trader's call</span>
+              <span class="hero-phase-sub">Trade plan drafted</span>
+            </button>
+            <button type="button" class="hero-phase-pip" data-phase-pip="risk">
+              <span class="hero-phase-num">4</span>
+              <span class="hero-phase-name">Risk council</span>
+              <span class="hero-phase-sub">Trio brawl · sizing</span>
+            </button>
+            <button type="button" class="hero-phase-pip" data-phase-pip="verdict">
+              <span class="hero-phase-num">5</span>
+              <span class="hero-phase-name">Verdict</span>
+              <span class="hero-phase-sub">PM signs off</span>
+            </button>
+          </nav>
+
+          <!-- Speech overlay: pinned regardless of phase. Tells you who is
+               speaking, with their portrait + body. -->
+          <div class="hero-stage-speech" id="hero-speech" hidden>
+            <div class="hero-stage-speech-avatar" id="hero-speech-avatar"></div>
+            <div class="hero-stage-speech-body">
+              <div class="hero-stage-speech-who" id="hero-speech-who">—</div>
+              <div class="hero-stage-speech-text" id="hero-speech-body"></div>
+            </div>
+          </div>
+
+          <!-- ============ ACT I — Recon (analysts in parallel) ============ -->
+          <section class="hero-act hero-act-recon" data-act="recon">
+            <header class="hero-act-head">
+              <span class="hero-act-eyebrow">Act I · Recon</span>
+              <h2 class="hero-act-title">Analyst team gathers the intel</h2>
+            </header>
+            <div class="hero-analyst-grid" id="hero-analyst-grid">
+              <!-- One card per analyst, injected by JS based on hero.agents. -->
+            </div>
+          </section>
+
+          <!-- ============ ACT II — Debate (Bull vs Bear) ============ -->
+          <section class="hero-act hero-act-debate" data-act="debate">
+            <header class="hero-act-head">
+              <span class="hero-act-eyebrow">Act II · Bull vs Bear</span>
+              <h2 class="hero-act-title">Researchers face off · the matador judges</h2>
+            </header>
+            <!-- Conviction tug -->
+            <div class="hero-tug" aria-hidden="true">
+              <div class="hero-tug-end hero-tug-bull">
+                <span class="hero-tug-name">BULL</span>
+                <span class="hero-tug-score" id="hero-tug-bull-score">0</span>
+              </div>
+              <div class="hero-tug-track">
+                <div class="hero-tug-fill-bull" id="hero-tug-fill-bull"></div>
+                <div class="hero-tug-fill-bear" id="hero-tug-fill-bear"></div>
+                <div class="hero-tug-marker" id="hero-tug-marker">⚔</div>
+              </div>
+              <div class="hero-tug-end hero-tug-bear">
+                <span class="hero-tug-name">BEAR</span>
+                <span class="hero-tug-score" id="hero-tug-bear-score">0</span>
+              </div>
+            </div>
+            <div class="hero-fight">
+              <div class="hero-fighter hero-fighter-bull" data-role="bull" id="hero-fighter-bull">
+                <div class="hero-fighter-portrait" data-pose="bull"></div>
+                <div class="hero-fighter-name">Bull Researcher</div>
+                <div class="hero-hp hero-hp-bull"><span class="hero-hp-fill" id="hero-hp-bull"></span></div>
+                <div class="hero-fighter-status" id="hero-status-bull">waiting</div>
+              </div>
+              <div class="hero-fight-center">
+                <div class="hero-fight-spark" id="hero-fight-spark" aria-hidden="true"></div>
+                <div class="hero-matador" id="hero-matador">
+                  <div class="hero-matador-portrait" data-pose="research"></div>
+                  <div class="hero-matador-cape" aria-hidden="true"></div>
+                  <div class="hero-matador-name">Research Manager</div>
+                  <div class="hero-matador-role">Matador · the mediator</div>
+                </div>
+              </div>
+              <div class="hero-fighter hero-fighter-bear" data-role="bear" id="hero-fighter-bear">
+                <div class="hero-fighter-portrait" data-pose="bear"></div>
+                <div class="hero-fighter-name">Bear Researcher</div>
+                <div class="hero-hp hero-hp-bear"><span class="hero-hp-fill" id="hero-hp-bear"></span></div>
+                <div class="hero-fighter-status" id="hero-status-bear">waiting</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ ACT III — Trader's call ============ -->
+          <section class="hero-act hero-act-trader" data-act="trader">
+            <header class="hero-act-head">
+              <span class="hero-act-eyebrow">Act III · Trader</span>
+              <h2 class="hero-act-title">The floor runner drafts the trade</h2>
+            </header>
+            <div class="hero-trader-solo" id="hero-trader-solo">
+              <div class="hero-trader-portrait" data-pose="trader"></div>
+              <div class="hero-trader-meta">
+                <div class="hero-trader-name">Trader</div>
+                <div class="hero-trader-role">Floor runner</div>
+                <div class="hero-trader-status" id="hero-trader-status">drafting…</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ ACT IV — Risk council brawl ============ -->
+          <section class="hero-act hero-act-risk" data-act="risk">
+            <header class="hero-act-head">
+              <span class="hero-act-eyebrow">Act IV · Risk council</span>
+              <h2 class="hero-act-title">Three risk wardens settle the size</h2>
+            </header>
+            <div class="hero-risk-trio" id="hero-risk-trio">
+              <div class="hero-risk-fighter" data-agent="Aggressive Analyst" data-pose="aggressive">
+                <div class="hero-risk-portrait" data-pose="aggressive"></div>
+                <div class="hero-risk-name">Aggressive</div>
+                <div class="hero-risk-role">Blade champion</div>
+                <div class="hero-risk-status">waiting</div>
+              </div>
+              <div class="hero-risk-fighter" data-agent="Neutral Analyst" data-pose="neutral">
+                <div class="hero-risk-portrait" data-pose="neutral"></div>
+                <div class="hero-risk-name">Neutral</div>
+                <div class="hero-risk-role">Scale keeper</div>
+                <div class="hero-risk-status">waiting</div>
+              </div>
+              <div class="hero-risk-fighter" data-agent="Conservative Analyst" data-pose="conservative">
+                <div class="hero-risk-portrait" data-pose="conservative"></div>
+                <div class="hero-risk-name">Conservative</div>
+                <div class="hero-risk-role">Shield warden</div>
+                <div class="hero-risk-status">waiting</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ ACT V — PM stepping up to deliver ============ -->
+          <section class="hero-act hero-act-verdict" data-act="verdict">
+            <header class="hero-act-head">
+              <span class="hero-act-eyebrow">Act V · Verdict</span>
+              <h2 class="hero-act-title">The Portfolio Manager calls it</h2>
+            </header>
+            <div class="hero-pm-stage">
+              <div class="hero-pm-portrait" data-pose="pm"></div>
+              <div class="hero-pm-name">Portfolio Manager</div>
+              <div class="hero-pm-status" id="hero-pm-status">deliberating…</div>
+            </div>
+          </section>
+
+          <!-- Team strip: every agent's status pip. Always visible regardless
+               of phase so the user can scan the whole team at a glance. -->
+          <div class="hero-team-strip" id="hero-team-strip" aria-label="Full team status"></div>
+        </div>
+
+        <!-- COMPLETE — verdict scroll -->
+        <div id="hero-complete" class="hero-state" hidden>
+          <header class="hero-arena-head">
+            <div class="hero-arena-title">
+              <span class="hero-ticker-chip" id="hero-complete-ticker">—</span>
+              <span class="hero-arena-status" id="hero-complete-status">completed</span>
+            </div>
+          </header>
+
+          <div class="hero-verdict">
+            <div class="hero-verdict-pm" aria-hidden="true">
+              <div class="hero-fighter-portrait hero-verdict-pm-portrait" data-pose="pm"></div>
+              <div class="hero-verdict-pm-name">Portfolio Manager</div>
+            </div>
+            <div class="hero-verdict-scroll">
+              <div class="hero-verdict-ribbon">VERDICT</div>
+              <div class="hero-verdict-left">
+                <div id="hero-rating" class="hero-verdict-rating">—</div>
+                <div class="hero-verdict-kpis">
+                  <div class="hero-vk"><div class="hero-vk-label">Expected return</div><div id="hero-er" class="hero-vk-value">—</div></div>
+                  <div class="hero-vk"><div class="hero-vk-label">P(profit)</div><div id="hero-pop" class="hero-vk-value">—</div></div>
+                  <div class="hero-vk"><div class="hero-vk-label">Hold</div><div id="hero-hold" class="hero-vk-value">—</div></div>
+                  <div class="hero-vk"><div class="hero-vk-label">Conviction</div><div id="hero-conviction" class="hero-vk-value">—</div></div>
+                </div>
+              </div>
+              <div class="hero-verdict-right">
+                <h3 class="hero-verdict-thesis-title">Investment thesis</h3>
+                <div id="hero-thesis" class="hero-thesis"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-actions">
+            <button type="button" id="hero-schedule-btn" class="hero-go">
+              <span>Schedule</span>
+              <span class="hero-go-spark" aria-hidden="true">⏰</span>
+            </button>
+            <button type="button" id="hero-full-analysis-btn" class="hero-go hero-go-secondary">
+              <span>See full analysis in Analyses</span>
+              <span class="hero-go-spark" aria-hidden="true">🔭</span>
+            </button>
+            <button type="button" id="hero-another-btn" class="ghost-btn">↻ Analyze another</button>
+          </div>
+          <div id="hero-save-status" class="subtle"></div>
+        </div>
+      </section>
+
+      <!-- Hidden but kept for backwards-compat: the legacy feed list is still
+           updated by renderHeroFeed() so any older code path or screenshot
+           script that scrapes it keeps working. The arena drives the live
+           visuals; this is a quiet paper trail. -->
+      <ol id="hero-feed" class="hero-feed-hidden" hidden></ol>
+
+      <!-- Slim stats strip: 4 KPIs + spend bar + calibration in one continuous
+           card. Much denser than the old hero-grid + row-2 split. -->
+      <div class="ov-strip">
+        <div class="ov-strip-kpi">
+          <span class="ov-strip-label">Net asset value</span>
+          <span class="ov-strip-value huge" id="ov-nav">—</span>
+          <span class="ov-strip-sub subtle" id="ov-nav-delta">—</span>
+        </div>
+        <div class="ov-strip-kpi">
+          <span class="ov-strip-label">Realized</span>
+          <span class="ov-strip-value" id="ov-realized">—</span>
+          <span class="ov-strip-sub subtle">Closed positions</span>
+        </div>
+        <div class="ov-strip-kpi">
+          <span class="ov-strip-label">Unrealized</span>
+          <span class="ov-strip-value" id="ov-unrealized">—</span>
+          <span class="ov-strip-sub subtle">Open MTM</span>
+        </div>
+        <div class="ov-strip-kpi">
+          <span class="ov-strip-label">Cash</span>
+          <span class="ov-strip-value" id="ov-cash">—</span>
+          <span class="ov-strip-sub subtle">Free to deploy</span>
+        </div>
+        <div class="ov-strip-kpi ov-strip-spend">
+          <span class="ov-strip-label">LLM spend today <span id="ov-spend-tag" class="subtle"></span></span>
+          <div class="fund-spend-bar"><div class="fund-spend-bar-fill" id="ov-spend-fill"></div></div>
+          <span class="ov-strip-sub subtle"><span id="ov-spend-used">$0.00</span> <span id="ov-spend-cap">/ $5.00 cap</span></span>
+        </div>
+        <div class="ov-strip-kpi" id="cal-card">
+          <span class="ov-strip-label">Calibration <span id="ov-cal-state" class="subtle"></span></span>
+          <span class="ov-strip-value" id="ov-brier">—</span>
+          <span class="ov-strip-sub subtle" id="ov-cal-interp">Resolve outcomes to populate.</span>
+          <div id="cal-suggest" class="cal-suggest hidden"></div>
+        </div>
+      </div>
+
+      <div class="ov-row-2">
+        <div class="ov-card">
+          <header class="ov-card-head">
+            <h2>Recent activity</h2>
+            <span class="subtle" id="ov-activity-count"></span>
+          </header>
+          <table class="phase1-table compact-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Ticker</th>
+                <th>Verdict</th>
+                <th style="text-align:right">Target</th>
+              </tr>
+            </thead>
+            <tbody id="ov-activity">
+              <tr class="empty-row"><td colspan="5" class="subtle">No activity yet. Start a debate or create a thesis.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="ov-card" id="ask-card">
+          <header class="ov-card-head">
+            <h2>Ask the fund</h2>
+            <span class="subtle">Templated answers over your corpus.</span>
+          </header>
+          <div id="ask-buttons" class="ask-buttons">
+            <!-- Populated by fund.js on load. -->
+          </div>
+          <div id="ask-answer" class="ask-answer hidden">
+            <header class="ask-answer-head">
+              <h3 id="ask-answer-question">—</h3>
+              <button type="button" class="ghost-btn" id="ask-clear">✕ Clear</button>
+            </header>
+            <div class="ask-answer-meta subtle" id="ask-answer-meta"></div>
+            <div class="ask-answer-body" id="ask-answer-body"></div>
+            <div id="ask-answer-table" class="ask-answer-table"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== Theses ==================== -->
+    <section class="fund-section" data-section="theses" hidden>
+      <header class="fund-section-head">
+        <h1>Theses</h1>
+        <p class="subtle">A thesis is a persistent investment idea: tickers, schedule, debate config. Each fire runs
+          the full multi-agent debate; the post-decision hook drafts a journal entry, records a conviction score,
+          and (with paper-trade policy) routes orders through the risk guard.</p>
+      </header>
+
+      <section class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>New thesis</h2>
+        </header>
+        <form id="recipe-form" class="config-grid">
+          <div class="field">
+            <label>Name</label>
+            <input id="rf-name" type="text" required placeholder="Daily AAPL" />
+          </div>
+          <div class="field">
+            <label>Tickers (comma-separated)</label>
+            <input id="rf-tickers" type="text" required placeholder="AAPL" />
+          </div>
+          <div class="field span-2">
+            <label>Analysts</label>
+            <div id="rf-analysts" class="chip-row"></div>
+          </div>
+          <div class="field">
+            <label>Provider</label>
+            <select id="rf-provider"></select>
+          </div>
+          <div class="field">
+            <label>Quick model (analysts, trader)</label>
+            <select id="rf-quick"></select>
+          </div>
+          <div class="field">
+            <label>Deep model (managers)</label>
+            <select id="rf-deep"></select>
+          </div>
+          <div class="field">
+            <label>Bull researcher</label>
+            <select id="rf-bull"></select>
+          </div>
+          <div class="field">
+            <label>Bear researcher
+              <span class="subtle" id="rf-bear-hint">— different family from Bull</span>
+            </label>
+            <select id="rf-bear"></select>
+          </div>
+
+          <div class="advanced-toggle span-2">
+            <button type="button" id="rf-advanced-toggle" class="ghost-btn" aria-expanded="false">
+              <span class="advanced-arrow" aria-hidden="true">▸</span> Advanced options
+            </button>
+          </div>
+          <div id="rf-advanced" class="advanced-group span-2" hidden>
+            <div class="config-grid">
+              <div class="field">
+                <label>Schedule</label>
+                <select id="rf-schedule-kind">
+                  <option value="manual" selected>Manual — only fires on demand</option>
+                  <option value="interval">Interval (30s / 15m / 6h)</option>
+                  <option value="cron">Cron (e.g. "0 13 * * 1-5")</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Schedule expression</label>
+                <input id="rf-schedule-expr" type="text" placeholder="leave blank for manual" />
+              </div>
+              <div class="field">
+                <label>Output policy</label>
+                <select id="rf-policy">
+                  <option value="notify" selected>Notify only — no order</option>
+                  <option value="paper_trade">Paper trade — place orders</option>
+                  <option value="alert_conviction">Alert when conviction crosses threshold</option>
+                  <option value="assist_only">Assist-only — silent record</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Conviction threshold (1–10)</label>
+                <input id="rf-conviction" type="number" min="1" max="10" value="7" />
+              </div>
+              <div class="field">
+                <label>Daily LLM budget (USD)</label>
+                <input id="rf-budget" type="number" min="0.10" step="0.10" value="5.0" />
+              </div>
+              <div class="field">
+                <label>Market-hours only</label>
+                <select id="rf-mho">
+                  <option value="true" selected>Yes — skip nights/weekends</option>
+                  <option value="false">No — fire whenever scheduled</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions span-2">
+            <button type="submit" id="rf-submit" class="go-btn">
+              <span class="go-btn-label">Create recipe</span>
+              <span class="go-btn-spark">+</span>
+            </button>
+            <span id="rf-error" class="phase1-error"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>My theses <span id="r-count" class="subtle">(0)</span></h2>
+          <button type="button" id="r-refresh" class="ghost-btn">↻ Refresh</button>
+        </header>
+        <div class="fund-table-wrap">
+          <table class="phase1-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Tickers</th>
+                <th>Schedule</th>
+                <th>Policy</th>
+                <th>Status</th>
+                <th>Last run</th>
+                <th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="r-rows">
+              <tr class="empty-row"><td colspan="7" class="subtle">No recipes yet. Create one above.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- ==================== Analyses — full transcripts of every debate ==================== -->
+    <section class="fund-section" data-section="analyses" hidden>
+      <header class="fund-section-head">
+        <h1>Analyses</h1>
+        <p class="subtle">Every multi-agent debate the fund has run. Open one to see the full
+          transcript: each analyst's report, the bull/bear back-and-forth, the trader's plan, the
+          risk team's debate, and the PM's final call.</p>
+      </header>
+
+      <!-- LIST view (default). Opens on click → detail view. -->
+      <div class="phase1-card" id="analyses-list-card">
+        <header class="phase1-card-head">
+          <h2>All analyses <span id="analyses-count" class="subtle">(0)</span></h2>
+          <button type="button" id="analyses-refresh" class="ghost-btn">↻ Refresh</button>
+        </header>
+        <div class="fund-table-wrap">
+          <table class="phase1-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Ticker</th>
+                <th>Status</th>
+                <th>Verdict</th>
+                <th style="text-align:right">Target</th>
+                <th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="analyses-rows">
+              <tr class="empty-row"><td colspan="6" class="subtle">No analyses yet. Start a debate from the Floor tab.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DETAIL view. Filled by openAnalysisDetail(sessionId). Replaces the
+           list when an analysis is selected. -->
+      <div class="phase1-card" id="analysis-detail-card" hidden>
+        <header class="phase1-card-head analysis-detail-head">
+          <button type="button" id="analysis-back-btn" class="ghost-btn">← All analyses</button>
+          <h2 id="analysis-detail-title" class="analysis-detail-title">—</h2>
+          <span class="analysis-detail-meta">
+            <span id="analysis-detail-status" class="status-pill"></span>
+            <span id="analysis-detail-tag" class="final-card-tag"></span>
+          </span>
+        </header>
+        <div id="analysis-detail-body" class="analysis-detail-body">
+          <div class="subtle" style="padding:18px">Loading…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== Decisions (positions + orders merged) ==================== -->
+    <section class="fund-section" data-section="decisions" hidden>
+      <header class="fund-section-head">
+        <h1>Decisions</h1>
+        <p class="subtle">Every PM decision the fund made: the rating, what it bet, what's open, how it ended.
+          Open positions are the live book; orders are the audit trail.</p>
+      </header>
+
+      <!-- Conviction-decay timeseries (Phase 3 #4). Inline SVG sparkline; raw
+           score in dotted, decayed in solid so divergence is visible. -->
+      <div class="phase1-card" id="conviction-card">
+        <header class="phase1-card-head">
+          <h2>Conviction over time</h2>
+          <span class="subtle">Raw score (dotted) · decayed (solid) · half-life
+            <label class="conviction-knob">
+              <input type="number" id="conv-half-life" value="5" min="1" max="180" step="1" /> days
+            </label>
+          </span>
+        </header>
+        <div class="conviction-tickers" id="conviction-tickers"></div>
+        <svg id="conviction-svg" viewBox="0 0 720 200" preserveAspectRatio="none"
+             style="width:100%;height:200px;background:#0e1117;border-radius:6px;"></svg>
+        <p class="subtle conviction-hint" id="conviction-hint">
+          No conviction scores yet — fire a thesis to populate.
+        </p>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Open positions <span id="pos-count" class="subtle">(0)</span></h2>
+          <button type="button" class="ghost-btn" data-refresh="positions">↻ Refresh</button>
+        </header>
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th style="text-align:right">Qty</th>
+              <th style="text-align:right">Avg cost</th>
+              <th style="text-align:right">Last price</th>
+              <th style="text-align:right">MTM PnL</th>
+            </tr>
+          </thead>
+          <tbody id="positions-rows">
+            <tr class="empty-row"><td colspan="5" class="subtle">No positions.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Recent orders <span id="orders-count" class="subtle">(0)</span></h2>
+          <button type="button" class="ghost-btn" data-refresh="orders">↻ Refresh</button>
+        </header>
+        <p class="subtle" style="font-size:12px;margin:0 0 8px">
+          Click <strong>Why?</strong> on any row for the per-decision tear-down:
+          which analyst was load-bearing, what the Classical Analyst said, how much Bull and Bear agreed.
+        </p>
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Ticker</th>
+              <th>Side</th>
+              <th style="text-align:right">Qty</th>
+              <th style="text-align:right">Fill</th>
+              <th>Rating</th>
+              <th style="text-align:right">Conv</th>
+              <th style="text-align:right">Kelly</th>
+              <th>Status</th>
+              <th style="text-align:right">Why?</th>
+            </tr>
+          </thead>
+          <tbody id="orders-rows">
+            <tr class="empty-row"><td colspan="10" class="subtle">No orders yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== Journal (Phase 2 — the moat) ==================== -->
+    <section class="fund-section" data-section="journal" hidden>
+      <header class="fund-section-head">
+        <h1>Journal</h1>
+        <p class="subtle">The fund auto-drafts an entry on every completed decision. Open, edit, save —
+          this is where the fund learns who you are. Override reasons (when you deviate from a recommendation)
+          are the most valuable training signal.</p>
+      </header>
+
+      <div class="phase1-card" id="ask-card-journal">
+        <header class="phase1-card-head">
+          <h2>Ask the fund</h2>
+          <span class="subtle">Templated questions answered from your decisions, outcomes, and journal entries.</span>
+        </header>
+        <div id="ask-buttons-journal" class="ask-buttons">
+          <!-- Mirror of the Overview widget; same data. -->
+        </div>
+        <div id="ask-answer-journal" class="ask-answer hidden">
+          <header class="ask-answer-head">
+            <h3 id="ask-answer-question-journal">—</h3>
+            <button type="button" class="ghost-btn" data-clear-ask="journal">✕ Clear</button>
+          </header>
+          <div class="ask-answer-meta subtle" id="ask-answer-meta-journal"></div>
+          <div class="ask-answer-body" id="ask-answer-body-journal"></div>
+          <div id="ask-answer-table-journal" class="ask-answer-table"></div>
+        </div>
+      </div>
+
+      <section class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>New entry</h2>
+        </header>
+        <form id="je-form" class="config-grid">
+          <div class="field span-2">
+            <label>Body
+              <span class="subtle" id="je-attach-hint"></span>
+            </label>
+            <textarea id="je-body" rows="6" required
+              placeholder="What's your read? What did the fund miss? What would you do differently?"
+              style="width:100%;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px;font-family:inherit;font-size:13px;resize:vertical"></textarea>
+          </div>
+          <div class="field">
+            <label>Kind</label>
+            <select id="je-kind">
+              <option value="note" selected>Note — free-form observation</option>
+              <option value="reflection">Reflection — post-trade thinking</option>
+              <option value="override_reason">Override reason — why I deviated</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Attach to session (optional)</label>
+            <input id="je-session" type="text" placeholder="session id, or leave blank" />
+          </div>
+          <div class="actions span-2">
+            <button type="submit" class="go-btn small-go">
+              <span class="go-btn-label">Save entry</span>
+              <span class="go-btn-spark">✓</span>
+            </button>
+            <span id="je-error" class="phase1-error"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Timeline <span id="je-count" class="subtle">(0)</span></h2>
+          <div class="fund-toolbar">
+            <label class="subtle" style="display:flex;align-items:center;gap:6px;font-size:12px">
+              <input type="checkbox" id="je-show-drafts" />
+              Show drafts
+            </label>
+            <button type="button" id="je-refresh" class="ghost-btn">↻ Refresh</button>
+          </div>
+        </header>
+        <div id="je-entries" class="je-timeline">
+          <div class="empty-row subtle" style="padding:18px;text-align:center">No entries yet. The fund will auto-draft one the next time a thesis fires.</div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ==================== Risk events ==================== -->
+    <section class="fund-section" data-section="events" hidden>
+      <nav class="lab-subnav" aria-label="Lab tabs">
+        <button type="button" class="lab-subnav-btn" data-target="insights">📊 Insights</button>
+        <button type="button" class="lab-subnav-btn active" data-target="events">⚠️ Risk events</button>
+        <button type="button" class="lab-subnav-btn" data-target="backtest">🧪 Backtest</button>
+        <button type="button" class="lab-subnav-btn" data-target="risk">🛡 Risk controls</button>
+      </nav>
+      <header class="fund-section-head">
+        <h1>Risk events <span id="events-count" class="subtle">(0)</span></h1>
+        <button type="button" class="ghost-btn" data-refresh="events">↻ Refresh</button>
+      </header>
+      <p class="subtle" style="margin:0 0 14px">
+        Every block, clamp, or abstention emits an event here. <code>abstain</code> means the system declined a
+        trade (typically because Kelly said no bet or the PM omitted a required scalar).
+      </p>
+      <div class="phase1-card">
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Rule</th>
+              <th>Ticker</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="events-rows">
+            <tr class="empty-row"><td colspan="4" class="subtle">No risk events.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== Insights ==================== -->
+    <section class="fund-section" data-section="insights" hidden>
+      <nav class="lab-subnav" aria-label="Lab tabs">
+        <button type="button" class="lab-subnav-btn active" data-target="insights">📊 Insights</button>
+        <button type="button" class="lab-subnav-btn" data-target="events">⚠️ Risk events</button>
+        <button type="button" class="lab-subnav-btn" data-target="backtest">🧪 Backtest</button>
+        <button type="button" class="lab-subnav-btn" data-target="risk">🛡 Risk controls</button>
+      </nav>
+      <header class="fund-section-head">
+        <h1>Insights</h1>
+        <p class="subtle">Diagnostics on how the fund is learning. Behavioral patterns, prompt-A/B history,
+          Bull/Bear diversity, plus live streaming fires.</p>
+      </header>
+
+      <!-- Streaming fires — relocated from Overview. Belongs with diagnostics. -->
+      <div class="phase1-card" id="streaming-card">
+        <header class="phase1-card-head">
+          <h2>📡 Streaming fires <span id="streaming-count" class="subtle">(0)</span></h2>
+          <button type="button" id="streaming-refresh" class="ghost-btn">↻ Refresh</button>
+        </header>
+        <p class="subtle phase1-card-body" id="streaming-hint" style="margin:0 0 10px">
+          Recipes whose trigger conditions matched a live market event will appear here. Requires Alpaca creds and at least one recipe with a <code>trigger_conditions</code> set.
+        </p>
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Time (UTC)</th>
+              <th>Ticker</th>
+              <th>Recipe</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="streaming-rows">
+            <tr class="empty-row"><td colspan="4" class="subtle">No streaming fires yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Behavioral findings — relocated from Overview. -->
+      <div class="phase1-card" id="bf-card" hidden>
+        <header class="phase1-card-head">
+          <h2>🌡️ Behavioral findings <span id="bf-count" class="subtle">(0)</span></h2>
+          <button type="button" id="bf-rescan" class="ghost-btn">↻ Re-scan</button>
+        </header>
+        <div id="bf-list" class="bf-list"></div>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Behavioral history</h2>
+          <span id="ins-bh-count" class="subtle">(0)</span>
+        </header>
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Pattern</th>
+              <th style="text-align:right">Severity</th>
+              <th>Summary</th>
+              <th>State</th>
+            </tr>
+          </thead>
+          <tbody id="ins-bh-rows">
+            <tr class="empty-row"><td colspan="5" class="subtle">No behavioral findings yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Bull / Bear disagreement per fire</h2>
+          <span id="ins-dis-count" class="subtle">(0)</span>
+        </header>
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Bull → Bear</th>
+              <th style="text-align:right">Similarity</th>
+              <th>Rating agree?</th>
+            </tr>
+          </thead>
+          <tbody id="ins-dis-rows">
+            <tr class="empty-row"><td colspan="4" class="subtle">No fires yet. Trigger a thesis to populate.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Prompt-eval history</h2>
+          <span id="ins-pe-count" class="subtle">(0)</span>
+        </header>
+        <p class="subtle" style="font-size:12px;margin:0 0 8px">
+          Each row is a candidate prompt variant scored against the live one.
+          Brier improvement &gt; 2 points + sufficient sample size promotes the variant.
+        </p>
+        <table class="phase1-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Variant</th>
+              <th style="text-align:right">N</th>
+              <th style="text-align:right">Baseline Brier</th>
+              <th style="text-align:right">Variant Brier</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="ins-pe-rows">
+            <tr class="empty-row"><td colspan="6" class="subtle">No prompt evaluations yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== Backtest (Phase 3) ==================== -->
+    <section class="fund-section" data-section="backtest" hidden>
+      <nav class="lab-subnav" aria-label="Lab tabs">
+        <button type="button" class="lab-subnav-btn" data-target="insights">📊 Insights</button>
+        <button type="button" class="lab-subnav-btn" data-target="events">⚠️ Risk events</button>
+        <button type="button" class="lab-subnav-btn active" data-target="backtest">🧪 Backtest</button>
+        <button type="button" class="lab-subnav-btn" data-target="risk">🛡 Risk controls</button>
+      </nav>
+      <header class="fund-section-head">
+        <h1>Backtest</h1>
+        <p class="subtle">Replay a ticker through the deterministic stub-LLM decision engine. Strict-causal — no peeking past the as-of date.</p>
+      </header>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Run a backtest</h2>
+        </header>
+        <form id="backtest-form" class="grid-form">
+          <label>
+            Ticker
+            <input type="text" id="bt-ticker" placeholder="AAPL" required />
+          </label>
+          <label>
+            From
+            <input type="date" id="bt-from" required />
+          </label>
+          <label>
+            To
+            <input type="date" id="bt-to" required />
+          </label>
+          <label>
+            Starting cash
+            <input type="number" id="bt-cash" value="100000" min="1000" step="1000" />
+          </label>
+          <label>
+            Kelly cap
+            <input type="number" id="bt-kelly" value="0.10" min="0.01" max="1" step="0.01" />
+          </label>
+          <button type="submit" id="bt-run-btn" class="primary">Run</button>
+        </form>
+        <div id="bt-status" class="subtle"></div>
+      </div>
+
+      <div class="phase1-card" id="bt-result-card" hidden>
+        <header class="phase1-card-head">
+          <h2>Result</h2>
+          <span id="bt-result-symbol" class="subtle"></span>
+        </header>
+        <div class="kpi-row" id="bt-kpis"></div>
+        <div class="phase1-card-body">
+          <h3 class="subtle">Equity curve</h3>
+          <svg id="bt-equity-svg" viewBox="0 0 600 180" preserveAspectRatio="none" style="width:100%;height:180px;background:#0e1117;border-radius:6px;"></svg>
+        </div>
+        <div class="phase1-card-body">
+          <h3 class="subtle">Last 10 trades</h3>
+          <table class="phase1-table">
+            <thead>
+              <tr><th>Entry</th><th>Exit</th><th>Qty</th><th>Entry $</th><th>Exit $</th><th>Return %</th><th>Reason</th></tr>
+            </thead>
+            <tbody id="bt-trades-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== Risk controls ==================== -->
+    <section class="fund-section" data-section="risk" hidden>
+      <nav class="lab-subnav" aria-label="Lab tabs">
+        <button type="button" class="lab-subnav-btn" data-target="insights">📊 Insights</button>
+        <button type="button" class="lab-subnav-btn" data-target="events">⚠️ Risk events</button>
+        <button type="button" class="lab-subnav-btn" data-target="backtest">🧪 Backtest</button>
+        <button type="button" class="lab-subnav-btn active" data-target="risk">🛡 Risk controls</button>
+      </nav>
+      <header class="fund-section-head">
+        <h1>Risk controls</h1>
+        <p class="subtle">Limits that gate every paper order. Edit and Save to persist.</p>
+      </header>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Kill switch</h2>
+          <span id="kill-state" class="subtle"></span>
+        </header>
+        <div class="risk-toggle">
+          <label class="switch">
+            <input type="checkbox" id="kill-toggle" />
+            <span class="slider"></span>
+          </label>
+          <div>
+            <div><strong>Block all new paper orders</strong></div>
+            <div class="subtle">Toggle on to halt every order regardless of policy. Existing positions are untouched.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Behavioral cooldown</h2>
+          <span id="bc-state" class="subtle"></span>
+        </header>
+        <div class="risk-toggle">
+          <label class="switch">
+            <input type="checkbox" id="bc-toggle" />
+            <span class="slider"></span>
+          </label>
+          <div>
+            <div><strong>Block next order after a tilt / revenge finding</strong></div>
+            <div class="subtle">Detection always runs. This toggle decides whether the fund <em>acts</em> on it.
+              When on, the next paper order within 60min of a flagged pattern is blocked with a
+              <code>tilt_cooldown</code> risk event.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Sizing + drawdown</h2>
+        </header>
+        <div class="risk-numbers">
+          <div>
+            <label>Max position % of NAV</label>
+            <input id="rl-max-pos" type="number" min="0" max="1" step="0.01" />
+          </div>
+          <div>
+            <label>Max daily drawdown %</label>
+            <input id="rl-max-dd" type="number" min="0" max="1" step="0.01" />
+          </div>
+          <div>
+            <label>Kelly fraction cap
+              <span class="subtle" style="font-size:11px">(0.10 = deci-Kelly; safer)</span>
+            </label>
+            <input id="rl-kelly" type="number" min="0" max="1" step="0.01" />
+          </div>
+          <div>
+            <label>Slippage (bps)</label>
+            <input id="rl-slip" type="number" min="0" max="10000" />
+          </div>
+        </div>
+      </div>
+
+      <div class="phase1-card">
+        <header class="phase1-card-head">
+          <h2>Spend caps</h2>
+        </header>
+        <div class="risk-numbers">
+          <div>
+            <label>Daily LLM spend cap (USD)</label>
+            <input id="rl-daily-spend" type="number" min="0" step="0.10" />
+          </div>
+          <div>
+            <label>Monthly LLM spend cap (USD)</label>
+            <input id="rl-monthly-spend" type="number" min="0" step="1.0" />
+          </div>
+        </div>
+        <div class="phase1-risk-actions" style="margin-top:14px">
+          <button type="button" id="rl-save" class="go-btn small-go">
+            <span class="go-btn-label">Save limits</span>
+            <span class="go-btn-spark">✓</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="phase1-flash" class="phase1-flash hidden"></div>
+
+  <!-- Compliance attestation modal — server-driven. Pops on first visit AND
+       on any disclaimer-version bump (the server returns needs_attestation
+       true even if the user previously acked an older version). The
+       fetch interceptor also opens it when any API call returns 412 with
+       code=compliance_required. -->
+  <div id="compliance-modal" class="compliance-modal hidden" role="dialog" aria-modal="true" aria-labelledby="compliance-title">
+    <div class="compliance-card">
+      <header class="compliance-head">
+        <h2 id="compliance-title">Before you use the Fund</h2>
+        <p class="subtle">
+          Please review and accept the documents below — <span id="compliance-version">Version v1.0</span>.
+          When any of these change, you'll be asked to re-accept.
+        </p>
+      </header>
+      <div id="compliance-docs" class="compliance-docs">
+        <!-- Filled in dynamically from GET /api/audit/compliance-ack so the
+             active disclaimer / privacy summary / terms summary always
+             match what the server is enforcing for this version. -->
+      </div>
+      <label class="compliance-confirm">
+        <input type="checkbox" id="compliance-confirm-check" />
+        I have read and agree to the <strong>Disclaimer</strong>,
+        <strong>Privacy Policy</strong>, and <strong>Terms of Use</strong>.
+      </label>
+      <div id="compliance-error" class="phase1-error" role="alert"></div>
+      <div class="compliance-actions">
+        <button type="button" id="compliance-accept" class="go-btn small-go" disabled>
+          <span class="go-btn-label">I accept &amp; continue</span>
+          <span class="go-btn-spark">✓</span>
+        </button>
+        <button type="button" id="compliance-decline" class="ghost-btn">Back to home</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Schedule modal ====================
+       Opens from the verdict-card "Schedule" button. Lets the user save the
+       current ticker + agent lineup as a recurring recipe with one of four
+       cadences: daily, weekly (specific weekday), monthly, or a free-form
+       cron expression. Posts to /api/recipes. -->
+  <div id="schedule-modal" class="schedule-modal hidden" role="dialog" aria-modal="true" aria-labelledby="schedule-title">
+    <div class="schedule-card">
+      <header class="schedule-head">
+        <h2 id="schedule-title">Schedule this analysis</h2>
+        <button type="button" class="schedule-close" id="schedule-cancel-x" aria-label="Close">✕</button>
+      </header>
+      <p class="subtle schedule-sub">
+        We'll re-run the full multi-agent debate on
+        <strong id="schedule-ticker-label">—</strong>
+        with the same lineup on the cadence you pick. You can pause or delete it later from the Analyses tab.
+      </p>
+
+      <div class="schedule-cadence" role="radiogroup" aria-label="Cadence">
+        <label class="schedule-opt">
+          <input type="radio" name="schedule-kind" value="daily" checked />
+          <div class="schedule-opt-body">
+            <div class="schedule-opt-title">Daily</div>
+            <div class="schedule-opt-sub">Every weekday at the time below</div>
+          </div>
+        </label>
+        <label class="schedule-opt">
+          <input type="radio" name="schedule-kind" value="weekly" />
+          <div class="schedule-opt-body">
+            <div class="schedule-opt-title">Weekly</div>
+            <div class="schedule-opt-sub">Once a week on the day you pick</div>
+          </div>
+        </label>
+        <label class="schedule-opt">
+          <input type="radio" name="schedule-kind" value="monthly" />
+          <div class="schedule-opt-body">
+            <div class="schedule-opt-title">Monthly</div>
+            <div class="schedule-opt-sub">Once a month on day-of-month</div>
+          </div>
+        </label>
+        <label class="schedule-opt">
+          <input type="radio" name="schedule-kind" value="cron" />
+          <div class="schedule-opt-body">
+            <div class="schedule-opt-title">Custom cron</div>
+            <div class="schedule-opt-sub">Power-user — write the cron expression</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="schedule-detail" id="schedule-detail-daily">
+        <label>
+          Time of day (UTC, market-hours only)
+          <input type="time" id="schedule-time-daily" value="13:30" />
+        </label>
+      </div>
+      <div class="schedule-detail" id="schedule-detail-weekly" hidden>
+        <label>
+          Day of week
+          <select id="schedule-weekday">
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+            <option value="0">Sunday</option>
+          </select>
+        </label>
+        <label>
+          Time of day (UTC)
+          <input type="time" id="schedule-time-weekly" value="13:30" />
+        </label>
+      </div>
+      <div class="schedule-detail" id="schedule-detail-monthly" hidden>
+        <label>
+          Day of month (1–28)
+          <input type="number" id="schedule-day-monthly" min="1" max="28" value="1" />
+        </label>
+        <label>
+          Time of day (UTC)
+          <input type="time" id="schedule-time-monthly" value="13:30" />
+        </label>
+      </div>
+      <div class="schedule-detail" id="schedule-detail-cron" hidden>
+        <label>
+          Cron expression
+          <input type="text" id="schedule-cron-expr" placeholder="0 13 * * 1-5" autocomplete="off" />
+          <span class="subtle schedule-cron-help">5-field cron: minute hour day-of-month month day-of-week. Example: <code>0 13 * * 1-5</code> = weekdays at 13:00 UTC.</span>
+        </label>
+      </div>
+
+      <div class="schedule-name-row">
+        <label>
+          Name this schedule
+          <input type="text" id="schedule-name" placeholder="e.g. NVDA earnings watch" />
+        </label>
+      </div>
+
+      <div id="schedule-error" class="phase1-error" role="alert"></div>
+      <div class="schedule-actions">
+        <button type="button" id="schedule-cancel" class="ghost-btn">Cancel</button>
+        <button type="button" id="schedule-submit" class="hero-go">
+          <span>Schedule it</span>
+          <span class="hero-go-spark" aria-hidden="true">⏰</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

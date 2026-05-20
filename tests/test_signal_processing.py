@@ -88,3 +88,60 @@ class TestSignalProcessor:
     def test_default_when_no_rating_present(self):
         sp = SignalProcessor()
         assert sp.process_signal("Plain prose without a recommendation.") == "Hold"
+
+
+# ---------------------------------------------------------------------------
+# Sycophancy guard: structured PortfolioDecision overrides contradicting prose
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSycophancyGuard:
+    """The PortfolioDecision.rating field is authoritative; prose isn't.
+
+    Reward-hacking surface: an LLM that learns to write "Strong Buy" markdown
+    while the structured field says HOLD would silently move the downstream
+    Brier score. The signal path must trust the typed field when present.
+    """
+
+    def _hold_decision_dict(self):
+        from agenticwhales.agents.schemas import PortfolioDecision
+
+        return PortfolioDecision(
+            rating="Hold",
+            executive_summary="Evidence is balanced; sit out.",
+            investment_thesis="Neither side carried the debate.",
+        ).model_dump(mode="json")
+
+    def test_structured_overrides_buy_in_markdown(self):
+        sp = SignalProcessor()
+        markdown_says_buy = (
+            "**Rating**: Buy\n\n"
+            "**Executive Summary**: Strong Buy — load up here.\n"
+        )
+        assert sp.process_signal(
+            markdown_says_buy,
+            self._hold_decision_dict(),
+        ) == "Hold"
+
+    def test_structured_accepts_pydantic_model(self):
+        from agenticwhales.agents.schemas import PortfolioDecision
+
+        sp = SignalProcessor()
+        model = PortfolioDecision(
+            rating="Sell",
+            executive_summary="Exit now.",
+            investment_thesis="Guidance cut.",
+        )
+        assert sp.process_signal("Rating: Buy\nWhatever the prose says.", model) == "Sell"
+
+    def test_falls_back_when_structured_is_none(self):
+        sp = SignalProcessor()
+        # Free-text fallback fired in the PM node → pm_decision is None.
+        assert sp.process_signal("Rating: Underweight\nTrim.", None) == "Underweight"
+
+    def test_invalid_structured_rating_falls_back_to_regex(self):
+        sp = SignalProcessor()
+        # If something corrupted the dict, don't trust it — fall back.
+        bogus = {"rating": "Maybe", "executive_summary": "x", "investment_thesis": "y"}
+        assert sp.process_signal("Rating: Overweight\nDetails.", bogus) == "Overweight"
