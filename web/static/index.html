@@ -47,6 +47,10 @@
     <button id="new-session-btn" class="primary-btn">+ New analysis</button>
     <button id="new-batch-btn" class="primary-btn secondary">▦ Daily basket</button>
     <button id="portfolio-btn" class="primary-btn tertiary">⚖ My positions</button>
+    <!-- Admin-only nav: linked to the standalone /usage page so it's also
+         bookmarkable. Hidden by default; app.js reveals it after probing
+         /api/usage/me. -->
+    <a id="usage-link" class="sidebar-admin-link hidden" href="/usage">📊 Usage dashboard →</a>
     <div class="sidebar-section" data-section="batches">
       <button type="button" class="section-label section-toggle">
         <span class="section-chevron">▾</span>

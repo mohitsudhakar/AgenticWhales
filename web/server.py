@@ -19,8 +19,8 @@ from agenticwhales import portfolio
 from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
 from agenticwhales.universe import universe_for_api
 
-from . import auth, batch_storage, storage
-from .auth import authenticate_websocket, get_current_user_id
+from . import admin, auth, batch_storage, storage
+from .auth import authenticate_websocket, get_current_user_id, require_admin
 from .batch_runner import BatchRunner, build_batch
 from .runner import (
     ANALYST_AGENT_NAMES,
@@ -160,8 +160,6 @@ def _render_html(filename: str) -> HTMLResponse:
     return HTMLResponse(html)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index() -> HTMLResponse:
     """Root serves the sign-in landing page. landing.js does the conditional
     redirect to /fund once Supabase reports a signed-in user — that's why /
     must NOT be a server-side 307 (it would race against /fund's own
@@ -179,6 +177,14 @@ async def fund_page() -> HTMLResponse:
 async def analyze_page() -> HTMLResponse:
     """Power-user surface: one-shot analyses + batches with full model picker."""
     return _render_html("index.html")
+
+
+@app.get("/usage", response_class=HTMLResponse)
+async def usage_page() -> HTMLResponse:
+    """Standalone admin-only usage dashboard. The page itself is served to
+    anyone (it has to be, so the unauthenticated state can show a sign-in
+    prompt), but the data fetch behind it is gated by require_admin."""
+    return _render_html("usage.html")
 
 
 # Defaults applied to the new-analysis and basket forms. Driven by env vars
@@ -543,6 +549,19 @@ async def put_portfolio(
 ) -> Dict[str, Any]:
     portfolio.save_all(payload.positions)
     return {"positions": portfolio.load_all()}
+
+
+@app.get("/api/usage/me")
+async def usage_me(user_id: str = Depends(require_admin)) -> Dict[str, Any]:
+    """Tiny probe the /usage page uses to decide whether to render the
+    dashboard or a 'not authorised' message. 200 = caller is admin;
+    403 otherwise."""
+    return {"user_id": user_id, "admin_email": auth.ADMIN_EMAIL}
+
+
+@app.get("/api/usage/dashboard")
+async def usage_dashboard(user_id: str = Depends(require_admin)) -> Dict[str, Any]:
+    return admin.build_dashboard()
 
 
 # ============================================================================
