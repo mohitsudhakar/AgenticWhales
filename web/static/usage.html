@@ -6,89 +6,124 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
   <meta name="darkreader-lock" />
-  <title>Usage dashboard · AgenticWhales</title>
+  <title>Usage · AgenticWhales</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=3" />
   <!-- Supabase client (Auth + tokens). Same module the main SPA uses; it
        attaches itself to window.AgenticWhalesAuth. usage.js waits for the
        agenticwhales-auth-ready event before fetching dashboard data. -->
   <script type="module" src="/static/supabase-client.js"></script>
-  <script src="/static/usage.js" defer></script>
+  <script src="/static/usage.js?v=2" defer></script>
 </head>
 
 <body class="standalone">
-  <header class="standalone-topbar">
-    <div class="brand">
-      <img class="brand-mark" src="/static/favicon.svg" alt="" width="32" height="32" />
-      <div>
-        <div class="brand-title">Agentic Whales</div>
-        <div class="brand-sub">USAGE DASHBOARD</div>
+  <header class="usage-topbar">
+    <a href="/" class="usage-back" aria-label="Back to app">
+      <span aria-hidden="true">◀</span><span class="usage-back-label">Back</span>
+    </a>
+    <div class="usage-brand">
+      <img src="/static/favicon.svg" alt="" width="28" height="28" />
+      <div class="usage-brand-text">
+        <div class="usage-brand-title">Agentic Whales</div>
+        <div class="usage-brand-sub">Usage</div>
       </div>
     </div>
-    <a href="/">← Back to app</a>
+    <div class="usage-topbar-actions">
+      <span id="dash-generated" class="usage-generated"></span>
+      <button type="button" id="dash-refresh" class="usage-icon-btn" title="Refresh"
+        aria-label="Refresh dashboard"><span aria-hidden="true">↻</span></button>
+      <button type="button" id="dash-signout" class="usage-icon-btn" title="Sign out"
+        aria-label="Sign out"><span aria-hidden="true">⎋</span></button>
+    </div>
   </header>
 
-  <!-- Gate shown when the visitor isn't signed in, isn't admin, or auth
-       hasn't finished loading. Replaced by .standalone-main once the
-       /api/usage/me probe returns 200. -->
-  <main id="gate" class="standalone-gate">
-    <h1 id="gate-title">Checking access…</h1>
-    <p id="gate-msg" class="subtle">Verifying your account.</p>
-    <button type="button" id="gate-google" class="google-btn hidden" disabled>
-      <svg class="google-g" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
-        <path fill="#FFC107"
-          d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z" />
-        <path fill="#FF3D00"
-          d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
-        <path fill="#4CAF50"
-          d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.1C29.2 35.4 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z" />
-        <path fill="#1976D2"
-          d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.2 5.1C40.8 35.6 44 30.3 44 24c0-1.2-.1-2.3-.4-3.5z" />
-      </svg>
-      <span>Sign in with Google</span>
-    </button>
-    <button type="button" id="gate-signout" class="ghost-btn hidden">Sign out</button>
+  <!-- Pre-auth / non-admin gate. Replaced by #dashboard once /api/usage/me
+       returns 200. -->
+  <main id="gate" class="usage-gate">
+    <div class="usage-gate-card">
+      <h1 id="gate-title">Checking access…</h1>
+      <p id="gate-msg" class="subtle">Verifying your account.</p>
+      <button type="button" id="gate-google" class="google-btn hidden" disabled>
+        <svg class="google-g" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
+          <path fill="#FFC107"
+            d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z" />
+          <path fill="#FF3D00"
+            d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+          <path fill="#4CAF50"
+            d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.1C29.2 35.4 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z" />
+          <path fill="#1976D2"
+            d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.2 5.1C40.8 35.6 44 30.3 44 24c0-1.2-.1-2.3-.4-3.5z" />
+        </svg>
+        <span>Sign in with Google</span>
+      </button>
+      <button type="button" id="gate-signout" class="ghost-btn hidden">Sign out</button>
+    </div>
   </main>
 
-  <main id="dashboard" class="standalone-main hidden">
-    <header class="page-header dashboard-header">
-      <div>
-        <h1>Usage dashboard</h1>
-        <p class="subtle" id="dash-meta">Lifetime totals across every signed-in user, plus a 30-day daily series.</p>
-      </div>
-      <div class="dashboard-actions">
-        <button type="button" id="dash-refresh" class="ghost-btn">↻ Refresh</button>
-        <span id="dash-generated" class="subtle"></span>
-        <button type="button" id="dash-signout" class="ghost-btn">Sign out</button>
-      </div>
-    </header>
+  <main id="dashboard" class="usage-main hidden">
+    <!-- Hero metric strip: three cards, each grouping related stats so the
+         page tells a story at a glance instead of dumping 8+ tiles. -->
+    <section class="usage-hero" id="usage-hero"></section>
 
-    <section id="dash-metrics" class="dash-metric-grid"></section>
-
-    <section class="dash-chart-card">
-      <div class="dash-chart-head">
-        <h2>Daily activity — last 30 days</h2>
-        <div class="dash-chart-legend" id="dash-chart-legend"></div>
+    <!-- Big chart: daily tokens, stacked in/out, with a Y axis and grid
+         lines. SVG (not CSS bars) so narrow viewports still render cleanly. -->
+    <section class="usage-card">
+      <header class="usage-card-head">
+        <div>
+          <h2>Daily activity</h2>
+          <p class="subtle">Tokens consumed per day, last 30 days · stacked in/out</p>
+        </div>
+        <div class="usage-chart-legend" id="usage-chart-legend"></div>
+      </header>
+      <div id="usage-chart" class="usage-chart"></div>
+      <div class="usage-chart-footer">
+        <div class="usage-chart-stat" id="usage-chart-stats"></div>
       </div>
-      <div id="dash-chart" class="dash-chart"></div>
     </section>
 
-    <section class="dash-users-card">
-      <div class="dash-users-head">
-        <h2>Per user</h2>
-        <div class="dash-users-controls">
+    <!-- Two side-by-side: top users panel + per-day mini activity (analyses) -->
+    <div class="usage-split">
+      <section class="usage-card">
+        <header class="usage-card-head">
+          <div>
+            <h2>Top users</h2>
+            <p class="subtle">Ranked by total tokens · top 8</p>
+          </div>
+        </header>
+        <ol class="usage-top-list" id="usage-top-list"></ol>
+      </section>
+
+      <section class="usage-card">
+        <header class="usage-card-head">
+          <div>
+            <h2>Daily analyses</h2>
+            <p class="subtle">Run count per day, last 30 days</p>
+          </div>
+        </header>
+        <div id="usage-mini-chart" class="usage-mini-chart"></div>
+      </section>
+    </div>
+
+    <!-- Full per-user table -->
+    <section class="usage-card">
+      <header class="usage-card-head">
+        <div>
+          <h2>All users</h2>
+          <p class="subtle" id="usage-users-meta">Per-user usage breakdown</p>
+        </div>
+        <div class="usage-users-controls">
           <input type="search" id="dash-user-search" placeholder="Filter by email or name" />
           <select id="dash-user-sort">
-            <option value="tokens_total">Sort: tokens (total)</option>
-            <option value="analyses">Sort: analyses</option>
-            <option value="batches">Sort: batches</option>
-            <option value="last_active">Sort: last active</option>
-            <option value="created_at">Sort: signed up</option>
+            <option value="tokens_total">Tokens (total)</option>
+            <option value="analyses">Analyses</option>
+            <option value="batches">Batches</option>
+            <option value="last_active">Last active</option>
+            <option value="created_at">Signed up</option>
           </select>
         </div>
-      </div>
-      <div class="dash-users-wrap">
-        <table class="dash-users-table">
+      </header>
+      <div class="usage-users-wrap">
+        <table class="usage-users-table">
           <thead>
             <tr>
               <th>User</th>
