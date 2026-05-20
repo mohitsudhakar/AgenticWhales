@@ -90,31 +90,30 @@ What would convince me. (1) A walk-forward backtest over at least 10 years of US
 
 Four phases. Each item lists the concerns it addresses, the files touched, and a verifiable acceptance criterion. The phases are sized so Phase 1 can land this week, Phase 2 over the next two weeks, Phase 3 in roughly a month, and Phase 4 as the next quarter's roadmap. Phase 1 and Phase 2 are pure engineering; Phase 3 is where validation begins; Phase 4 is the structural redesign that the Demis and Cliff reviews point to.
 
-### Phase 1 — Critical bug fixes (week 1)
+### Phase 1 — Critical bug fixes (week 1) — *Landed on `review_fix`*
 
-**P1.1 — Make `_build_diversified_synthesizer_llm` actually role-aware.**
+All four items shipped on the `review_fix` branch with 7 new integration tests; full suite of 99 tests passes locally with no regressions.
+
+**P1.1 — Make `_build_diversified_synthesizer_llm` actually role-aware. ✅ Done.**
 Addresses: C1.
-Files: [agenticwhales/graph/trading_graph.py:210-250](agenticwhales/graph/trading_graph.py), [agenticwhales/default_config.py:50-61](agenticwhales/default_config.py).
-Change: thread an `exclude: set[str]` parameter through the synthesizer builder so the second call (Portfolio Manager) cannot pick the same provider the first call (Research Manager) already took. Fall back to next-preference, and only fall back to upstream if no preference candidate is usable.
-Acceptance: a unit test that runs `TradingGraph.__init__` with the default config and asserts that `research_manager_llm` and `portfolio_manager_llm` resolve to different provider classes. Acceptance metric: 100% of default-config runs produce two distinct synthesizer providers when at least two preference entries have credentials.
+Files touched: [agenticwhales/graph/trading_graph.py](agenticwhales/graph/trading_graph.py) — `__init__` now passes `exclude={research_manager_provider}` to the Portfolio Manager call; `_build_diversified_synthesizer_llm` takes an optional `exclude` set and skips both upstream and excluded candidates; per-role resolved provider stored in `self.diversification_status`.
+Verified by: `tests/integration/test_floor_pipeline.py::test_default_config_synthesizers_use_different_providers` and `::test_portfolio_manager_falls_back_when_only_one_synth_provider_available`.
 
-**P1.2 — Fix the Neutral/Aggressive debater collision.**
+**P1.2 — Fix the Neutral/Aggressive debater collision. ✅ Done.**
 Addresses: C2.
-Files: [agenticwhales/graph/trading_graph.py:252-311](agenticwhales/graph/trading_graph.py), [agenticwhales/default_config.py:71-79](agenticwhales/default_config.py).
-Change two-part: (a) when `len(usable) < 3`, log a WARN that the round-robin will partially collide and document the chosen assignment; (b) add a third provider to the default `debater_provider_preference` so the round-robin is actually three-way. Suggested addition: `"openai"` or `"xai"` (xai is preferred — keeps OpenAI free for upstream and Anthropic for synthesizers).
-Acceptance: unit test asserting that with the default preference list and all credentials available, no two adjacent debaters in the round-robin (Agg→Con, Con→Neu, Neu→Agg) share a provider.
+Files touched: [agenticwhales/default_config.py](agenticwhales/default_config.py) — `debater_provider_preference` now defaults to `["google", "deepseek", "xai"]` (added xai as the third entry). [agenticwhales/graph/trading_graph.py](agenticwhales/graph/trading_graph.py) `_build_debater_llms` — explicit `len(usable) < 3` WARN, per-debater provider recorded in `diversification_status`, and adjacent-pair collision detection that marks colliding slots as `degraded`.
+Verified by: `::test_default_config_no_adjacent_debater_collision` and `::test_two_debater_providers_marks_collision_as_degraded`.
 
-**P1.3 — Promote diversification fallback to WARN and surface it.**
+**P1.3 — Promote diversification fallback to WARN and surface it. ✅ Done.**
 Addresses: C11.
-Files: [agenticwhales/graph/trading_graph.py:245-250, 289-294](agenticwhales/graph/trading_graph.py), [web/runner.py](web/runner.py).
-Change: `logger.warning` instead of `logger.info` when falling back; record the resolved provider for each role in the session state; emit a `{"type": "diversification_status", ...}` event with `degraded: bool` and the per-role assignments; render a banner in the web UI when degraded.
-Acceptance: starting a session with one of the preference providers' API keys deliberately unset shows a yellow banner naming the affected role and the fallback provider used.
+Files touched: [agenticwhales/graph/trading_graph.py](agenticwhales/graph/trading_graph.py) — every fallback path now `logger.warning`s with the role and the reason. New `AgenticWhalesGraph.get_diversification_status()` public method. [web/runner.py](web/runner.py) — new `_set_diversification_status` helper and one-shot emit right after graph construction. [web/static/index.html](web/static/index.html), [web/static/app.js](web/static/app.js), [web/static/styles.css](web/static/styles.css) — new `#s-diversification-banner` element with green-OK / yellow-degraded variants, populated by the new event handler.
+Verified by: `::test_diversification_status_shape`, `::test_only_upstream_creds_set_marks_all_diversified_slots_degraded`, manual UI spot-check pending.
 
-**P1.4 — Phase 1 regression baseline.**
-Addresses: foundation for everything later.
-Files: new `tests/integration/test_floor_pipeline.py`.
-Change: a smoke test that wires the full graph with cached LLM responses and asserts (a) all 18 expected nodes run, (b) the resolved provider for each role matches expectation, (c) the streaming events emitted match a recorded golden file. This is the safety net for the bigger Phase 2 refactors.
-Acceptance: test runs in CI in under 30s with no live API calls.
+**P1.4 — Phase 1 regression baseline. ✅ Done.**
+Files added: [tests/integration/test_floor_pipeline.py](tests/integration/test_floor_pipeline.py) — 7 tests, all green, no live API calls, total runtime ~1s.
+Coverage: synthesizer non-collision, debater non-collision, status shape, top-level degraded flag, 2-provider partial collision, fully degraded fallback, single-synthesizer fallback. The full 99-test suite still passes.
+
+Definition of Done for `review_fix`: all four items landed; opens a PR for review.
 
 ### Phase 2 — Performance, cost, reliability (weeks 2-3)
 

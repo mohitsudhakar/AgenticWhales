@@ -195,6 +195,19 @@ class SessionRunner:
         self._broadcast({"type": "stats", "stats": dict(stats)})
         storage.save(self.session)
 
+    def _set_diversification_status(self, status: Dict[str, Any]) -> None:
+        """Record + broadcast the per-role provider assignments for this session.
+
+        P1.3: when the Heterogeneity Mandate could not be fully satisfied
+        (any role's ``degraded`` flag is True), the web UI surfaces a banner
+        naming the affected roles and the fallback providers used. ``status``
+        is the dict returned by ``AgenticWhalesGraph.get_diversification_status``.
+        """
+        with self._lock:
+            self.session["diversification_status"] = dict(status)
+        self._broadcast({"type": "diversification_status", **status})
+        storage.save(self.session)
+
     # ---- entrypoint ----
 
     def start(self) -> None:
@@ -256,6 +269,16 @@ class SessionRunner:
         if self._cancel_requested.is_set():
             self._finalize_cancelled()
             return
+
+        # P1.3: surface the resolved per-role provider assignments + any
+        # degradation of the Heterogeneity Mandate to connected UI clients.
+        # Emitted once, right after graph construction; persisted in session
+        # state so late-joining subscribers still see it via the snapshot.
+        try:
+            self._set_diversification_status(graph.get_diversification_status())
+        except Exception:
+            # Diagnostic only — never block the run on this.
+            pass
 
         self._set_session(status="running", started_at=time.time())
         if analysts:
