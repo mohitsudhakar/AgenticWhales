@@ -15,6 +15,7 @@ from langgraph.prebuilt import ToolNode
 
 from agenticwhales.llm_clients import create_llm_client
 from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
+from agenticwhales.llm_clients.retry import apply_retry
 
 from agenticwhales.agents import *
 from agenticwhales.default_config import DEFAULT_CONFIG
@@ -96,8 +97,12 @@ class AgenticWhalesGraph:
             **llm_kwargs,
         )
 
-        self.deep_thinking_llm = deep_client.get_llm()
-        self.quick_thinking_llm = quick_client.get_llm()
+        # P2.5: wrap upstream LLMs in retry. The Phase 1 diversification
+        # status fallback handles long-running provider outages; retry is
+        # for transient 429 / 503 / connection-reset failures so a single
+        # blip doesn't kill an 18-LLM-call session.
+        self.deep_thinking_llm = apply_retry(deep_client.get_llm())
+        self.quick_thinking_llm = apply_retry(quick_client.get_llm())
         # Per-role record of which provider each diversified slot ended up on,
         # plus a per-role ``degraded`` flag that's True when the Heterogeneity
         # Mandate could not be satisfied for that slot (fell back to upstream,
@@ -223,9 +228,14 @@ class AgenticWhalesGraph:
         extra: Dict[str, Any] = {}
         if self.callbacks:
             extra["callbacks"] = self.callbacks
-        return create_llm_client(
-            provider=provider, model=model, base_url=None, **extra,
-        ).get_llm()
+        # P2.5: apply_retry on every diversified-provider LLM too, so the
+        # debater and synthesizer slots get the same transient-failure
+        # protection as the upstream LLMs.
+        return apply_retry(
+            create_llm_client(
+                provider=provider, model=model, base_url=None, **extra,
+            ).get_llm()
+        )
 
     def _build_diversified_synthesizer_llm(
         self,
