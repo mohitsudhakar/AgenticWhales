@@ -81,3 +81,29 @@ def get_insider_transactions(
         kind="insider_transactions",
         ticker=ticker,
     )
+
+
+@tool
+def get_congress_trades(
+    ticker: Annotated[str, "Ticker symbol"],
+    limit: Annotated[int, "Max number of disclosed trades to return"] = 50,
+) -> str:
+    """
+    Retrieve disclosed U.S. congressional (House/Senate) stock trades for a
+    ticker. Uses the configured political_data vendor. Output is wrapped in
+    <external_data> tags so the analyst prompt treats the body as untrusted
+    data, not instructions (see agenticwhales.provenance).
+    Args:
+        ticker (str): Ticker symbol of the company
+        limit (int): Max number of disclosed trades to return (default 50)
+    Returns:
+        str: A report of disclosed congressional trades, provenance-wrapped
+    """
+    raw = route_to_vendor("get_congress_trades", ticker, limit)
+    return wrap_external(
+        raw,
+        source="congress_vendor",
+        kind="congress_trades",
+        ticker=ticker,
+        limit=limit,
+    )

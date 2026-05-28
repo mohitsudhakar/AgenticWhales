@@ -16,7 +16,8 @@ from agenticwhales.agents.utils.fundamental_data_tools import (
 from agenticwhales.agents.utils.news_data_tools import (
     get_news,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
+    get_congress_trades,
 )
 
 
