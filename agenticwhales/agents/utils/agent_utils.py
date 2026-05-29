@@ -18,6 +18,7 @@ from agenticwhales.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_global_news,
     get_congress_trades,
+    get_x_trade_recs,
 )
 
 

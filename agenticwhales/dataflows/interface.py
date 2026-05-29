@@ -24,6 +24,7 @@ from .alpha_vantage import (
 )
 from .alpha_vantage_common import AlphaVantageRateLimitError
 from .congress_trades import get_congress_trades
+from .x_trades import get_x_trade_recs
 
 # Configuration and routing logic
 from .config import get_config
@@ -64,6 +65,12 @@ TOOLS_CATEGORIES = {
         "tools": [
             "get_congress_trades",
         ]
+    },
+    "x_social": {
+        "description": "X (Twitter) user trade recommendations / sentiment",
+        "tools": [
+            "get_x_trade_recs",
+        ]
     }
 }
 
@@ -71,6 +78,7 @@ VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
     "quiverquant",
+    "x_api",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -118,6 +126,10 @@ VENDOR_METHODS = {
     # political_data
     "get_congress_trades": {
         "quiverquant": get_congress_trades,
+    },
+    # x_social
+    "get_x_trade_recs": {
+        "x_api": get_x_trade_recs,
     },
 }
 

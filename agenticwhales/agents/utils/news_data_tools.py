@@ -107,3 +107,32 @@ def get_congress_trades(
         ticker=ticker,
         limit=limit,
     )
+
+
+@tool
+def get_x_trade_recs(
+    username: Annotated[str, "X (Twitter) handle, with or without a leading @"],
+    max_results: Annotated[int, "Max recent tweets to scan"] = 50,
+) -> str:
+    """
+    Retrieve structured trade recommendations extracted from an X (Twitter)
+    account's recent posts. Fetches the user's recent tweets via the official
+    X API v2, then uses an LLM to extract (ticker, action buy/sell/hold,
+    conviction 0-1, rationale, timeframe). Uses the configured x_social vendor.
+    Output is wrapped in <external_data> tags so the analyst prompt treats the
+    body as untrusted data, not instructions (see agenticwhales.provenance) —
+    social posts are self-reported opinion, not advice.
+    Args:
+        username (str): X handle (with or without a leading @)
+        max_results (int): Max recent tweets to scan (default 50)
+    Returns:
+        str: A report of extracted trade recommendations, provenance-wrapped
+    """
+    raw = route_to_vendor("get_x_trade_recs", username, max_results)
+    return wrap_external(
+        raw,
+        source="x_vendor",
+        kind="x_trade_recs",
+        username=username,
+        max_results=max_results,
+    )
