@@ -436,6 +436,106 @@ def test_start_idempotent_when_already_started():
     assert isinstance(s._scheduler, _FakeAPS)
 
 
+def test_outcome_resolver_db_branch(monkeypatch):
+    s = RecipeScheduler()
+    s._is_leader = True
+    monkeypatch.setattr("web.auth._db_writable", lambda: True)
+    monkeypatch.setattr("web.auth._select_columns",
+                        lambda *a, **k: [{"user_id": "u1"}, {"user_id": "u2"}])
+    seen = []
+    monkeypatch.setattr("agenticwhales.outcomes.resolve_outcomes_for_user",
+                        lambda uid, limit=200: seen.append(uid) or 1)
+    s._run_outcome_resolver()
+    assert set(seen) == {"u1", "u2"}
+
+
+def test_outcome_resolver_db_scan_error(monkeypatch):
+    s = RecipeScheduler()
+    s._is_leader = True
+    monkeypatch.setattr("web.auth._db_writable", lambda: True)
+    def _boom(*a, **k):
+        raise RuntimeError("scan failed")
+    monkeypatch.setattr("web.auth._select_columns", _boom)
+    monkeypatch.setattr("agenticwhales.outcomes.resolve_outcomes_for_user",
+                        lambda uid, limit=200: 0)
+    s._run_outcome_resolver()  # scan error caught, no users → no raise
+
+
+def test_prompt_evals_db_branch(monkeypatch):
+    s = RecipeScheduler()
+    s._is_leader = True
+    monkeypatch.setattr("web.auth._db_writable", lambda: True)
+    monkeypatch.setattr("web.auth._select_columns",
+                        lambda *a, **k: [{"user_id": "u1"}])
+
+    class _Res:
+        promoted = False
+    monkeypatch.setattr("agenticwhales.adaptive.evaluate_prompt_variant",
+                        lambda uid, variant, scorer: _Res())
+    s._run_prompt_evals()
+
+
+def test_start_streaming_worker_swallows_start_error(monkeypatch):
+    s = RecipeScheduler()
+
+    class _Worker:
+        def __init__(self, fire_recipe, is_leader_fn):
+            pass
+
+        async def start(self, active):
+            raise RuntimeError("alpaca down")
+
+    monkeypatch.setattr("web.streaming_worker.StreamingWorker", _Worker)
+    monkeypatch.setattr(sched_mod.recipes_mod, "list_all_active", lambda: [])
+    asyncio.run(s._start_streaming_worker())
+    assert s._streaming_worker is None  # start failed → not retained
+
+
+def test_start_streaming_worker_list_active_error(monkeypatch):
+    s = RecipeScheduler()
+
+    class _Worker:
+        def __init__(self, fire_recipe, is_leader_fn):
+            self.started = None
+
+        async def start(self, active):
+            self.started = active
+
+    monkeypatch.setattr("web.streaming_worker.StreamingWorker", _Worker)
+    monkeypatch.setattr(sched_mod.recipes_mod, "list_all_active",
+                        lambda: (_ for _ in ()).throw(RuntimeError("db")))
+    asyncio.run(s._start_streaming_worker())
+    assert s._streaming_worker is not None  # started with empty bindings
+
+
+def test_leader_loop_already_leader_noop(monkeypatch):
+    s = RecipeScheduler()
+    s._is_leader = True  # already leader → elif acquired: pass branch
+    monkeypatch.setattr(s, "_try_acquire_leader", lambda: True)
+    monkeypatch.setattr(sched_mod, "audit", lambda *a, **k: None)
+
+    async def _cancel(*a, **k):
+        raise asyncio.CancelledError
+    monkeypatch.setattr(sched_mod.asyncio, "sleep", _cancel)
+    asyncio.run(s._leader_loop())
+    assert s._is_leader is True
+
+
+def test_start_creates_scheduler(monkeypatch):
+    s = RecipeScheduler()
+
+    async def _dummy():
+        return None
+    monkeypatch.setattr(s, "_leader_loop", _dummy)
+
+    async def go():
+        s.start()
+        assert s._scheduler is not None
+        await s.shutdown()
+
+    asyncio.run(go())
+
+
 def test_shutdown_stops_worker_and_scheduler(monkeypatch):
     s = RecipeScheduler()
 

@@ -209,6 +209,57 @@ def test_stream_batch_from_storage(uc):
     assert msg["type"] == "batch"
 
 
+class _StreamRunner:
+    """Fake runner whose subscribe() hands back a pre-loaded queue."""
+    def __init__(self, obj, event):
+        self._obj = obj
+        self._q = asyncio.Queue()
+        self._q.put_nowait(event)
+        self.unsubscribed = False
+
+    def subscribe(self):
+        return self._q
+
+    def snapshot(self):
+        return self._obj
+
+    def unsubscribe(self, q):
+        self.unsubscribed = True
+
+
+def test_stream_session_with_live_runner(uc):
+    runner = _StreamRunner({"id": "sL", "user_id": auth.ANONYMOUS_USER_ID},
+                           {"type": "agent_status", "agent": "Market Analyst"})
+    runner.session = {"id": "sL", "user_id": auth.ANONYMOUS_USER_ID}
+    server._runners["sL"] = runner
+    with uc.websocket_connect("/api/sessions/sL/stream") as ws:
+        first = ws.receive_json()   # snapshot
+        second = ws.receive_json()  # queued event
+    assert first["type"] == "session"
+    assert second["type"] == "agent_status"
+
+
+def test_stream_session_runner_wrong_owner_closes(uc):
+    runner = _StreamRunner({"id": "sX"}, {"type": "x"})
+    runner.session = {"id": "sX", "user_id": "someone-else"}
+    server._runners["sX"] = runner
+    with pytest.raises(Exception):
+        with uc.websocket_connect("/api/sessions/sX/stream") as ws:
+            ws.receive_json()
+
+
+def test_stream_batch_with_live_runner(uc):
+    runner = _StreamRunner({"id": "bL", "user_id": auth.ANONYMOUS_USER_ID},
+                           {"type": "item_update", "i": 0})
+    runner.batch = {"id": "bL", "user_id": auth.ANONYMOUS_USER_ID}
+    server._batch_runners["bL"] = runner
+    with uc.websocket_connect("/api/batches/bL/stream") as ws:
+        first = ws.receive_json()
+        second = ws.receive_json()
+    assert first["type"] == "batch"
+    assert second["type"] == "item_update"
+
+
 # ===========================================================================
 # signals: x-recs / congress / transactions
 # ===========================================================================
