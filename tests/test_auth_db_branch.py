@@ -634,3 +634,48 @@ def test_mark_session_failed_db(db):
     db.tables["sessions"] = [{"id": "s1", "user_id": "u1", "status": "running",
                               "data": {"id": "s1"}}]
     assert auth.mark_session_failed("s1", failure_reason="timeout") is True
+
+
+# ---------------------------------------------------------------------------
+# _upsert PGRST204 retry (column missing from schema cache → strip + retry)
+# ---------------------------------------------------------------------------
+
+def test_upsert_strips_missing_column_on_pgrst204(db, monkeypatch):
+    calls = {"n": 0}
+
+    def _post(url, headers=None, json=None, params=None, timeout=None):
+        calls["n"] += 1
+        body = json[0]
+        if "ghost_col" in body:
+            return _Resp(400, {"code": "PGRST204",
+                               "message": "Could not find the 'ghost_col' column"},
+                         "schema cache miss")
+        db._rows("widgets").append(dict(body))
+        return _Resp(201, [dict(body)])
+
+    monkeypatch.setattr(db, "post", _post)
+    auth._upsert("widgets", {"id": "w1", "name": "ok", "ghost_col": "drop me"})
+    # retried without the ghost column and succeeded
+    assert calls["n"] == 2
+    assert db.tables["widgets"][0] == {"id": "w1", "name": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# _fetch_user edge cases
+# ---------------------------------------------------------------------------
+
+def test_fetch_user_request_exception_returns_none(db, monkeypatch):
+    import requests as _rq
+
+    def _boom(*a, **k):
+        raise _rq.RequestException("network down")
+    monkeypatch.setattr(db, "get", _boom)
+    auth._token_cache.clear()
+    assert auth._fetch_user("tok-x") is None
+
+
+def test_fetch_user_no_uid_returns_none(db, monkeypatch):
+    monkeypatch.setattr(db, "get",
+                        lambda *a, **k: _Resp(200, {"email": "x@y.com"}))  # no id
+    auth._token_cache.clear()
+    assert auth._fetch_user("tok-y") is None
