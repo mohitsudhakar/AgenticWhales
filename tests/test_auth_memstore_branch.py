@@ -147,3 +147,70 @@ def test_fetch_user_unconfigured_returns_none():
 
 def test_validate_token_offline_none():
     assert auth._validate_token("tok") is None
+
+
+# ===========================================================================
+# paper position / order memstore loaders
+# ===========================================================================
+
+def test_paper_position_memstore_roundtrip():
+    auth.upsert_paper_position(user_id="u1", ticker="aapl", qty=10, avg_cost=100.0,
+                               last_price=110.0)
+    pos = auth.load_paper_position("u1", "AAPL")
+    assert pos is not None and pos["qty"] == 10
+    auth.upsert_paper_position(user_id="u1", ticker="NVDA", qty=5, avg_cost=800.0)
+    assert len(auth.list_paper_positions("u1")) == 2
+    assert len(auth.list_paper_positions("u1", ticker="aapl")) == 1
+
+
+def test_find_paper_order_idem_memstore():
+    auth._memstore[("paper_orders", "o1")] = {
+        "id": "o1", "user_id": "u1", "fire_id": "f1", "ticker": "AAPL", "side": "buy"}
+    hit = auth.find_paper_order_idem("u1", "f1", "aapl", "buy")
+    assert hit is not None and hit["id"] == "o1"
+    assert auth.find_paper_order_idem("u1", "f2", "AAPL", "buy") is None
+
+
+# ===========================================================================
+# recipe usage / user spend memstore loaders
+# ===========================================================================
+
+def test_recipe_usage_and_user_spend_memstore():
+    auth.add_recipe_usage(recipe_id="r1", user_id="u1", usage_date="2024-01-02",
+                          token_cost_usd=0.5, input_tokens=100, output_tokens=50,
+                          reasoning_tokens=0)
+    usage = auth.load_recipe_usage("r1", "2024-01-02")
+    assert usage is not None and usage["token_cost_usd"] == 0.5
+    auth.add_user_spend("u1", "2024-01-02", 1.25)
+    assert auth.load_user_spend("u1", "2024-01-02") == 1.25
+    assert auth.load_user_spend("u1", "2099-01-01") == 0.0
+
+
+# ===========================================================================
+# audit log memstore filters
+# ===========================================================================
+
+def test_list_audit_memstore_filters():
+    auth.append_audit(actor="system", action="streaming.fire", target_user_id="u1")
+    auth.append_audit(actor="system", action="recipe.create", target_user_id="u1")
+    assert len(auth.list_audit()) == 2
+    assert len(auth.list_audit(action="streaming.fire")) == 1
+    assert len(auth.list_audit(actor="system", target_user_id="u1")) == 2
+    assert auth.list_audit(actor="nobody") == []
+
+
+# ===========================================================================
+# recipe status + compliance attestation memstore
+# ===========================================================================
+
+def test_update_recipe_status_memstore():
+    auth._memstore[("recipes", "r1")] = {"id": "r1", "user_id": "u1", "status": "active"}
+    auth.update_recipe_status("r1", "killed")
+    assert auth._memstore[("recipes", "r1")]["status"] == "killed"
+
+
+def test_compliance_attestation_memstore_roundtrip():
+    auth.save_compliance_attestation({"id": "a1", "user_id": "u1", "version": "v1",
+                                      "ack_paper_only": True})
+    assert auth.load_compliance_attestation("a1")["user_id"] == "u1"
+    assert auth.load_compliance_attestation("missing") is None

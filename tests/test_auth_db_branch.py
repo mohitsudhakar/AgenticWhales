@@ -679,3 +679,57 @@ def test_fetch_user_no_uid_returns_none(db, monkeypatch):
                         lambda *a, **k: _Resp(200, {"email": "x@y.com"}))  # no id
     auth._token_cache.clear()
     assert auth._fetch_user("tok-y") is None
+
+
+# ---------------------------------------------------------------------------
+# low-level helper error paths (transport 500)
+# ---------------------------------------------------------------------------
+
+def test_select_one_error_returns_none(db):
+    db.fail = True
+    assert auth._select_one("sessions", "s1") is None
+
+
+def test_select_for_user_error_returns_empty(db):
+    db.fail = True
+    assert auth._select_for_user("sessions", "u1") == []
+
+
+def test_delete_one_error_returns_false(db):
+    db.fail = True
+    assert auth._delete_one("sessions", "s1") is False
+
+
+def test_delete_where_error_returns_false(db):
+    db.fail = True
+    assert auth._delete_where("journal_entries", {"id": "j1"}) is False
+
+
+def test_admin_list_users_non_200_breaks(db, monkeypatch):
+    monkeypatch.setattr(db, "get", lambda *a, **k: _Resp(403, None))
+    assert auth.admin_list_users() == []
+
+
+def test_list_stuck_running_sessions_db_non_200(db, monkeypatch):
+    monkeypatch.setattr(db, "get", lambda *a, **k: _Resp(500, None, "boom"))
+    assert auth.list_stuck_running_sessions() == []
+
+
+def test_delete_stuck_running_sessions_db_list_error(db, monkeypatch):
+    monkeypatch.setattr(db, "get", lambda *a, **k: _Resp(500, None, "boom"))
+    # list fails → no rows pulled; memstore sweep also empty → 0 deleted
+    assert auth.delete_stuck_running_sessions() == 0
+
+
+def test_fetch_price_row_non_200(db, monkeypatch):
+    monkeypatch.setattr(db, "get", lambda *a, **k: _Resp(404, None))
+    assert auth.fetch_price_row("google", "gemini") is None
+
+
+def test_find_cached_session_request_exception(db, monkeypatch):
+    import requests as _rq
+
+    def _boom(*a, **k):
+        raise _rq.RequestException("net")
+    monkeypatch.setattr(db, "get", _boom)
+    assert auth.find_cached_session("u1", "AAPL", "2024-01-02", "sig") is None
