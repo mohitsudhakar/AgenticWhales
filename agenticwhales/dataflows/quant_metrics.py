@@ -1,25 +1,20 @@
-"""Quantitative risk metrics — Marketto-backed.
+"""Quantitative risk metrics for the Quant Analyst.
 
-AgenticWhales fetches OHLCV and technical indicators, but nothing in the
-repo computes *realized* risk statistics — annualized volatility, Sharpe,
-or max drawdown. Yet the Portfolio Manager's ``PortfolioDecision`` schema
-explicitly asks the LLM to self-report ``expected_volatility_pct``
+AgenticWhales fetches OHLCV and technical indicators, but nothing else in
+the repo computes *realized* risk statistics — annualized volatility,
+Sharpe, or max drawdown. Yet the Portfolio Manager's ``PortfolioDecision``
+schema explicitly asks the LLM to self-report ``expected_volatility_pct``
 "anchored in historical realized vol", and the Kelly sizer + calibration
 head both depend on that number being grounded rather than hallucinated.
 
-This module closes that gap by bridging the OHLCV DataFrame that
+This module closes that gap. It reuses the OHLCV DataFrame that
 ``stockstats_utils.load_ohlcv`` already produces — cached and filtered to
-``curr_date`` to prevent look-ahead bias — into `marketto`'s
-``risk_summary``. We do **not** add a new market-data dependency or
-re-fetch anything: the frame handed to Marketto is the same one the other
-analysts see, so no look-ahead is introduced.
-
-`marketto` is an OPTIONAL dependency (the ``quant`` extra). When it is not
-installed the public entry point returns an informative message instead of
-raising, so the agent graph degrades gracefully.
+``curr_date`` to prevent look-ahead bias — and runs it through the
+in-tree ``agenticwhales.quant`` math. No re-fetch, no future data, and no
+external dependency.
 
 Design mirrors the rest of ``dataflows/``: a string-returning public
-function for LLM consumption, and a separable pure-compute helper
+function for LLM consumption, plus a separable pure-compute helper
 (``compute_risk_metrics``) that takes a DataFrame so tests stay hermetic.
 """
 from __future__ import annotations
@@ -29,39 +24,28 @@ from typing import Optional
 
 import pandas as pd
 
+from agenticwhales.quant import risk_metrics
+
 logger = logging.getLogger(__name__)
 
 
-_INSTALL_HINT = (
-    "Quantitative risk metrics require the optional `marketto` package. "
-    "Install with: pip install -e '.[quant]'  (or pip install marketto)."
-)
+def _adjusted_close(df: pd.DataFrame) -> pd.Series:
+    """Extract a date-indexed adjusted-close series from an AW OHLCV frame.
 
-
-def _marketto_available() -> bool:
-    try:
-        import marketto  # noqa: F401
-        from marketto.models import OHLCVFrame  # noqa: F401
-        from marketto.processing import risk_summary  # noqa: F401
-    except Exception:  # pragma: no cover - exercised only without marketto
-        return False
-    return True
-
-
-def _to_ohlcv_frame(symbol: str, df: pd.DataFrame):
-    """Convert an AgenticWhales OHLCV DataFrame to a Marketto ``OHLCVFrame``.
-
-    The AW frame (from ``load_ohlcv``) has columns
-    ``Date, Open, High, Low, Close, Volume`` with ``auto_adjust=True`` (so
-    ``Close`` is already split/dividend-adjusted). Marketto wants lowercase
-    columns and a ``date`` column/index; it fills ``adj_close`` from
-    ``close`` when absent, which is exactly right here.
+    ``load_ohlcv`` returns columns ``Date, Open, High, Low, Close, Volume``
+    with ``auto_adjust=True`` (so ``Close`` is already split/dividend
+    adjusted). We tolerate an explicit ``Adj Close`` if present.
     """
-    from marketto.models import OHLCVFrame
-
-    clean = df.rename(columns={c: str(c).lower() for c in df.columns})
-    # Marketto detects a lowercase ``date`` column and sets it as the index.
-    return OHLCVFrame.from_dataframe(symbol, clean)
+    cols = {str(c).lower().replace(" ", "_"): c for c in df.columns}
+    frame = df.copy()
+    if "date" in cols:
+        frame = frame.set_index(cols["date"])
+    frame.index = pd.to_datetime(frame.index)
+    price_col = cols.get("adj_close") or cols.get("close")
+    if price_col is None:
+        raise ValueError("OHLCV frame has no close/adj_close column")
+    series = pd.to_numeric(frame[price_col], errors="coerce")
+    return series.sort_index()
 
 
 def compute_risk_metrics(
@@ -74,25 +58,12 @@ def compute_risk_metrics(
     """Compute realized risk metrics for ``symbol`` from an OHLCV frame.
 
     Pure function — no I/O — so it can be unit-tested with synthetic data.
-    Returns a dict with the Marketto ``RiskSummary`` fields plus the
-    window that was actually used. Raises ``RuntimeError`` if Marketto is
-    not importable.
+    Returns the metrics dict plus the look-back window that was used.
     """
-    if not _marketto_available():
-        raise RuntimeError(_INSTALL_HINT)
-
-    from marketto.processing import risk_summary
-
-    frame = _to_ohlcv_frame(symbol, df)
-    windowed = frame.df
-    if look_back_days and len(windowed) > look_back_days:
-        windowed = windowed.tail(look_back_days)
-        from marketto.models import OHLCVFrame
-
-        frame = OHLCVFrame.from_dataframe(symbol, windowed)
-
-    summary = risk_summary(frame, risk_free=risk_free)
-    out = summary.to_dict()
+    prices = _adjusted_close(df).dropna()
+    if look_back_days and len(prices) > look_back_days:
+        prices = prices.tail(look_back_days)
+    out = risk_metrics(prices, symbol=symbol, risk_free=risk_free)
     out["look_back_days"] = int(look_back_days)
     return out
 
@@ -133,13 +104,10 @@ def get_risk_metrics(
     """Public entry point: realized risk metrics for ``symbol`` as markdown.
 
     Loads OHLCV via ``stockstats_utils.load_ohlcv`` (cached, filtered to
-    ``curr_date`` for look-ahead safety), computes the metrics with
-    Marketto, and returns a formatted block. ``loader`` is injectable for
-    testing; defaults to the real ``load_ohlcv``.
+    ``curr_date`` for look-ahead safety), computes the metrics, and returns
+    a formatted block. ``loader`` is injectable for testing; defaults to the
+    real ``load_ohlcv``.
     """
-    if not _marketto_available():
-        return _INSTALL_HINT
-
     if loader is None:
         from agenticwhales.dataflows.stockstats_utils import load_ohlcv as loader  # type: ignore
 

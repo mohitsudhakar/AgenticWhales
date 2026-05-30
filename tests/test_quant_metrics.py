@@ -1,10 +1,8 @@
-"""Unit tests for the Marketto-backed quant risk-metrics dataflow + tool.
+"""Unit tests for the quant risk-metrics dataflow + tool.
 
 Hermetic: the OHLCV loader is injected with a deterministic synthetic
-price frame, so no network and no real ``load_ohlcv`` call. The compute
-path requires the optional ``marketto`` package; those tests skip cleanly
-when it is not installed. The graceful-degradation path is tested without
-marketto via monkeypatching.
+price frame, so no network and no real ``load_ohlcv`` call. The risk math
+itself lives in ``agenticwhales.quant`` (see test_quant_math.py).
 """
 from __future__ import annotations
 
@@ -41,11 +39,10 @@ def _synthetic_ohlcv(n: int = 300, seed: int = 7) -> pd.DataFrame:
     )
 
 
-# ---- compute path (requires marketto) --------------------------------------
+# ---- compute path ----------------------------------------------------------
 
 
 def test_compute_risk_metrics_returns_expected_fields():
-    pytest.importorskip("marketto")
     df = _synthetic_ohlcv()
     metrics = quant_metrics.compute_risk_metrics("AAA", df, look_back_days=252)
     for key in (
@@ -70,14 +67,19 @@ def test_compute_risk_metrics_returns_expected_fields():
 
 
 def test_compute_risk_metrics_short_history_uses_all_rows():
-    pytest.importorskip("marketto")
     df = _synthetic_ohlcv(n=40)
     metrics = quant_metrics.compute_risk_metrics("AAA", df, look_back_days=252)
     assert metrics["rows"] == 40  # fewer than the window → use everything
 
 
+def test_compute_risk_metrics_accepts_explicit_adj_close():
+    df = _synthetic_ohlcv(n=60)
+    df["Adj Close"] = df["Close"] * 0.9  # an explicit adjusted column wins
+    metrics = quant_metrics.compute_risk_metrics("AAA", df, look_back_days=252)
+    assert metrics["rows"] == 60
+
+
 def test_get_risk_metrics_with_injected_loader_renders_markdown():
-    pytest.importorskip("marketto")
     df = _synthetic_ohlcv()
     out = quant_metrics.get_risk_metrics(
         "AAA", "2024-01-15", look_back_days=252, loader=lambda s, d: df
@@ -89,7 +91,6 @@ def test_get_risk_metrics_with_injected_loader_renders_markdown():
 
 
 def test_get_risk_metrics_handles_insufficient_history():
-    pytest.importorskip("marketto")
     one_row = _synthetic_ohlcv(n=1)
     out = quant_metrics.get_risk_metrics(
         "AAA", "2024-01-15", loader=lambda s, d: one_row
@@ -98,8 +99,6 @@ def test_get_risk_metrics_handles_insufficient_history():
 
 
 def test_get_risk_metrics_handles_loader_errors():
-    pytest.importorskip("marketto")
-
     def boom(symbol, curr_date):
         raise RuntimeError("network down")
 
@@ -107,21 +106,12 @@ def test_get_risk_metrics_handles_loader_errors():
     assert "could not load price data" in out
 
 
-# ---- graceful degradation (no marketto) ------------------------------------
-
-
-def test_get_risk_metrics_degrades_without_marketto(monkeypatch):
-    monkeypatch.setattr(quant_metrics, "_marketto_available", lambda: False)
-    out = quant_metrics.get_risk_metrics(
-        "AAA", "2024-01-15", loader=lambda s, d: _synthetic_ohlcv()
-    )
-    assert "marketto" in out.lower()
-
-
-def test_compute_risk_metrics_raises_without_marketto(monkeypatch):
-    monkeypatch.setattr(quant_metrics, "_marketto_available", lambda: False)
-    with pytest.raises(RuntimeError):
-        quant_metrics.compute_risk_metrics("AAA", _synthetic_ohlcv())
+def test_get_risk_metrics_handles_compute_errors():
+    # A frame with no usable price column → compute raises → graceful message.
+    bad = pd.DataFrame({"Date": pd.bdate_range("2024-01-02", periods=3),
+                        "Volume": [1, 2, 3]})
+    out = quant_metrics.get_risk_metrics("AAA", "2024-01-15", loader=lambda s, d: bad)
+    assert "unavailable" in out.lower()
 
 
 # ---- tool wrapper is importable + correctly shaped -------------------------
