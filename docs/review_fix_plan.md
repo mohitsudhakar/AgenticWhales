@@ -117,11 +117,16 @@ Definition of Done for `review_fix`: all four items landed; opens a PR for revie
 
 ### Phase 2 — Performance, cost, reliability (weeks 2-3)
 
-**P2.1 — Parallelize the analyst stage.**
+**P2.1 — Parallelize the analyst stage. *Blocked on subgraph refactor (discovery during phase2_perf).***
 Addresses: C5.
-Files: [agenticwhales/graph/setup.py:178-194](agenticwhales/graph/setup.py), [agenticwhales/graph/conditional_logic.py](agenticwhales/graph/conditional_logic.py).
-Change: fan out from `START` to each selected analyst node in parallel; gate `Bull Researcher` behind a synchronization node that waits for all selected analysts' clear-nodes. LangGraph supports parallel branches via multiple outgoing edges from one source node and a sync node with multiple in-edges.
-Acceptance: a five-analyst run on a cached LLM backend completes in roughly max(analyst latency) instead of sum. Measured: wall-clock under half of the current sequential baseline.
+Discovery: the original "fan out from START, fan in before Bull Researcher" plan does not work as-stated because the five analysts share `state["messages"]` via LangGraph's `add_messages` reducer (see [agenticwhales/agents/utils/agent_states.py:46](agenticwhales/agents/utils/agent_states.py) — `AgentState(MessagesState)`). Each analyst's `should_continue_*` in [agenticwhales/graph/conditional_logic.py](agenticwhales/graph/conditional_logic.py) reads `state["messages"][-1].tool_calls`, which becomes ambiguous when multiple analysts append to the message list concurrently. The per-analyst `Msg Clear` (via `create_msg_delete` in [agenticwhales/agents/utils/agent_utils.py:45](agenticwhales/agents/utils/agent_utils.py)) also assumes sequential execution — it removes ALL messages from shared state.
+Required design (next branch): encapsulate each analyst's `[analyst node → tool node → loop]` pipeline as a LangGraph subgraph with its own private state TypedDict containing a `messages` field. Each subgraph reads `company_of_interest` / `trade_date` from parent state and writes back only the relevant `*_report` field. Parent graph fan-outs from `START` to the 5 subgraphs; LangGraph's barrier semantics ensure Bull Researcher fires once after all subgraphs complete.
+Files (estimated): new `agenticwhales/graph/analyst_subgraph.py` (defines the per-analyst subgraph factory + state schema), refactor of [agenticwhales/graph/setup.py:80-194](agenticwhales/graph/setup.py) to fan out, retire of [agenticwhales/graph/conditional_logic.py](agenticwhales/graph/conditional_logic.py)'s per-analyst `should_continue_*` functions (replaced by per-subgraph internal logic).
+Acceptance unchanged: a five-analyst run completes in ~max(analyst latency) instead of sum; wall-clock under half of the current sequential baseline. Integration test asserts both parallelism (via timing) and correctness (each report field still populated).
+
+**P2.4 — WebSocket delta streaming. *Promoted ahead of P2.1 in this branch.***
+Addresses: C10.
+See full description below; lands first because it's self-contained and doesn't depend on the subgraph refactor.
 
 **P2.2 — Parallelize blind round-1 debate openings.**
 Addresses: C8.
@@ -141,11 +146,13 @@ Files: [web/runner.py:166-372](web/runner.py), web client (whatever consumes the
 Change: emit `{"type": "report_delta", "section": ..., "appended": <new chunk>}` instead of the full accumulated string. Keep a `{"type": "report"}` snapshot on initial subscribe so late-joining clients get the full state.
 Acceptance: byte-volume over a representative session drops by approximately the expected O(N) instead of O(N²) shape.
 
-**P2.5 — Provider retry + circuit breaker.**
+**P2.5 — Provider retry + lightweight circuit breaker. ✅ Done (retry shipped; full circuit-breaker as follow-up).**
 Addresses: C12.
-Files: new `agenticwhales/llm_clients/retry.py`, all `*_client.py`.
-Change: wrap LLM calls in a tenacity-style retry with exponential backoff and jitter; per-provider circuit breaker that opens after N consecutive failures and trips a graceful fallback (use upstream provider if a debater/synthesizer slot's provider is open, and surface the degradation via the same status event introduced in P1.3).
-Acceptance: simulated 429 from one provider mid-debate does not kill the session; the system completes the run with the documented fallback and the UI shows a "DEGRADED" banner.
+Files added: [agenticwhales/llm_clients/retry.py](agenticwhales/llm_clients/retry.py), [tests/test_llm_retry.py](tests/test_llm_retry.py) (10 new tests).
+Files touched: [agenticwhales/graph/trading_graph.py](agenticwhales/graph/trading_graph.py) — `apply_retry(...)` wraps both upstream LLMs and every diversified-provider LLM.
+Delivered: `apply_retry()` uses langchain's built-in `.with_retry()` with exponential jitter; defaults of 3 attempts come from `AGENTICWHALES_LLM_RETRY_ATTEMPTS` / `AGENTICWHALES_LLM_RETRY_JITTER` env vars. Per-provider failure counter (`record_provider_failure` / `record_provider_success` / `get_failure_counts`) provides the data layer for a full circuit breaker.
+Remaining for full circuit-breaker (follow-up): open/half-open/closed state machine with cooldown, integration with the Phase 1 diversification fallback so an open circuit triggers a slot-level fallback rather than a hard error, and a `circuit_open` event emitted to the web UI.
+Verified: all 109 tests pass (99 prior + 10 new retry tests), no regressions.
 
 ### Phase 3 — Validation & instrumentation (weeks 4-6)
 
