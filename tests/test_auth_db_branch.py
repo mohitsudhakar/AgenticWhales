@@ -352,3 +352,285 @@ def test_require_admin_missing_header_401(db):
     with pytest.raises(HTTPException) as e:
         auth.require_admin(None)
     assert e.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# authenticate_websocket (async)
+# ---------------------------------------------------------------------------
+
+class _FakeWS:
+    def __init__(self):
+        self.closed = None
+
+    async def close(self, code=None):
+        self.closed = code
+
+
+def test_authenticate_websocket_valid(db):
+    import asyncio
+    ws = _FakeWS()
+    assert asyncio.run(auth.authenticate_websocket(ws, "tok-1")) == "uid-1"
+    assert ws.closed is None
+
+
+def test_authenticate_websocket_missing_token_closes(db):
+    import asyncio
+    ws = _FakeWS()
+    assert asyncio.run(auth.authenticate_websocket(ws, None)) is None
+    assert ws.closed == 4401
+
+
+def test_authenticate_websocket_bad_token_closes(db):
+    import asyncio
+    db.fail = True
+    ws = _FakeWS()
+    assert asyncio.run(auth.authenticate_websocket(ws, "nope")) is None
+    assert ws.closed == 4401
+
+
+# ---------------------------------------------------------------------------
+# find_cached_session
+# ---------------------------------------------------------------------------
+
+def _recent_iso(minutes_ago=1):
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(tz=timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+
+
+def test_find_cached_session_hit_and_sig_miss(db):
+    db.tables["sessions"] = [
+        {"id": "s1", "user_id": "u1", "ticker": "AAPL", "analysis_date": "2024-01-02",
+         "status": "completed", "completed_at": _recent_iso(),
+         "data": {"id": "s1", "config": {"__sig": "sigA"}, "ticker": "AAPL"}},
+    ]
+    hit = auth.find_cached_session("u1", "AAPL", "2024-01-02", "sigA")
+    assert hit is not None and hit["id"] == "s1"
+    # different signature → no match
+    assert auth.find_cached_session("u1", "AAPL", "2024-01-02", "sigB") is None
+
+
+def test_find_cached_session_anonymous_returns_none(db):
+    assert auth.find_cached_session(auth.ANONYMOUS_USER_ID, "AAPL", "2024-01-02", "x") is None
+    assert auth.find_cached_session("", "AAPL", "2024-01-02", "x") is None
+
+
+def test_find_cached_session_error_returns_none(db):
+    db.fail = True
+    assert auth.find_cached_session("u1", "AAPL", "2024-01-02", "x") is None
+
+
+# ---------------------------------------------------------------------------
+# save_batch DB branch
+# ---------------------------------------------------------------------------
+
+def test_save_batch_writes_db(db):
+    auth.save_batch({"id": "b1", "user_id": "u1", "analysis_date": "2024-01-02",
+                     "status": "completed", "items": [{"ticker": "AAPL"}],
+                     "completed_at": 1_700_000_000.0,
+                     "config": {"quick_think_llm": "q", "deep_think_llm": "d"},
+                     "totals": {"tokens_in": 5}})
+    assert any(r["id"] == "b1" for r in db.tables.get("batches", []))
+    assert auth.load_batch("b1")["status"] == "completed"
+    assert auth.list_batches("u1")[0]["id"] == "b1"
+
+
+def test_save_batch_anonymous_memstore_only(db):
+    auth.save_batch({"id": "b9", "user_id": auth.ANONYMOUS_USER_ID, "items": []})
+    assert db.tables.get("batches", []) == []
+
+
+# ---------------------------------------------------------------------------
+# admin_list_* (service-role reads)
+# ---------------------------------------------------------------------------
+
+def test_admin_list_sessions_and_batches(db):
+    db.tables["sessions"] = [{"user_id": "u1", "ticker": "AAPL", "status": "completed",
+                              "created_at": "2024-01-02"}]
+    db.tables["batches"] = [{"user_id": "u1", "status": "completed",
+                             "created_at": "2024-01-02"}]
+    assert auth.admin_list_sessions()[0]["ticker"] == "AAPL"
+    assert auth.admin_list_batches()[0]["status"] == "completed"
+
+
+def test_admin_list_profiles(db):
+    db.tables["profiles"] = [{"id": "u1", "username": "alice", "tier": "master",
+                              "created_at": "2023-01-01"}]
+    assert auth.admin_list_profiles()[0]["username"] == "alice"
+
+
+def test_admin_list_table_error_returns_empty(db):
+    db.fail = True
+    assert auth.admin_list_sessions() == []
+    assert auth.admin_list_profiles() == []
+
+
+def test_admin_list_users_paginates(db):
+    db.tables["users"] = [{"id": "u1", "email": "a@x.com"},
+                          {"id": "u2", "email": "b@x.com"}]
+    users = auth.admin_list_users()
+    assert {u["id"] for u in users} == {"u1", "u2"}
+
+
+def test_admin_list_users_error_breaks(db):
+    db.fail = True
+    assert auth.admin_list_users() == []
+
+
+# ---------------------------------------------------------------------------
+# pricing reads
+# ---------------------------------------------------------------------------
+
+def test_fetch_price_row_hit(db):
+    db.tables["llm_pricing"] = [{
+        "provider": "google", "model": "gemini", "input_per_1m_usd": "1.25",
+        "output_per_1m_usd": "5.0", "cache_read_per_1m_usd": None,
+        "reasoning_per_1m_usd": None, "effective_at": "2024-01-01T00:00:00+00:00",
+        "source_url": "http://x",
+    }]
+    row = auth.fetch_price_row("Google", "gemini")
+    assert row is not None and str(row.input_per_1m) == "1.25"
+
+
+def test_fetch_price_row_no_rows(db):
+    assert auth.fetch_price_row("google", "missing") is None
+
+
+def test_list_priced_models(db):
+    db.tables["llm_pricing"] = [
+        {"provider": "google", "model": "g1"},
+        {"provider": "openai", "model": "o1"},
+        {"provider": "google", "model": "g1"},  # dup collapses
+    ]
+    assert auth.list_priced_models() == [("google", "g1"), ("openai", "o1")]
+
+
+# ---------------------------------------------------------------------------
+# paper_place_order RPC
+# ---------------------------------------------------------------------------
+
+def test_call_paper_place_order_rpc_success(db):
+    out = auth.call_paper_place_order_rpc({"p_user": "u1", "p_ticker": "AAPL"})
+    assert out is not None  # fake echoes the body back
+
+
+def test_call_paper_place_order_rpc_transport_error(db):
+    db.fail = True
+    assert auth.call_paper_place_order_rpc({"p_user": "u1"}) is None
+
+
+def test_call_paper_place_order_rpc_404(db, monkeypatch):
+    monkeypatch.setattr(auth._http, "post",
+                        lambda *a, **k: _Resp(404, None, "missing"))
+    assert auth.call_paper_place_order_rpc({"p_user": "u1"}) is None
+
+
+# ---------------------------------------------------------------------------
+# recipe failure counters
+# ---------------------------------------------------------------------------
+
+def test_touch_recipe_last_run_patches(db):
+    db.tables["recipes"] = [{"id": "r1", "user_id": "u1", "last_run_at": None}]
+    auth.touch_recipe_last_run("r1", 1_700_000_000.0)
+    assert db.tables["recipes"][0]["last_run_at"] is not None
+
+
+def test_bump_and_reset_recipe_failures(db):
+    db.tables["recipes"] = [{"id": "r1", "user_id": "u1", "name": "R", "status": "active",
+                             "consecutive_failures": 0, "tickers": ["AAPL"],
+                             "analysts": ["market"], "llm_provider": "google",
+                             "quick_model": "q", "deep_model": "d", "bull_model": "x",
+                             "bear_model": "y", "created_at": "2024-01-01"}]
+    assert auth.bump_recipe_failures("r1") == 1
+    assert db.tables["recipes"][0]["consecutive_failures"] == 1
+    auth.reset_recipe_failures("r1")
+    assert db.tables["recipes"][0]["consecutive_failures"] == 0
+
+
+# ---------------------------------------------------------------------------
+# paper orders / conviction scores / disagreement DB reads
+# ---------------------------------------------------------------------------
+
+def test_list_paper_orders_db(db):
+    db.tables["paper_orders"] = [
+        {"id": "o1", "user_id": "u1", "recipe_id": "rec1", "created_at": "2024-01-02"},
+        {"id": "o2", "user_id": "u1", "recipe_id": None, "created_at": "2024-01-03"},
+    ]
+    assert len(auth.list_paper_orders("u1")) == 2
+    assert [o["id"] for o in auth.list_paper_orders("u1", recipe_id="rec1")] == ["o1"]
+
+
+def test_list_conviction_scores_db(db):
+    db.tables["conviction_scores"] = [
+        {"id": "c1", "user_id": "u1", "ticker": "AAPL", "recorded_at": "2024-01-02"},
+    ]
+    assert auth.list_conviction_scores("u1", ticker="aapl")[0]["ticker"] == "AAPL"
+
+
+def test_insert_disagreement_log_db(db):
+    auth.insert_disagreement_log({"session_id": "s1", "user_id": "u1", "spread": 0.4})
+    assert any(r.get("session_id") == "s1"
+               for r in db.tables.get("disagreement_log", []))
+
+
+# ---------------------------------------------------------------------------
+# compliance version + attestation DB reads
+# ---------------------------------------------------------------------------
+
+def test_active_compliance_version_db(db):
+    db.tables["compliance_active_version"] = [{"id": "1", "version": "2026-01"}]
+    assert auth.active_compliance_version() == "2026-01"
+
+
+def test_latest_active_attestation_db(db):
+    db.tables["compliance_active_version"] = [{"id": "1", "version": "2026-01"}]
+    db.tables["compliance_attestations"] = [{
+        "id": "a1", "user_id": "u1", "version": "2026-01", "revoked_at": None,
+        "ack_paper_only": True, "ack_not_advice": True, "ack_jurisdiction": True,
+        "created_at": "2024-01-02",
+    }]
+    att = auth.latest_active_attestation_for_user("u1")
+    assert att is not None and att["id"] == "a1"
+
+
+def test_latest_active_attestation_none_when_revoked(db):
+    db.tables["compliance_active_version"] = [{"id": "1", "version": "2026-01"}]
+    db.tables["compliance_attestations"] = [{
+        "id": "a1", "user_id": "u1", "version": "2026-01", "revoked_at": "2024-02-01",
+        "ack_paper_only": True, "ack_not_advice": True, "ack_jurisdiction": True,
+        "created_at": "2024-01-02",
+    }]
+    assert auth.latest_active_attestation_for_user("u1") is None
+
+
+# ---------------------------------------------------------------------------
+# stuck-session reaper / mark_session_failed
+# ---------------------------------------------------------------------------
+
+def test_list_stuck_running_sessions_db(db):
+    db.tables["sessions"] = [
+        {"id": "s1", "user_id": "u1", "status": "running", "created_at": "2020-01-01"},
+        {"id": "s2", "user_id": "u1", "status": "completed", "created_at": "2020-01-01"},
+    ]
+    stuck = auth.list_stuck_running_sessions()
+    assert [r["id"] for r in stuck] == ["s1"]
+
+
+def test_list_stuck_running_sessions_error(db):
+    db.fail = True
+    assert auth.list_stuck_running_sessions() == []
+
+
+def test_delete_stuck_running_sessions_db(db):
+    db.tables["sessions"] = [
+        {"id": "s1", "user_id": "u1", "status": "running", "created_at": "2020-01-01"},
+        {"id": "s2", "user_id": "u1", "status": "pending", "created_at": "2020-01-01"},
+    ]
+    n = auth.delete_stuck_running_sessions()
+    assert n == 2
+    assert db.tables["sessions"] == []
+
+
+def test_mark_session_failed_db(db):
+    db.tables["sessions"] = [{"id": "s1", "user_id": "u1", "status": "running",
+                              "data": {"id": "s1"}}]
+    assert auth.mark_session_failed("s1", failure_reason="timeout") is True
