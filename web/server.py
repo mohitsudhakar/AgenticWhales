@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -160,6 +160,8 @@ def _render_html(filename: str) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+@app.get("/", response_class=HTMLResponse)
+async def root_page() -> HTMLResponse:
     """Root serves the sign-in landing page. landing.js does the conditional
     redirect to /fund once Supabase reports a signed-in user — that's why /
     must NOT be a server-side 307 (it would race against /fund's own
@@ -808,6 +810,9 @@ class CreateRecipePayload(BaseModel):
     conviction_threshold: int = 7
     max_daily_token_cost_usd: float = 5.0
     market_hours_only: bool = True
+    # Optional: populated when a recipe is created from a compiled NL strategy.
+    trigger_conditions: Optional[Dict[str, Any]] = None
+    source_thesis: Optional[str] = None
 
 
 @app.post("/api/recipes")
@@ -1109,24 +1114,266 @@ class BacktestPayload(BaseModel):
     kelly_cap: float = 0.10
 
 
+def _run_backtest_sync(symbol, from_date, to_date, starting_cash, kelly_cap, decision_fn=None):
+    """Run the real replay engine and shape the result for the UI. Raises
+    HTTPException(422) on data problems (bad ticker, empty window)."""
+    from agenticwhales.backtest import run_backtest
+
+    try:
+        result = run_backtest(
+            symbol, from_date, to_date,
+            decision_fn=decision_fn,
+            starting_cash=starting_cash,
+            kelly_cap=kelly_cap,
+        )
+    except Exception as e:  # noqa: BLE001 — yfinance / empty-window / look-ahead
+        raise HTTPException(status_code=422, detail=f"Backtest failed: {e}")
+
+    total_return_pct = (
+        (result.final_nav - result.starting_cash) / result.starting_cash * 100.0
+        if result.starting_cash else 0.0
+    )
+    return {
+        "symbol": result.symbol,
+        "from_date": result.from_date.isoformat(),
+        "to_date": result.to_date.isoformat(),
+        "starting_cash": result.starting_cash,
+        "final_nav": round(result.final_nav, 2),
+        "total_return_pct": round(total_return_pct, 2),
+        "total_decisions": result.total_decisions,
+        "closed_trades": result.closed_trades,
+        "hit_rate": result.hit_rate,
+        "brier": result.brier,
+        "max_drawdown_pct": round(result.max_drawdown_pct * 100.0, 2),
+        "equity_curve": result.equity_curve,
+        "trades": result.trades,
+    }
+
+
 @app.post("/api/backtest/run")
 async def post_backtest_run(
     payload: BacktestPayload,
     user_id: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
-    # Backtest engine lives in agenticwhales.backtest; surface a clean stub
-    # until that path is reconnected.
-    return {
-        "symbol": payload.ticker,
-        "from_date": payload.from_date,
-        "to_date": payload.to_date,
-        "total_decisions": 0,
-        "closed_trades": 0,
-        "final_nav": payload.starting_cash,
-        "starting_cash": payload.starting_cash,
-        "hit_rate": 0.0,
-        "brier": None,
-    }
+    """Run the deterministic momentum-stub backtest on real OHLCV history."""
+    return await asyncio.to_thread(
+        _run_backtest_sync,
+        payload.ticker, payload.from_date, payload.to_date,
+        payload.starting_cash, payload.kelly_cap,
+    )
+
+
+class StrategyBacktestPayload(BaseModel):
+    thesis: str = Field(min_length=3, max_length=1000)
+    ticker: str = Field(min_length=1, max_length=12)
+    from_date: str
+    to_date: str
+    starting_cash: float = 100000.0
+    kelly_cap: float = 0.10
+
+
+@app.post("/api/strategy/backtest")
+async def post_strategy_backtest(
+    payload: StrategyBacktestPayload,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Compile a plain-English thesis into a strategy, then backtest it on real
+    historical market data. Returns the compiled rules + backtest metrics so the
+    Strategy Lab can show both what it understood and how it would have done."""
+    from agenticwhales.strategy import compile_strategy, strategy_decision_generator
+
+    def _work():
+        spec = compile_strategy(
+            payload.thesis, provider=DEFAULT_PROVIDER, model=DEFAULT_QUICK_MODEL,
+        )
+        gen = strategy_decision_generator(spec)
+        bt = _run_backtest_sync(
+            payload.ticker, payload.from_date, payload.to_date,
+            payload.starting_cash, payload.kelly_cap, decision_fn=gen,
+        )
+        return {"strategy": spec.to_dict(), "backtest": bt}
+
+    try:
+        return await asyncio.to_thread(_work)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 — compile failure
+        raise HTTPException(status_code=422, detail=f"Strategy compile failed: {e}")
+
+
+# ============================================================================
+# SIGNALS — external-data analyzers surfaced on /fund as sidebar tabs.
+# Read-only, disclosure/analysis only. Never submit orders.
+# ============================================================================
+
+
+class XRecsPayload(BaseModel):
+    handle: str = Field(min_length=1, max_length=64)
+    max_results: int = Field(default=30, ge=5, le=100)
+
+
+@app.post("/api/signals/x-recs")
+async def post_x_recs(
+    payload: XRecsPayload,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Fetch an X handle's recent tweets and extract structured trade recs."""
+    from agenticwhales.dataflows.x_trades import (
+        XTradesError,
+        extract_trade_recs,
+        fetch_user_tweets,
+    )
+
+    handle = payload.handle.strip().lstrip("@")
+    try:
+        tweets = fetch_user_tweets(handle, max_results=payload.max_results)
+    except XTradesError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    if not tweets:
+        return {"handle": handle, "tweets": [], "recommendations": []}
+    try:
+        recs = extract_trade_recs(
+            handle, tweets,
+            provider=DEFAULT_PROVIDER, model=DEFAULT_QUICK_MODEL,
+        )
+    except XTradesError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"handle": handle, "tweets": tweets, "recommendations": recs}
+
+
+class CongressPayload(BaseModel):
+    ticker: str = Field(min_length=1, max_length=10)
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+@app.post("/api/signals/congress")
+async def post_congress(
+    payload: CongressPayload,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Fetch disclosed U.S. Congress trades for a ticker."""
+    from agenticwhales.dataflows.congress_trades import (
+        CongressTradesError,
+        fetch_congress_trades,
+    )
+
+    ticker = payload.ticker.strip().upper()
+    try:
+        records = fetch_congress_trades(ticker, limit=payload.limit)
+    except CongressTradesError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    buys = sum(
+        1 for r in records
+        if "buy" in r["transaction"].lower() or "purchase" in r["transaction"].lower()
+    )
+    sells = sum(
+        1 for r in records
+        if "sell" in r["transaction"].lower() or "sale" in r["transaction"].lower()
+    )
+    return {"ticker": ticker, "trades": records, "buys": buys, "sells": sells}
+
+
+@app.post("/api/signals/transactions")
+async def post_transactions(
+    file: UploadFile = File(...),
+    run_llm: str = Form("false"),
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Parse a brokerage CSV and run the FIFO/behavioral analyzer.
+
+    ``run_llm=true`` adds the 4-lens LLM behavioral review (slower, uses
+    provider quota); otherwise only the deterministic metrics + flags run.
+    """
+    from agenticwhales.transactions import analyze_transactions, parse_transactions_csv
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1", errors="replace")
+    txns = parse_transactions_csv(text)
+    if not txns:
+        raise HTTPException(
+            status_code=400,
+            detail="No transactions parsed from the uploaded file.",
+        )
+    do_llm = str(run_llm).strip().lower() in ("1", "true", "yes", "on")
+    result = analyze_transactions(
+        txns, run_llm=do_llm,
+        provider=DEFAULT_PROVIDER, model=DEFAULT_QUICK_MODEL,
+    )
+    payload = result.model_dump()
+
+    # Persist for signed-in users so the cognitive journal can analyze behaviour
+    # across sessions. Guests (anonymous) get analysis-only, nothing stored.
+    saved = 0
+    if user_id and user_id != auth.ANONYMOUS_USER_ID:
+        import time as _time
+        import uuid as _uuid
+        batch_id = _uuid.uuid4().hex
+        now = auth._ts_iso(_time.time())
+        rows = []
+        for t in txns:
+            rows.append({
+                "id": _uuid.uuid4().hex,
+                "user_id": user_id,
+                "batch_id": batch_id,
+                "source": "csv_upload",
+                "txn_date": t.date or "",
+                "type": t.type or "Other",
+                "symbol": t.symbol or "",
+                "description": t.description or "",
+                "quantity": float(t.quantity or 0),
+                "price": float(t.price or 0),
+                "amount": float(t.amount or 0),
+                "created_at": now,
+            })
+        try:
+            saved = auth.save_transactions(rows)
+        except Exception as exc:  # noqa: BLE001
+            payload.setdefault("warnings", []).append(f"Could not save to history: {exc}")
+        payload["batch_id"] = batch_id
+    payload["saved_count"] = saved
+    payload["persisted"] = saved > 0
+    return payload
+
+
+@app.get("/api/transactions")
+async def get_transactions(
+    limit: int = Query(2000, ge=1, le=5000),
+    user_id: str = Depends(get_current_user_id),
+) -> List[Dict[str, Any]]:
+    """A signed-in user's saved brokerage transaction history."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return []
+    return auth.list_transactions(user_id, limit=limit)
+
+
+@app.get("/api/transactions/metrics")
+async def get_transactions_metrics(
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Recompute deterministic metrics over the user's full saved history."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return {"transactions": [], "metrics": {}, "analysis": {}, "warnings": []}
+    from agenticwhales.transactions import analyze_transactions
+    from agenticwhales.transactions.models import Transaction
+
+    saved = auth.list_transactions(user_id)
+    if not saved:
+        return {"transactions": [], "metrics": {}, "analysis": {}, "warnings": [], "count": 0}
+    txns = [
+        Transaction(
+            date=r.get("txn_date", ""), type=r.get("type", "Other"),
+            symbol=r.get("symbol", ""), description=r.get("description", ""),
+            quantity=r.get("quantity", 0), price=r.get("price", 0), amount=r.get("amount", 0),
+        )
+        for r in saved
+    ]
+    result = analyze_transactions(txns, run_llm=False)
+    payload = result.model_dump()
+    payload["count"] = len(txns)
+    return payload
 
 
 def main() -> None:
