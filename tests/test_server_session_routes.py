@@ -374,3 +374,75 @@ def test_lifespan_runs_sweep(monkeypatch):
     # entering the TestClient context manager triggers the lifespan handler
     with TestClient(server.app) as c:
         assert c.get("/healthz").status_code == 200
+
+
+# ===========================================================================
+# small GET routes + readyz
+# ===========================================================================
+
+def test_readyz_ok_and_error(uc, monkeypatch):
+    assert uc.get("/readyz").status_code == 200
+    monkeypatch.setattr(server.auth, "active_compliance_version",
+                        lambda: (_ for _ in ()).throw(RuntimeError("db down")))
+    r = uc.get("/readyz")
+    assert r.status_code == 503 and r.json()["ready"] is False
+
+
+def test_get_session_live_and_storage(uc):
+    server._runners["sg"] = _FakeRunner({"id": "sg", "user_id": "u-test"})
+    assert uc.get("/api/sessions/sg").json()["snapshot"] is True
+    server.storage.save({"id": "sd", "user_id": "u-test", "ticker": "AAPL",
+                         "analysis_date": "2024-01-02", "status": "completed",
+                         "created_at": 1.0})
+    assert uc.get("/api/sessions/sd").status_code == 200
+
+
+def test_get_batch_live_and_storage(uc):
+    server._batch_runners["bg"] = _FakeBatchRunner({"id": "bg", "user_id": "u-test"})
+    assert uc.get("/api/batches/bg").json()["snapshot"] is True
+    server.batch_storage.save({"id": "bd", "user_id": "u-test",
+                              "analysis_date": "2024-01-02", "status": "completed",
+                              "created_at": 1.0, "items": []})
+    assert uc.get("/api/batches/bd").status_code == 200
+
+
+def test_list_sessions_merges_live_runner(uc):
+    server._runners["sl"] = _FakeRunner({"id": "sl", "user_id": "u-test",
+                                        "ticker": "AAPL", "analysis_date": "2024-01-02",
+                                        "status": "running", "created_at": 2.0})
+    rows = uc.get("/api/sessions").json()
+    assert any(r["id"] == "sl" for r in rows)
+
+
+def test_paper_get_routes(uc):
+    for path in ("/api/paper/account", "/api/paper/positions", "/api/paper/orders",
+                 "/api/paper/conviction"):
+        assert uc.get(path).status_code == 200
+
+
+def test_risk_limits_and_kill_switch(uc):
+    assert uc.get("/api/risk/limits").status_code == 200
+    r = uc.post("/api/risk/kill-switch", json={"enabled": True})
+    assert r.status_code == 200 and r.json()["kill_switch"] is True
+
+
+def test_transactions_metrics_empty_and_populated(uc):
+    assert uc.get("/api/transactions/metrics").json()["count"] == 0 \
+        if "count" in uc.get("/api/transactions/metrics").json() else True
+    server.auth.save_transactions([{
+        "id": "t1", "user_id": "u-test", "batch_id": "b1", "source": "csv",
+        "txn_date": "2024-01-02", "type": "Buy", "symbol": "AAPL",
+        "description": "", "quantity": 10, "price": 100.0, "amount": -1000.0,
+        "created_at": "2024-01-02T00:00:00+00:00",
+    }])
+    body = uc.get("/api/transactions/metrics").json()
+    assert body["count"] == 1
+
+
+def test_stream_batch_runner_wrong_owner_closes(uc):
+    runner = _StreamRunner({"id": "bW"}, {"type": "x"})
+    runner.batch = {"id": "bW", "user_id": "someone-else"}
+    server._batch_runners["bW"] = runner
+    with pytest.raises(Exception):
+        with uc.websocket_connect("/api/batches/bW/stream") as ws:
+            ws.receive_json()
