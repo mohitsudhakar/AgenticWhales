@@ -283,3 +283,35 @@ def test_log_state_writes_json(tmp_path):
     out = tmp_path / "AAPL" / "TradingAgentsStrategy_logs" / "full_states_log_2024-01-02.json"
     assert out.exists()
     assert g.log_states_dict["2024-01-02"]["final_trade_decision"] == "BUY"
+
+
+# ===========================================================================
+# __init__ construction (LLM clients faked → compiles the graph offline)
+# ===========================================================================
+
+def test_graph_init_compiles(monkeypatch, tmp_path):
+    from agenticwhales.default_config import DEFAULT_CONFIG
+
+    class _LLM:
+        def bind_tools(self, tools):
+            return self
+
+    monkeypatch.setattr(tg, "create_llm_client",
+                        lambda **k: SimpleNamespace(get_llm=lambda: _LLM()))
+
+    cfg = DEFAULT_CONFIG.copy()
+    cfg.update({
+        "llm_provider": "google", "quick_think_llm": "gemini-x",
+        "deep_think_llm": "gemini-x", "backend_url": None,
+        "max_debate_rounds": 1, "max_risk_discuss_rounds": 1,
+        "results_dir": str(tmp_path), "data_cache_dir": str(tmp_path),
+        "memory_log_path": str(tmp_path / "mem.md"),
+        "diversify_synthesizers": False, "diversify_debaters": False,
+    })
+    g = AgenticWhalesGraph(["market"], config=cfg, debug=False)
+    assert g.graph is not None
+    assert g.workflow is not None
+    # synthesizers fall back to the deep LLM (diversification off)
+    assert g.research_manager_llm is g.deep_thinking_llm
+    # process_signal delegates to the signal processor
+    assert g.curr_state is None
