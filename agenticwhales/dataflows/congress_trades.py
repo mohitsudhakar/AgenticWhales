@@ -61,6 +61,15 @@ def _coerce_records(payload: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def _cell(value: Any) -> str:
+    """Sanitize a value for a Markdown table cell: escape pipes, drop newlines.
+
+    Disclosure feeds are third-party data; a representative name or amount
+    field containing ``|`` or a line break must not break the rendered table.
+    """
+    return str(value or "").replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ").strip()
+
+
 def _get(record: Dict[str, Any], *keys: str, default: str = "") -> str:
     """Return the first present, case-tolerant key from a record."""
     for k in keys:
@@ -169,8 +178,8 @@ def get_congress_trades(ticker: str, limit: int = 50, **kwargs) -> str:
     ]
     for r in records:
         lines.append(
-            f"| {r['transaction_date'] or '?'} | {r['representative'] or '?'} | "
-            f"{r['chamber'] or '?'} | {r['party'] or '?'} | "
-            f"{r['transaction'] or '?'} | {r['amount'] or '?'} |"
+            f"| {_cell(r['transaction_date']) or '?'} | {_cell(r['representative']) or '?'} | "
+            f"{_cell(r['chamber']) or '?'} | {_cell(r['party']) or '?'} | "
+            f"{_cell(r['transaction']) or '?'} | {_cell(r['amount']) or '?'} |"
         )
     return "\n".join(lines)

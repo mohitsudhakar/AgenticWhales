@@ -64,6 +64,15 @@ If there are no recommendations, return {"recommendations": []}."""
 _VALID_ACTIONS = ("buy", "sell", "hold")
 
 
+def _cell(value: Any) -> str:
+    """Sanitize a value for inclusion in a Markdown table cell.
+
+    Escapes pipes and collapses newlines so a single post containing ``|`` or a
+    line break can't break the rendered table (or smuggle extra rows).
+    """
+    return str(value or "").replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ").strip()
+
+
 class XTradesError(Exception):
     """Raised when the X backend cannot be reached/parsed."""
 
@@ -327,7 +336,7 @@ def get_x_trade_recs(
     # Sort by conviction descending so the strongest signals surface first.
     for r in sorted(recs, key=lambda x: x["conviction"], reverse=True):
         lines.append(
-            f"| {r['ticker']} | {r['action']} | {r['conviction']:.2f} | "
-            f"{r['timeframe'] or '?'} | {r['rationale'] or '?'} |"
+            f"| {_cell(r['ticker'])} | {_cell(r['action'])} | {r['conviction']:.2f} | "
+            f"{_cell(r['timeframe']) or '?'} | {_cell(r['rationale']) or '?'} |"
         )
     return "\n".join(lines)
