@@ -4,18 +4,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
   <meta name="darkreader-lock" />
   <title>AgenticWhales — Fund</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css" />
-  <link rel="stylesheet" href="/static/fund.css" />
+  <script src="/static/theme.js?v=20260530h"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=20260530h" />
+  <link rel="stylesheet" href="/static/fund.css?v=20260530h" />
   <script type="module" src="/static/supabase-client.js"></script>
   <!-- Markdown renderer for the Investment Thesis pane (Act V) — same CDN
        build /analyze uses, kept on `defer` so it loads in the same pass as
        fund.js. fund.js feature-detects `marked` before calling it. -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
-  <script src="/static/fund.js" defer></script>
+  <script src="/static/fund.js?v=20260530h" defer></script>
+  <script src="/static/fund_signals.js?v=20260530h" defer></script>
 </head>
 
 <body class="fund-body">
@@ -42,27 +43,39 @@
     <nav class="fund-nav" aria-label="Fund sections">
       <button type="button" class="fund-nav-btn active" data-target="overview">
         <span class="nav-glyph" aria-hidden="true">🐋</span>
-        <span class="nav-text"><span class="nav-label">Floor</span><span class="nav-sub">Live debate</span></span>
+        <span class="nav-text"><span class="nav-label">Overview</span><span class="nav-sub">Dashboard · launch</span></span>
       </button>
-      <button type="button" class="fund-nav-btn" data-target="analyses">
-        <span class="nav-glyph" aria-hidden="true">🔭</span>
-        <span class="nav-text"><span class="nav-label">Analyses</span><span class="nav-sub">Full transcripts</span></span>
-      </button>
-      <button type="button" class="fund-nav-btn" data-target="decisions">
-        <span class="nav-glyph" aria-hidden="true">📒</span>
-        <span class="nav-text"><span class="nav-label">Book</span><span class="nav-sub">Positions · trades</span></span>
+      <button type="button" class="fund-nav-btn" data-target="fund">
+        <span class="nav-glyph" aria-hidden="true">📈</span>
+        <span class="nav-text"><span class="nav-label">Fund</span><span class="nav-sub">Book · transcripts · recipes</span></span>
       </button>
       <button type="button" class="fund-nav-btn" data-target="journal">
         <span class="nav-glyph" aria-hidden="true">✍️</span>
-        <span class="nav-text"><span class="nav-label">Journal</span><span class="nav-sub">Reflections</span></span>
+        <span class="nav-text"><span class="nav-label">Journal</span><span class="nav-sub">Reflections · behavior</span></span>
       </button>
-      <button type="button" class="fund-nav-btn fund-nav-btn-lab" data-target="insights" data-lab="1">
-        <span class="nav-glyph" aria-hidden="true">🔬</span>
-        <span class="nav-text"><span class="nav-label">Lab</span><span class="nav-sub">Insights · risk · backtest</span></span>
+      <button type="button" class="fund-nav-btn" data-target="signals">
+        <span class="nav-glyph" aria-hidden="true">📡</span>
+        <span class="nav-text"><span class="nav-label">Signals</span><span class="nav-sub">X · Congress · your trades</span></span>
+      </button>
+      <button type="button" class="fund-nav-btn" data-target="risk">
+        <span class="nav-glyph" aria-hidden="true">🛡️</span>
+        <span class="nav-text"><span class="nav-label">Risk</span><span class="nav-sub">Controls · calibration · backtest</span></span>
       </button>
     </nav>
 
+    <button type="button" class="theme-toggle fund-theme-toggle" data-theme-toggle aria-pressed="false">
+      <span data-theme-icon aria-hidden="true">☾</span><span data-theme-label>Dark</span>
+    </button>
     <a href="/analyze" class="primary-btn secondary sidebar-cross-nav" style="text-decoration:none;text-align:center">↗ /analyze (power user)</a>
+    <button type="button" id="fund-signin-btn" class="google-btn fund-signin-btn hidden">
+      <svg class="google-g" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
+        <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/>
+        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+        <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.1C29.2 35.4 26.7 36 24 36c-5.3 0-9.7-3.4-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z"/>
+        <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.2 5.1C40.8 35.6 44 30.3 44 24c0-1.2-.1-2.3-.4-3.5z"/>
+      </svg>
+      <span>Sign in with Google</span>
+    </button>
     <div id="user-chip" class="user-chip hidden">
       <div class="user-chip-row">
         <div class="user-avatar" id="user-avatar">?</div>
@@ -85,6 +98,9 @@
       <a href="#risk" data-target="risk">Risk controls →</a>
     </div>
 
+    <!-- Subtab bar — populated by fund.js for groups with >1 leaf section. -->
+    <div id="fund-subtabs" class="fund-subtabs" hidden></div>
+
     <!-- ==================== Overview ==================== -->
     <section class="fund-section" data-section="overview">
       <header class="fund-section-head">
@@ -94,6 +110,47 @@
           <button type="button" id="ov-resolve" class="ghost-btn">↻ Resolve outcomes</button>
         </div>
       </header>
+
+      <!-- Feature showcase — the product surface as cards (replaces the
+           bull/bear arena gimmick). Cards deep-link into each tab. -->
+      <section class="ov-features" aria-label="What you can do">
+        <header class="ov-features-head">
+          <h2>Your desk, at a glance</h2>
+          <p class="subtle">A pod of agents, a paper book, a cognitive journal, and live external signals — all in one place.</p>
+        </header>
+        <div class="ov-feature-grid">
+          <a class="ov-feature-card" href="#fund" data-target="fund">
+            <span class="ov-feature-ico" aria-hidden="true">📈</span>
+            <span class="ov-feature-title">The Book</span>
+            <span class="ov-feature-desc">Paper positions, orders &amp; realized P&amp;L from every decision the pod takes.</span>
+          </a>
+          <a class="ov-feature-card" href="#fund" data-target="analyses">
+            <span class="ov-feature-ico" aria-hidden="true">🔭</span>
+            <span class="ov-feature-title">Transcripts</span>
+            <span class="ov-feature-desc">Replay any debate agent-by-agent — the glass-box audit trail behind each call.</span>
+          </a>
+          <a class="ov-feature-card" href="#fund" data-target="theses">
+            <span class="ov-feature-ico" aria-hidden="true">🧭</span>
+            <span class="ov-feature-title">Recipes</span>
+            <span class="ov-feature-desc">Persistent theses that re-run on a schedule or when the tape triggers them.</span>
+          </a>
+          <a class="ov-feature-card" href="#journal" data-target="journal">
+            <span class="ov-feature-ico" aria-hidden="true">✍️</span>
+            <span class="ov-feature-title">Cognitive Journal</span>
+            <span class="ov-feature-desc">Reflections plus behavioral findings that catch tilt, revenge trades &amp; drift.</span>
+          </a>
+          <a class="ov-feature-card" href="#signals" data-target="signals">
+            <span class="ov-feature-ico" aria-hidden="true">📡</span>
+            <span class="ov-feature-title">Signals</span>
+            <span class="ov-feature-desc">Influencer calls on X, disclosed Congress trades, and your own trade history.</span>
+          </a>
+          <a class="ov-feature-card" href="#risk" data-target="risk">
+            <span class="ov-feature-ico" aria-hidden="true">🛡️</span>
+            <span class="ov-feature-title">Risk &amp; Calibration</span>
+            <span class="ov-feature-desc">Spend caps, kill switch, Brier-scored calibration and a backtest harness.</span>
+          </a>
+        </div>
+      </section>
 
       <!-- ============== Live debate arena (the showpiece) ============== -->
       <section id="hero-card" class="hero-arena">
@@ -108,21 +165,21 @@
         <div id="hero-idle" class="hero-state">
           <div class="hero-idle-grid">
             <div class="hero-idle-copy">
-              <span class="hero-eyebrow">Live multi-agent debate</span>
-              <h1 class="hero-headline">Pick a ticker.<br/>Watch the whales argue.</h1>
+              <span class="hero-eyebrow">Live multi-agent research</span>
+              <h1 class="hero-headline">Put any ticker<br/>on trial.</h1>
               <p class="hero-lede">
-                Bull and Bear researchers face off, three analysts feed them ammo, the risk team
-                weighs in, and the Portfolio Manager renders a verdict. <strong>60–120 seconds</strong>,
-                deterministic, fully audited. Paper sandbox — no real broker.
+                A full pod convenes on your call — analysts gather the evidence, a bull and bear
+                argue it out, risk weighs in, and the Portfolio Manager hands down a verdict in
+                <strong>under two minutes</strong>. Deterministic, fully audited, paper-only.
               </p>
               <form class="hero-form" id="hero-form" novalidate>
                 <label class="hero-ticker-input">
-                  <span class="hero-ticker-label">Ticker</span>
+                  <span class="hero-ticker-label">Name a ticker</span>
                   <input type="text" id="hero-ticker" value="AAPL" maxlength="10" autocomplete="off" spellcheck="false" />
                 </label>
                 <button type="button" id="hero-start-btn" class="hero-go">
-                  <span>Start the debate</span>
-                  <span class="hero-go-spark" aria-hidden="true">⚔</span>
+                  <span>Convene the pod</span>
+                  <span class="hero-go-spark" aria-hidden="true">⚖</span>
                 </button>
               </form>
               <div id="hero-error" class="phase1-error"></div>
@@ -134,12 +191,6 @@
               </div>
             </div>
 
-            <div class="hero-idle-roster" aria-hidden="true">
-              <div class="hero-roster-slot pose-bull"  data-pose="bull"></div>
-              <div class="hero-roster-slot pose-pm"    data-pose="pm"></div>
-              <div class="hero-roster-slot pose-bear"  data-pose="bear"></div>
-              <div class="hero-roster-versus">VS</div>
-            </div>
           </div>
         </div>
 
@@ -943,13 +994,47 @@
         <button type="button" class="lab-subnav-btn" data-target="risk">🛡 Risk controls</button>
       </nav>
       <header class="fund-section-head">
-        <h1>Backtest</h1>
-        <p class="subtle">Replay a ticker through the deterministic stub-LLM decision engine. Strict-causal — no peeking past the as-of date.</p>
+        <h1>Strategy Lab &amp; Backtest</h1>
+        <p class="subtle">Turn a plain-English thesis into rules and replay it on real market history. Strict-causal — no peeking past the as-of date.</p>
       </header>
+
+      <!-- Strategy Lab: plain-English thesis → compiled rules → backtest → save as recipe. -->
+      <div class="phase1-card">
+        <div class="phase1-card-head">
+          <h2>🧭 Strategy Lab</h2>
+          <span class="subtle" style="font-size:12px">Describe a thesis in plain English. We compile it to rules and backtest it on real history.</span>
+        </div>
+        <form id="strategy-form" class="strategy-form">
+          <label class="signals-label" for="st-thesis">Your thesis</label>
+          <textarea id="st-thesis" class="strategy-thesis" rows="2"
+            placeholder="e.g. If NVDA breaks above its 50-day average on 2× volume, go long for a few weeks."></textarea>
+          <div class="strategy-row">
+            <div>
+              <label class="signals-label">Ticker</label>
+              <input type="text" id="st-ticker" placeholder="NVDA" maxlength="12" autocomplete="off" spellcheck="false" />
+            </div>
+            <div>
+              <label class="signals-label">From</label>
+              <input type="date" id="st-from" />
+            </div>
+            <div>
+              <label class="signals-label">To</label>
+              <input type="date" id="st-to" />
+            </div>
+            <button type="submit" id="st-run" class="go-btn small-go">
+              <span class="go-btn-label">Compile &amp; backtest</span>
+              <span class="go-btn-spark">▶</span>
+            </button>
+          </div>
+        </form>
+        <div id="strategy-status" class="signals-status"></div>
+        <div id="strategy-result" class="strategy-result"></div>
+      </div>
 
       <div class="phase1-card">
         <header class="phase1-card-head">
-          <h2>Run a backtest</h2>
+          <h2>Run a raw backtest</h2>
+          <span class="subtle" style="font-size:12px">Deterministic SMA-momentum baseline — no LLM.</span>
         </header>
         <form id="backtest-form" class="grid-form">
           <label>
@@ -1095,6 +1180,96 @@
           </button>
         </div>
       </div>
+    </section>
+
+    <!-- ==================== X Recs ==================== -->
+    <section class="fund-section" data-section="x_recs" hidden>
+      <header class="fund-section-head">
+        <h1>X Trade Recommendations</h1>
+      </header>
+      <div class="signals-intro subtle">
+        Enter an X (Twitter) handle. Their recent posts are pulled via the X API and an LLM extracts
+        any explicit trade recommendations (ticker · action · conviction · timeframe · rationale).
+        Self-reported opinion, not advice.
+      </div>
+      <form id="xrecs-form" class="signals-form" novalidate>
+        <label class="signals-input">
+          <span class="signals-label">X handle</span>
+          <div class="signals-input-row">
+            <span class="signals-prefix">@</span>
+            <input type="text" id="xrecs-handle" placeholder="elonmusk" autocomplete="off" spellcheck="false" maxlength="32" />
+          </div>
+        </label>
+        <label class="signals-input signals-input-small">
+          <span class="signals-label">Max tweets</span>
+          <input type="number" id="xrecs-max" value="30" min="5" max="100" step="5" />
+        </label>
+        <button type="submit" id="xrecs-go" class="go-btn small-go">
+          <span class="go-btn-label">Extract recs</span>
+          <span class="go-btn-spark">↻</span>
+        </button>
+      </form>
+      <div id="xrecs-status" class="signals-status"></div>
+      <div id="xrecs-summary" class="signals-summary hidden"></div>
+      <div id="xrecs-results" class="signals-results"></div>
+    </section>
+
+    <!-- ==================== Congress ==================== -->
+    <section class="fund-section" data-section="congress" hidden>
+      <header class="fund-section-head">
+        <h1>Congressional Trade Analyzer</h1>
+      </header>
+      <div class="signals-intro subtle">
+        Disclosed U.S. House &amp; Senate stock transactions for a ticker. Source: QuiverQuant's
+        aggregation of the official House Clerk / Senate financial disclosures. Disclosure data —
+        not advice.
+      </div>
+      <form id="congress-form" class="signals-form" novalidate>
+        <label class="signals-input">
+          <span class="signals-label">Ticker</span>
+          <input type="text" id="congress-ticker" placeholder="NVDA" maxlength="10" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="signals-input signals-input-small">
+          <span class="signals-label">Limit</span>
+          <input type="number" id="congress-limit" value="50" min="1" max="200" step="10" />
+        </label>
+        <button type="submit" id="congress-go" class="go-btn small-go">
+          <span class="go-btn-label">Fetch trades</span>
+          <span class="go-btn-spark">↻</span>
+        </button>
+      </form>
+      <div id="congress-status" class="signals-status"></div>
+      <div id="congress-summary" class="signals-summary hidden"></div>
+      <div id="congress-results" class="signals-results"></div>
+    </section>
+
+    <!-- ==================== Trade History (robinhood-analyzer port) ==================== -->
+    <section class="fund-section" data-section="trade_history" hidden>
+      <header class="fund-section-head">
+        <h1>Your Trade History Analyzer</h1>
+      </header>
+      <div class="signals-intro subtle">
+        Upload a brokerage CSV (Robinhood / Schwab / Fidelity / generic). A deterministic FIFO engine
+        computes realized PnL, behavioral flags, monthly activity, and per-symbol stats. Optional LLM
+        review gives a 4-lens (risk / discipline / diversification / habits) read on your patterns.
+        Files are processed in-memory; nothing is persisted to disk.
+      </div>
+      <form id="th-form" class="signals-form" novalidate>
+        <label class="signals-input">
+          <span class="signals-label">Transactions CSV</span>
+          <input type="file" id="th-file" accept=".csv,text/csv,text/plain" />
+        </label>
+        <label class="signals-toggle">
+          <input type="checkbox" id="th-llm" />
+          <span>Run LLM behavioral review (slower, uses provider quota)</span>
+        </label>
+        <button type="submit" id="th-go" class="go-btn small-go">
+          <span class="go-btn-label">Analyze</span>
+          <span class="go-btn-spark">↻</span>
+        </button>
+      </form>
+      <div id="th-status" class="signals-status"></div>
+      <div id="th-dashboard" class="th-dashboard hidden"></div>
     </section>
   </main>
 

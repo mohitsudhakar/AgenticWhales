@@ -79,6 +79,14 @@ window.addEventListener("DOMContentLoaded", async () => {
       switchView(a.dataset.target);
     }
   });
+  // Subtab bar (Fund / Signals / Risk groups).
+  $("#fund-subtabs")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".fund-subtab");
+    if (b) {
+      _lastLeaf[state.view] = b.dataset.leaf;
+      showLeaf(b.dataset.leaf);
+    }
+  });
 
   // Refresh buttons.
   $("#ov-refresh").addEventListener("click", refreshAll);
@@ -93,6 +101,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Backtest (Phase 3).
   $("#backtest-form")?.addEventListener("submit", submitBacktest);
+
+  // Strategy Lab — NL thesis → compiled rules → backtest.
+  $("#strategy-form")?.addEventListener("submit", submitStrategy);
 
   // Streaming fires panel (Phase 3).
   $("#streaming-refresh")?.addEventListener("click", refreshStreamingEvents);
@@ -343,27 +354,50 @@ if (window.AgenticWhalesAuth) setupAuth();
 function setupAuth() {
   const auth = window.AgenticWhalesAuth;
   if (!auth) return;
+  // Sidebar sign-in button — always visible when signed out. When Supabase is
+  // configured it runs the Google OAuth flow; in local/guest mode (no Supabase)
+  // it falls back to a local guest session so the control is never dead and the
+  // user chip always has a way to appear.
+  const signinBtn = $("#fund-signin-btn");
+  // Relabel for guest mode so the button is honest about what it does.
+  if (signinBtn && !auth.isConfigured) {
+    const lbl = signinBtn.querySelector("span:last-child");
+    if (lbl) lbl.textContent = "Continue as guest";
+  }
+  signinBtn?.addEventListener("click", async () => {
+    signinBtn.disabled = true;
+    try {
+      if (auth.isConfigured) {
+        await auth.signInWithGoogle();
+      } else {
+        // Local dev / no Supabase — create a guest session inline.
+        auth.signInAsGuest("Guest");
+      }
+    } catch (err) {
+      console.error("Sign-in failed:", err);
+      alert(`Sign-in failed: ${err.message || err}`);
+      signinBtn.disabled = false;
+    }
+  });
   auth.onChange((user) => {
     const chip = $("#user-chip");
     if (!chip) return;
     if (!user) {
       chip.classList.add("hidden");
-      // Gate: bounce signed-out visitors to the / landing page so they hit
-      // the Privacy/Terms + Google sign-in flow before seeing any /fund
-      // content. Skipped when auth isn't configured (local dev with no
-      // Supabase credentials — there's nothing to sign into).
-      //
-      // Loop guard: landing.js bounces logged-in users back here, and a
-      // race in the session-restore step can briefly emit `null` before the
-      // real user, which used to ping-pong /fund ↔ / until the tab was
-      // killed. Count redirects in sessionStorage and stop after 2 within
-      // 10s — anything beyond is an auth race, not a real sign-out.
-      if (auth.isConfigured && _allowAuthRedirect("fund_to_root")) {
-        window.location.replace("/");
+      // Login required: bounce signed-out visitors to the / landing gate
+      // (Google sign-in + Privacy/Terms). Only when Supabase is configured —
+      // in local/guest dev there's nothing to sign into, so we instead show
+      // the inline guest button so the page is still usable.
+      if (auth.isConfigured) {
+        if (signinBtn) signinBtn.classList.add("hidden");
+        if (_allowAuthRedirect("fund_to_root")) window.location.replace("/");
+      } else if (signinBtn) {
+        signinBtn.classList.remove("hidden");
       }
       return;
     }
     chip.classList.remove("hidden");
+    if (signinBtn) signinBtn.classList.add("hidden");
 
     // Mirrors reflectUserChip() in app.js so /fund and /analyze render the
     // same Google profile (display name, avatar photo, tier badge).
@@ -407,15 +441,82 @@ function setupAuth() {
 // View routing
 // ------------------------------------------------------------------
 
+// Two-level navigation: the sidebar shows 5 consolidated GROUPS; each group
+// holds one or more leaf sections (the original data-section panels) surfaced
+// as a subtab bar. Leaf ids are unchanged so every existing render path and
+// deep-link keeps working.
+const NAV_GROUPS = {
+  overview: { leaves: ["overview"] },
+  fund: {
+    leaves: ["decisions", "analyses", "theses"],
+    labels: { decisions: "Book", analyses: "Transcripts", theses: "Recipes" },
+  },
+  journal: { leaves: ["journal"] },
+  signals: {
+    leaves: ["x_recs", "congress", "trade_history"],
+    labels: { x_recs: "X Recs", congress: "Congress", trade_history: "Trade History" },
+  },
+  risk: {
+    leaves: ["risk", "insights", "backtest", "events"],
+    labels: { risk: "Controls", insights: "Calibration", backtest: "Backtest", events: "Streaming" },
+  },
+};
+const LEAF_TO_GROUP = {};
+for (const [g, def] of Object.entries(NAV_GROUPS)) {
+  for (const leaf of def.leaves) LEAF_TO_GROUP[leaf] = g;
+}
+const _lastLeaf = {}; // group -> last viewed leaf id (sticky subtab)
+
+// Accepts either a group key (overview/fund/journal/signals/risk) or a leaf
+// section id (decisions, analyses, x_recs, …) — the latter lets banner links
+// and #analyses/{id} deep-links target a specific subtab.
 function switchView(target) {
   if (!target) return;
-  state.view = target;
-  $$(".fund-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.target === target));
-  $$(".fund-section").forEach((s) => (s.hidden = s.dataset.section !== target));
+  let group, leaf;
+  if (NAV_GROUPS[target]) {
+    group = target;
+    leaf = _lastLeaf[group] || NAV_GROUPS[group].leaves[0];
+  } else if (LEAF_TO_GROUP[target]) {
+    group = LEAF_TO_GROUP[target];
+    leaf = target;
+  } else {
+    return;
+  }
+  state.view = group;
+  _lastLeaf[group] = leaf;
+  $$(".fund-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.target === group));
+  renderSubtabs(group, leaf);
+  showLeaf(leaf);
+}
+
+// Build the subtab bar for a group (hidden when the group has a single leaf).
+function renderSubtabs(group, activeLeaf) {
+  const bar = $("#fund-subtabs");
+  if (!bar) return;
+  const def = NAV_GROUPS[group];
+  if (!def || def.leaves.length < 2) {
+    bar.innerHTML = "";
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  bar.innerHTML = def.leaves
+    .map((leaf) => {
+      const label = (def.labels && def.labels[leaf]) || leaf;
+      const on = leaf === activeLeaf ? " active" : "";
+      return `<button type="button" class="fund-subtab${on}" data-leaf="${leaf}">${label}</button>`;
+    })
+    .join("");
+}
+
+function showLeaf(leaf) {
+  $$(".fund-section").forEach((s) => (s.hidden = s.dataset.section !== leaf));
+  $$("#fund-subtabs .fund-subtab").forEach((b) => b.classList.toggle("active", b.dataset.leaf === leaf));
+  // Let independent modules (fund_signals.js) react to a leaf becoming visible.
+  window.dispatchEvent(new CustomEvent("aw-leaf-shown", { detail: { leaf } }));
   // Lazy-refresh on every view switch so the user always sees current data
-  // without an explicit click. Cheap (a handful of small GETs) and matches
-  // the user's mental model: "if it's on screen, it's live."
-  scheduleRefresh(target);
+  // without an explicit click. Cheap (a handful of small GETs).
+  scheduleRefresh(leaf);
 }
 
 let _refreshTimer = null;

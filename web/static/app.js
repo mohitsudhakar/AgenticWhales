@@ -1368,6 +1368,41 @@ function getAuth() {
   return window.AgenticWhalesAuth || null;
 }
 
+// Compliance gate for /analyze. The accept modal lives on /fund, so a
+// signed-in user who hasn't attested to the active disclaimer version is sent
+// there to accept (which also lands them on the product surface). Checked once
+// per page load.
+let _complianceChecked = false;
+async function ensureComplianceOrRedirect() {
+  if (_complianceChecked) return;
+  _complianceChecked = true;
+  try {
+    const r = await fetch("/api/audit/compliance-ack");
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.needs_attestation) window.location.replace("/fund");
+  } catch (e) {
+    console.warn("compliance check failed:", e);
+  }
+}
+
+// Loop guard for the /analyze ↔ / auth bounce — stop after 2 redirects in 10s
+// so a transient null-user emission during session restore can't ping-pong.
+function _allowAnalyzeRedirect(tag) {
+  const key = `aw_redirect_${tag}`;
+  const now = Date.now();
+  let hist = [];
+  try { hist = JSON.parse(sessionStorage.getItem(key) || "[]"); } catch (_) {}
+  hist = hist.filter((t) => now - t < 10000);
+  if (hist.length >= 2) {
+    console.warn(`auth-redirect guard tripped for ${tag}; staying put.`);
+    return false;
+  }
+  hist.push(now);
+  try { sessionStorage.setItem(key, JSON.stringify(hist)); } catch (_) {}
+  return true;
+}
+
 function initWelcomeFlow() {
   const start = () => {
     const auth = getAuth();
@@ -1389,6 +1424,14 @@ function initWelcomeFlow() {
         const w = $("#welcome-modal");
         if (w && !w.classList.contains("hidden")) w.classList.add("hidden");
         refreshUsageBadge();
+        // Compliance gate: every signed-in user must hold a current
+        // attestation. The accept UI is centralized on /fund, so an
+        // un-attested user is sent there to accept (and lands on the product).
+        // Guests (local dev, no Supabase) are exempt.
+        if (auth.isConfigured && !u.isGuest) ensureComplianceOrRedirect();
+      } else if (auth.isConfigured) {
+        // Login required — bounce signed-out visitors to the / landing gate.
+        if (_allowAnalyzeRedirect("analyze_to_root")) window.location.replace("/");
       } else {
         showWelcomeModal();
       }
