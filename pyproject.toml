@@ -49,6 +49,14 @@ integration = [
     "testcontainers[postgres]>=4.7",
     "psycopg[binary]>=3.2",
 ]
+# Quantitative risk metrics for the Quant Analyst (realized vol / Sharpe /
+# max drawdown via the `marketto` library). Optional — when absent, the
+# get_risk_metrics tool degrades gracefully with an install hint.
+# marketto is not yet on PyPI; install from the sibling checkout:
+#   pip install -e '.[quant]'  after  pip install -e ../marketto --no-deps
+quant = [
+    "marketto>=0.1.0",
+]
 
 [project.scripts]
 agenticwhales = "cli.main:app"

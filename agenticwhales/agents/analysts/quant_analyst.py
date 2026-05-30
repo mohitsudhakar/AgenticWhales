@@ -19,6 +19,7 @@ from agenticwhales.agents.utils.agent_utils import (
     build_instrument_context,
     get_indicators,
     get_language_instruction,
+    get_risk_metrics,
     get_stock_data,
 )
 from agenticwhales.agents.utils.structured import (
@@ -32,8 +33,12 @@ _SYSTEM_MESSAGE = (
     "structured 6-dim radar signal from price action and technical "
     "indicators — nothing else. Use the available tools to fetch the "
     "stock's recent OHLC history and a small set of indicators (RSI, "
-    "MACD, ATR, Bollinger Bands, 50/200 SMA, RoC). Then evaluate the six "
-    "axes of the QuantRadar schema on a 1-10 integer scale each.\n\n"
+    "MACD, ATR, Bollinger Bands, 50/200 SMA, RoC). Also call "
+    "get_risk_metrics to obtain REALIZED statistics (annualized "
+    "volatility, Sharpe, max drawdown) and anchor the volatility_risk "
+    "axis in them — these are measured from history, not estimated. "
+    "Then evaluate the six axes of the QuantRadar schema on a 1-10 "
+    "integer scale each.\n\n"
     "Scoring discipline: anchor every score in a SPECIFIC indicator "
     "reading. Do not score from intuition. Use the lower half of the "
     "scale (1-5) for absent / weak signals; reserve 8-10 for textbook "
@@ -59,7 +64,7 @@ def create_quant_analyst(llm):
         current_date = state["trade_date"]
         instrument_context = build_instrument_context(state["company_of_interest"])
 
-        tools = [get_stock_data, get_indicators]
+        tools = [get_stock_data, get_indicators, get_risk_metrics]
 
         prompt = ChatPromptTemplate.from_messages(
             [
