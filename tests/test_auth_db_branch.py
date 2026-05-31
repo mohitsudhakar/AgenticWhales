@@ -733,3 +733,65 @@ def test_find_cached_session_request_exception(db, monkeypatch):
         raise _rq.RequestException("net")
     monkeypatch.setattr(db, "get", _boom)
     assert auth.find_cached_session("u1", "AAPL", "2024-01-02", "sig") is None
+
+
+# ---------------------------------------------------------------------------
+# Transport-raises sweep — exercise every `except RequestException` branch in
+# the DB helpers at once. Each call must swallow the error and return a safe
+# default rather than propagate.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def raising_db(db, monkeypatch):
+    import requests as _rq
+
+    def _boom(*a, **k):
+        raise _rq.RequestException("transport down")
+
+    for meth in ("get", "post", "patch", "delete"):
+        monkeypatch.setattr(db, meth, _boom)
+    return db
+
+
+def test_select_helpers_swallow_transport_error(raising_db):
+    assert auth._select_columns("recipes", filters={"user_id": "u1"}) == []
+    assert auth._select_one("sessions", "s1") is None
+    assert auth._select_for_user("sessions", "u1") == []
+    assert auth._delete_one("sessions", "s1") is False
+    assert auth._delete_where("journal_entries", {"id": "j1"}) is False
+
+
+def test_admin_reads_swallow_transport_error(raising_db):
+    assert auth._admin_list_table("sessions", "user_id") == []
+    assert auth.admin_list_profiles() == []
+    assert auth.admin_list_users() == []
+
+
+def test_pricing_reads_swallow_transport_error(raising_db):
+    assert auth.fetch_price_row("google", "gemini") is None
+    assert auth.list_priced_models() == []
+
+
+def test_recipe_writes_swallow_transport_error(raising_db):
+    # These return None / int and must not raise even when the patch fails.
+    auth._memstore[("recipes", "r1")] = {"id": "r1", "consecutive_failures": 0}
+    auth.touch_recipe_last_run("r1", 1_700_000_000.0)
+    assert auth.bump_recipe_failures("r1") >= 1
+    auth.reset_recipe_failures("r1")
+    auth.update_recipe_status("r1", "killed")
+
+
+def test_stuck_session_reads_swallow_transport_error(raising_db):
+    assert auth.list_stuck_running_sessions() == []
+    # delete falls through to the (empty) memstore sweep → 0
+    assert auth.delete_stuck_running_sessions() == 0
+
+
+def test_rpc_swallows_transport_error(raising_db):
+    assert auth.call_paper_place_order_rpc({"p_user": "u1"}) is None
+
+
+def test_upsert_helpers_swallow_transport_error(raising_db):
+    # _upsert / _upsert_columns log + return without raising.
+    auth._upsert("widgets", {"id": "w1", "name": "x"})
+    auth._upsert_columns("widgets", {"id": "w2", "name": "y"})
