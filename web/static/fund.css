@@ -1286,14 +1286,12 @@
 }
 .hero-headline {
   margin: 0 0 12px;
+  font-family: var(--serif);
   font-size: 38px;
-  font-weight: 700;
-  line-height: 1.08;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #f0f4ff 0%, #cad8ff 60%, #6ee7b7 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  color: var(--text);            /* solid ink — was an invisible clipped gradient on light */
 }
 @media (max-width: 800px) {
   .hero-headline { font-size: 28px; }
@@ -1476,10 +1474,7 @@
 .hero-round-num {
   font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6ee7b7, #60a5fa);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--accent-strong);   /* was a pale clipped gradient, invisible on light */
 }
 .hero-round-name { font-size: 12px; color: var(--text-dim); }
 .hero-cancel {
