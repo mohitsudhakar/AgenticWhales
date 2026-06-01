@@ -149,10 +149,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Sign-out (sidebar chip). After Supabase clears the session we send the
-  // user back to / so the sign-in gate is the next thing they see.
+  // user to the sign-in gate so it's the next thing they see.
   $("#signout-btn")?.addEventListener("click", async () => {
     try { await window.AgenticWhalesAuth?.signOut?.(); } catch (e) { console.error(e); }
-    window.location.href = "/";
+    window.location.href = "/signin";
   });
 
   // Auth → load. supabase-client.js is a module with top-level await, so on
@@ -309,8 +309,8 @@ function showComplianceModal({ reason, payload } = {}) {
   };
 
   const onDecline = () => {
-    // Compliance is mandatory — declining boots them back to the landing.
-    window.location.href = "/";
+    // Compliance is mandatory — declining boots them back to the sign-in gate.
+    window.location.href = "/signin";
   };
 
   accept.addEventListener("click", onAccept);
@@ -384,13 +384,13 @@ function setupAuth() {
     if (!chip) return;
     if (!user) {
       chip.classList.add("hidden");
-      // Login required: bounce signed-out visitors to the / landing gate
+      // Login required: bounce signed-out visitors to the /signin gate
       // (Google sign-in + Privacy/Terms). Only when Supabase is configured —
       // in local/guest dev there's nothing to sign into, so we instead show
       // the inline guest button so the page is still usable.
       if (auth.isConfigured) {
         if (signinBtn) signinBtn.classList.add("hidden");
-        if (_allowAuthRedirect("fund_to_root")) window.location.replace("/");
+        if (_allowAuthRedirect("fund_to_signin")) window.location.replace("/signin");
       } else if (signinBtn) {
         signinBtn.classList.remove("hidden");
       }

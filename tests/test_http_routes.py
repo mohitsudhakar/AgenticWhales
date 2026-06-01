@@ -31,13 +31,27 @@ def _wipe():
 
 
 class TestRouting:
-    def test_root_serves_landing_page(self, client):
-        """`/` is the landing / sign-in gate; once authed the page forwards
-        to /fund via client-side JS. We just verify it returns 200 HTML."""
+    def test_root_serves_marketing_page(self, client):
+        """`/` is the public marketing landing page. Its 'Try it today' CTAs
+        link to /signin (the sign-in + disclaimer gate). We verify it returns
+        200 HTML and points at /signin."""
         r = client.get("/")
         assert r.status_code == 200
-        # Landing page should reference /fund somewhere in its body or script.
-        assert "/fund" in r.text or "landing" in r.text.lower()
+        assert "/signin" in r.text          # CTAs route to the sign-in gate
+        assert "Try it today" in r.text      # marketing copy present
+
+    def test_welcome_alias_matches_root(self, client):
+        """/welcome is an alias of the marketing page (back-compat for any
+        previously-shared links)."""
+        assert client.get("/welcome").text == client.get("/").text
+
+    def test_signin_serves_auth_gate(self, client):
+        """/signin serves the sign-in landing (Google + disclaimer). Google
+        OAuth returns to this exact path, so it must be a stable 200 HTML page
+        that loads landing.js."""
+        r = client.get("/signin")
+        assert r.status_code == 200
+        assert "landing.js" in r.text
 
     def test_fund_page_serves(self, client):
         r = client.get("/fund")

@@ -162,10 +162,19 @@ def _render_html(filename: str) -> HTMLResponse:
 
 @app.get("/", response_class=HTMLResponse)
 async def root_page() -> HTMLResponse:
-    """Root serves the sign-in landing page. landing.js does the conditional
-    redirect to /fund once Supabase reports a signed-in user — that's why /
-    must NOT be a server-side 307 (it would race against /fund's own
-    "redirect to / when signed out" gate and create a tight reload loop)."""
+    """Root serves the public marketing landing page. Its 'Try it today' CTAs
+    link to /signin, where the Google sign-in + disclaimer gate lives. Static,
+    no auth, no data — safe to share the bare URL with prospects."""
+    return _render_html("welcome.html")
+
+
+@app.get("/signin", response_class=HTMLResponse)
+async def signin_page() -> HTMLResponse:
+    """Sign-in / disclaimer gate. landing.js does the conditional redirect to
+    /fund once Supabase reports a signed-in user — and Google OAuth returns to
+    THIS path (redirectTo = origin + pathname), so it must be a stable URL that
+    serves landing.html. Must NOT be a server-side 307 (it would race against
+    /fund's own 'redirect to /signin when signed out' gate → reload loop)."""
     return _render_html("landing.html")
 
 
@@ -183,10 +192,8 @@ async def analyze_page() -> HTMLResponse:
 
 @app.get("/welcome", response_class=HTMLResponse)
 async def welcome_page() -> HTMLResponse:
-    """Public marketing landing page (shareable). Static, no auth, no data —
-    its 'Try it today' CTAs link to /fund, where the Google sign-in + disclaimer
-    gate takes over. Kept separate from the root sign-in landing so the URL can
-    be shared with prospects without dropping them straight into the auth modal."""
+    """Alias for the marketing landing page (same content as /). Kept so any
+    previously-shared /welcome links keep working."""
     return _render_html("welcome.html")
 
 
