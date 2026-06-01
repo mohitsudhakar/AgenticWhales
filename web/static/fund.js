@@ -1998,6 +1998,74 @@ async function submitBacktest(ev) {
   }
 }
 
+// Strategy Lab: plain-English thesis -> compiled rules -> backtest.
+async function submitStrategy(ev) {
+  ev.preventDefault();
+  const btn = $("#st-run");
+  const status = $("#strategy-status");
+  const result = $("#strategy-result");
+  const payload = {
+    thesis: ($("#st-thesis")?.value || "").trim(),
+    ticker: ($("#st-ticker")?.value || "").trim().toUpperCase(),
+    from_date: $("#st-from")?.value || "",
+    to_date: $("#st-to")?.value || "",
+    starting_cash: 100000.0,
+    kelly_cap: 0.10,
+  };
+  if (!payload.thesis || !payload.ticker || !payload.from_date || !payload.to_date) {
+    if (status) status.textContent = "Fill in a thesis, ticker, and date range.";
+    return;
+  }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = "Compiling thesis & backtesting…";
+  if (result) result.innerHTML = "";
+  try {
+    const r = await fetch("/api/strategy/backtest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { const j = await r.json(); msg = j.detail || msg; } catch (_) {}
+      if (status) status.textContent = `Failed: ${String(msg).slice(0, 240)}`;
+      return;
+    }
+    const data = await r.json();
+    if (status) status.textContent = "Done.";
+    renderStrategyResult(data, result);
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderStrategyResult(data, container) {
+  if (!container) return;
+  const spec = data.strategy || {};
+  const bt = data.backtest || {};
+  const growth = bt.starting_cash
+    ? ((bt.final_nav - bt.starting_cash) / bt.starting_cash) * 100 : 0;
+  const rules = spec.summary || spec.description || (spec.entry ? JSON.stringify(spec.entry) : "");
+  const kpis = [
+    ["Final NAV", bt.final_nav != null ? `$${formatNumber(bt.final_nav, 2)}` : "—"],
+    ["Growth", bt.final_nav != null ? `${growth >= 0 ? "+" : ""}${growth.toFixed(2)}%` : "—"],
+    ["Trades", bt.closed_trades != null ? String(bt.closed_trades) : "—"],
+    ["Hit rate", bt.hit_rate != null ? `${(bt.hit_rate * 100).toFixed(1)}%` : "—"],
+    ["Brier", bt.brier != null ? bt.brier.toFixed(4) : "—"],
+    ["Max DD", bt.max_drawdown_pct != null ? `${(bt.max_drawdown_pct * 100).toFixed(1)}%` : "—"],
+  ];
+  container.innerHTML = `
+    <div class="strategy-compiled">
+      <div class="strategy-compiled-label">What it understood</div>
+      <div class="strategy-compiled-body">${escapeHTML(String(rules || "(rules compiled)"))}</div>
+    </div>
+    <div class="bt-kpis">
+      ${kpis.map(([k, v]) => `<div class="kpi"><div class="kpi-label">${k}</div><div class="kpi-value">${v}</div></div>`).join("")}
+    </div>`;
+}
+
 function renderBacktestResult(data) {
   const card = $("#bt-result-card");
   card.hidden = false;
