@@ -23,6 +23,8 @@ from .alpha_vantage import (
     get_global_news as get_alpha_vantage_global_news,
 )
 from .alpha_vantage_common import AlphaVantageRateLimitError
+from .congress_trades import get_congress_trades
+from .x_trades import get_x_trade_recs
 
 # Configuration and routing logic
 from .config import get_config
@@ -57,12 +59,26 @@ TOOLS_CATEGORIES = {
             "get_global_news",
             "get_insider_transactions",
         ]
+    },
+    "political_data": {
+        "description": "Congressional / politician disclosed trades",
+        "tools": [
+            "get_congress_trades",
+        ]
+    },
+    "x_social": {
+        "description": "X (Twitter) user trade recommendations / sentiment",
+        "tools": [
+            "get_x_trade_recs",
+        ]
     }
 }
 
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
+    "quiverquant",
+    "x_api",
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -106,6 +122,14 @@ VENDOR_METHODS = {
     "get_insider_transactions": {
         "alpha_vantage": get_alpha_vantage_insider_transactions,
         "yfinance": get_yfinance_insider_transactions,
+    },
+    # political_data
+    "get_congress_trades": {
+        "quiverquant": get_congress_trades,
+    },
+    # x_social
+    "get_x_trade_recs": {
+        "x_api": get_x_trade_recs,
     },
 }
 

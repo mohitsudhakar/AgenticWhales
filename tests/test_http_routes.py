@@ -137,9 +137,11 @@ class TestConvictionTimeseries:
         assert r.status_code == 200
         body = r.json()
         assert len(body["points"]) == 1
-        # 5 days at half-life 5 → decayed = raw / 2
+        # 5 days at half-life 5 → decayed = raw / 2. Tolerance is loose because
+        # decay is computed against wall-clock now(), which is a few ms after
+        # the row was seeded — an exact 1e-9 match is impossible by design.
         assert abs(body["points"][0]["raw_score"] - 8.0) < 1e-9
-        assert abs(body["points"][0]["decayed_score"] - 4.0) < 1e-9
+        assert abs(body["points"][0]["decayed_score"] - 4.0) < 1e-3
 
 
 class TestStreamingEventsEndpoint:

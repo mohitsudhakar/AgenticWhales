@@ -1,22 +1,91 @@
+/* ============================================================================
+   Design tokens — dual theme. Dark (default) = "pastel on deep navy";
+   Light = "airy pastel". theme.js flips data-theme on <html>.
+   ============================================================================ */
 :root {
-  --bg: #0b0f17;
-  --bg-soft: #121826;
-  --bg-card: #161e2e;
-  --bg-elev: #1c2640;
-  --border: #243049;
-  --text: #e6ecf5;
-  --text-dim: #9aa5bb;
-  --text-faint: #6b7691;
-  --accent: #6ee7b7;
-  --accent-2: #60a5fa;
-  --accent-3: #f472b6;
-  --warn: #fbbf24;
-  --bad: #f87171;
-  --good: #34d399;
-  --shadow: 0 10px 40px rgba(0,0,0,0.35);
+  color-scheme: dark;
+  --bg: #0e1220;
+  --bg-soft: #141a2b;
+  --bg-card: #1a2236;
+  --bg-elev: #222c45;
+  --border: #2a3650;
+  --border-soft: #202a40;
+  --text: #eef2ff;
+  --text-dim: #a3afce;
+  --text-faint: #6f7b98;
+  --accent: #a7f3d0;
+  --accent-strong: #6ee7b7;
+  --accent-2: #c4b5fd;
+  --accent-3: #fed7aa;
+  --accent-4: #bae6fd;
+  --accent-pink: #fbcfe8;
+  --accent-glow: rgba(167, 231, 208, 0.20);
+  --on-accent: #0c1322;
+  --warn: #fde68a;
+  --bad: #fca5a5;
+  --good: #6ee7b7;
+  --pos: #6ee7b7;
+  --neg: #fca5a5;
+  --hover: rgba(255, 255, 255, 0.05);
+  --overlay: rgba(255, 255, 255, 0.04);
+  --frost: rgba(255, 255, 255, 0.02);
+  --chart-grid: #2a3650;
+  --chart-axis: #8b97b5;
+  --chart-1: #bae6fd;
+  --chart-2: #a7f3d0;
+  --chart-3: #fed7aa;
+  --chart-4: #c4b5fd;
+  --chart-5: #fbcfe8;
+  --grad-brand: linear-gradient(135deg, var(--accent), var(--accent-2) 55%, var(--accent-4));
+  --grad-hero: linear-gradient(135deg, rgba(167, 243, 208, 0.14), rgba(196, 181, 253, 0.12) 50%, rgba(186, 230, 253, 0.10));
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.45);
   --radius: 14px;
   --radius-sm: 8px;
+  --radius-lg: 20px;
+  --maxw: 1280px;
 }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f5fc;
+  --bg-soft: #efedf9;
+  --bg-card: #ffffff;
+  --bg-elev: #faf9ff;
+  --border: #e6e2f2;
+  --border-soft: #efecf8;
+  --text: #232741;
+  --text-dim: #5c6379;
+  --text-faint: #8b92a8;
+  --accent: #34d399;
+  --accent-strong: #10b981;
+  --accent-2: #8b5cf6;
+  --accent-3: #fb923c;
+  --accent-4: #38bdf8;
+  --accent-pink: #ec4899;
+  --accent-glow: rgba(52, 211, 153, 0.18);
+  --on-accent: #ffffff;
+  --warn: #d97706;
+  --bad: #dc2626;
+  --good: #16a34a;
+  --pos: #16a34a;
+  --neg: #dc2626;
+  --hover: rgba(40, 30, 90, 0.05);
+  --overlay: rgba(40, 30, 90, 0.035);
+  --frost: rgba(40, 30, 90, 0.02);
+  --chart-grid: #e6e2f2;
+  --chart-axis: #8b92a8;
+  --chart-1: #38bdf8;
+  --chart-2: #34d399;
+  --chart-3: #fb923c;
+  --chart-4: #8b5cf6;
+  --chart-5: #ec4899;
+  --grad-hero: linear-gradient(135deg, rgba(52, 211, 153, 0.12), rgba(139, 92, 246, 0.10) 50%, rgba(56, 189, 248, 0.08));
+  --shadow: 0 10px 30px rgba(60, 50, 120, 0.10);
+  --shadow-lg: 0 20px 60px rgba(60, 50, 120, 0.16);
+}
+
+html { transition: background-color 0.3s ease, color 0.3s ease; }
 
 * { box-sizing: border-box; }
 
@@ -48,7 +117,7 @@ body {
 /* ---------- Sidebar ---------- */
 
 .sidebar {
-  background: rgba(9, 13, 22, 0.85);
+  background: var(--bg-soft);
   border-right: 1px solid var(--border);
   padding: 18px 14px;
   display: flex;
@@ -91,7 +160,7 @@ body {
 
 .primary-btn {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #0a1020;
+  color: var(--on-accent);
   border: 0;
   border-radius: 10px;
   padding: 10px 12px;
@@ -309,7 +378,7 @@ body {
   background: linear-gradient(135deg, #f472b6, #60a5fa, #6ee7b7);
   background-size: 200% 200%;
   animation: shift 6s ease-in-out infinite;
-  color: #0a1020;
+  color: var(--on-accent);
   border: 0;
   border-radius: 999px;
   padding: 14px 28px;
@@ -1573,7 +1642,7 @@ body.standalone {
   gap: 16px;
   padding: 14px 28px;
   border-bottom: 1px solid var(--border);
-  background: rgba(9, 13, 22, 0.85);
+  background: var(--bg-soft);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;
@@ -2022,4 +2091,41 @@ body.standalone {
   .usage-users-controls input { flex: 1; min-width: 0; }
   .usage-top-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
   .usage-top-bar-wrap { display: none; }
+}
+
+/* ============================================================
+   Theme toggle (shared across all surfaces)
+   ============================================================ */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--overlay);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+.theme-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.theme-toggle [data-theme-icon] { font-size: 14px; line-height: 1; }
+.theme-toggle.icon-only { padding: 8px; border-radius: 50%; }
+.theme-toggle.icon-only [data-theme-label] { display: none; }
+
+/* Floating theme toggle for pages without a sidebar slot (analyze/usage/landing). */
+.theme-toggle.floating {
+  position: fixed;
+  top: 16px;
+  right: 18px;
+  z-index: 9999;
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
 }

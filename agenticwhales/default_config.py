@@ -134,6 +134,8 @@ DEFAULT_CONFIG = {
         "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        "political_data": "quiverquant",     # Congressional disclosed trades
+        "x_social": "x_api",                 # X (Twitter) user trade recommendations
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

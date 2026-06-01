@@ -42,6 +42,9 @@ web = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "python-dotenv>=1.0.0",
+    # Required by the /api/signals/transactions CSV upload route, which uses
+    # FastAPI Form/UploadFile. FastAPI raises at request time without it.
+    "python-multipart>=0.0.9",
 ]
 # Integration test deps — only needed when running `pytest -m integration`
 # (real Postgres via testcontainers). Default unit-test runs don't pull these.

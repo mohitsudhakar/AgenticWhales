@@ -31,6 +31,7 @@ from agenticwhales.dataflows.config import set_config
 from agenticwhales.agents.utils.agent_utils import (
     get_stock_data,
     get_indicators,
+    get_risk_metrics,
     get_fundamentals,
     get_balance_sheet,
     get_cashflow,
@@ -359,9 +360,12 @@ class AgenticWhalesGraph:
                 [
                     # Quant Analyst shares price + indicator tools with the
                     # market analyst — its output shape (6-dim radar) is the
-                    # differentiator, not the inputs.
+                    # differentiator, not the inputs. It additionally gets
+                    # realized risk metrics (vol / Sharpe / max drawdown) to
+                    # ground the volatility axis in measured history.
                     get_stock_data,
                     get_indicators,
+                    get_risk_metrics,
                 ]
             ),
         }

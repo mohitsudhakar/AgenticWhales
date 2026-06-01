@@ -451,6 +451,63 @@ class SessionRunner:
             })
             return
 
+        guard = risk_mod.RiskGuard(
+            user_id=user_id, limits=limits, account=account, positions=positions,
+        )
+        outcome = guard.evaluate(
+            decision=decision, ticker=ticker,
+            target_qty=abs(sizing.qty),
+            last_price=self._latest_price_for(ticker),
+        )
+
+        if outcome.rule:
+            # Either a hard block or a partial clamp — surface the event.
+            risk_mod.record_event(
+                token,
+                recipe_id=recipe_id, session_id=session_id, ticker=ticker,
+                rule=outcome.rule,
+                details={
+                    "target_qty": abs(sizing.qty),
+                    "allowed_qty": outcome.allowed_qty,
+                    "reason": outcome.reason,
+                },
+            )
+            self._broadcast({
+                "type": "risk_event",
+                "rule": outcome.rule,
+                "ticker": ticker,
+                "target_qty": abs(sizing.qty),
+                "allowed_qty": outcome.allowed_qty,
+                "reason": outcome.reason,
+            })
+            if METRICS.enabled:
+                METRICS.risk_event.labels(rule=outcome.rule).inc()
+            if not outcome.allowed:
+                return
+
+        # Pick the side from existing position + direction.
+        side = self._side_for(sizing.direction, positions, ticker)
+        result = paper.place_order(
+            token,
+            fire_id=fire_id, session_id=session_id, recipe_id=recipe_id,
+            ticker=ticker, side=side, qty=abs(sizing.qty),
+            market_price=self._latest_price_for(ticker),
+            slippage_bps=limits.max_slippage_bps,
+            decision=decision, conviction=conviction,
+            kelly_fraction=sizing.fraction, guard=outcome,
+        )
+        if METRICS.enabled:
+            METRICS.paper_order.labels(side=side.value, status=result.status.value).inc()
+
+        self._broadcast({
+            "type": "paper_order",
+            "order_id": result.order_id,
+            "status": result.status.value,
+            "ticker": ticker, "side": side.value,
+            "qty": result.qty, "fill_price": result.fill_price,
+            "idempotent": result.idempotent,
+        })
+
     def _auto_draft_journal(
         self,
         *,
@@ -600,63 +657,6 @@ class SessionRunner:
                 f"≤0, meaning the expected edge doesn't justify the risk."
             )
         return "Kelly returned zero quantity (rounding floor)."
-
-        guard = risk_mod.RiskGuard(
-            user_id=user_id, limits=limits, account=account, positions=positions,
-        )
-        outcome = guard.evaluate(
-            decision=decision, ticker=ticker,
-            target_qty=abs(sizing.qty),
-            last_price=self._latest_price_for(ticker),
-        )
-
-        if outcome.rule:
-            # Either a hard block or a partial clamp — surface the event.
-            risk_mod.record_event(
-                token,
-                recipe_id=recipe_id, session_id=session_id, ticker=ticker,
-                rule=outcome.rule,
-                details={
-                    "target_qty": abs(sizing.qty),
-                    "allowed_qty": outcome.allowed_qty,
-                    "reason": outcome.reason,
-                },
-            )
-            self._broadcast({
-                "type": "risk_event",
-                "rule": outcome.rule,
-                "ticker": ticker,
-                "target_qty": abs(sizing.qty),
-                "allowed_qty": outcome.allowed_qty,
-                "reason": outcome.reason,
-            })
-            if METRICS.enabled:
-                METRICS.risk_event.labels(rule=outcome.rule).inc()
-            if not outcome.allowed:
-                return
-
-        # Pick the side from existing position + direction.
-        side = self._side_for(sizing.direction, positions, ticker)
-        result = paper.place_order(
-            token,
-            fire_id=fire_id, session_id=session_id, recipe_id=recipe_id,
-            ticker=ticker, side=side, qty=abs(sizing.qty),
-            market_price=self._latest_price_for(ticker),
-            slippage_bps=limits.max_slippage_bps,
-            decision=decision, conviction=conviction,
-            kelly_fraction=sizing.fraction, guard=outcome,
-        )
-        if METRICS.enabled:
-            METRICS.paper_order.labels(side=side.value, status=result.status.value).inc()
-
-        self._broadcast({
-            "type": "paper_order",
-            "order_id": result.order_id,
-            "status": result.status.value,
-            "ticker": ticker, "side": side.value,
-            "qty": result.qty, "fill_price": result.fill_price,
-            "idempotent": result.idempotent,
-        })
 
     def _latest_price_for(self, ticker: str) -> float:
         """Best-effort last price from market_snapshot + paper_positions cache."""

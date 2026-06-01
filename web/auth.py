@@ -1380,6 +1380,47 @@ def list_priced_models() -> List[tuple]:
 
 # --- journal entries (Phase 2) ---------------------------------------------
 
+def save_transactions(rows: List[Dict[str, Any]]) -> int:
+    """Bulk-persist uploaded brokerage transactions. Each row must carry
+    id + user_id. Mirrors the journal storage pattern: memstore always,
+    Supabase when writable. Returns the number stored."""
+    n = 0
+    for row in rows:
+        _memstore[("transactions", row["id"])] = row
+        n += 1
+    if _db_writable():
+        for row in rows:
+            try:
+                _upsert_columns("transactions", row, on_conflict="id")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("transactions db write failed: %s", exc)
+    return n
+
+
+def list_transactions(
+    user_id: str,
+    *,
+    limit: int = 2000,
+    batch_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return a user's saved transactions, most recent first."""
+    if _db_writable():
+        filters: Dict[str, Any] = {"user_id": user_id}
+        if batch_id:
+            filters["batch_id"] = batch_id
+        return _select_columns(
+            "transactions", filters=filters,
+            order="created_at.desc", limit=limit,
+        )
+    out = [
+        r for (t, _), r in _memstore.items()
+        if t == "transactions" and r.get("user_id") == user_id
+        and (not batch_id or r.get("batch_id") == batch_id)
+    ]
+    out.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return out[:limit]
+
+
 def save_journal_entry(row: Dict[str, Any]) -> None:
     """Insert-or-update a journal entry. Caller supplies the full dict."""
     entry_id = row["id"]
