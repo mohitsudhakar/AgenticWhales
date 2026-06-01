@@ -7,17 +7,17 @@
   <!-- Tell browsers and "force dark theme" extensions that this page is
        already dark. Without these, Dark Reader rewrites our card backgrounds
        and the rgba gradient overlays + gradient-clipped text vanish. -->
-  <meta name="color-scheme" content="dark" />
   <meta name="darkreader-lock" />
   <title>AgenticWhales</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="/static/theme.js?v=20260530e"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=20260530e" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
   <!-- Supabase (Auth + Postgres for usage tracking) — loaded as an ES module.
        The legacy app.js is a classic script and runs independently; the
        supabase client exposes itself on window.AgenticWhalesAuth. -->
   <script type="module" src="/static/supabase-client.js"></script>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=20260530e" defer></script>
 </head>
 
 <body>
@@ -44,9 +44,14 @@
         <div class="brand-sub">BULL VS BEAR, RESOLVED</div>
       </div>
     </div>
-    <button id="new-session-btn" class="primary-btn">+ New analysis</button>
+    <a href="/fund" class="primary-btn sidebar-cross-nav" style="text-decoration:none;text-align:center">↗ Back to Fund</a>
+    <button id="new-session-btn" class="primary-btn secondary">+ New analysis</button>
     <button id="new-batch-btn" class="primary-btn secondary">▦ Daily basket</button>
     <button id="portfolio-btn" class="primary-btn tertiary">⚖ My positions</button>
+    <!-- Admin-only nav: linked to the standalone /usage page so it's also
+         bookmarkable. Hidden by default; app.js reveals it after probing
+         /api/usage/me. -->
+    <a id="usage-link" class="sidebar-admin-link hidden" href="/usage">📊 Usage dashboard →</a>
     <div class="sidebar-section" data-section="batches">
       <button type="button" class="section-label section-toggle">
         <span class="section-chevron">▾</span>

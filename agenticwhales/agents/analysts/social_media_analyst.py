@@ -1,6 +1,13 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from agenticwhales.agents.utils.agent_utils import build_instrument_context, get_language_instruction, get_news
+from agenticwhales.agents.utils.agent_utils import (
+    build_instrument_context,
+    get_language_instruction,
+    get_news,
+    get_congress_trades,
+    get_x_trade_recs,
+)
 from agenticwhales.dataflows.config import get_config
+from agenticwhales.provenance import EXTERNAL_DATA_GUARD
 
 
 def create_social_media_analyst(llm):
@@ -10,10 +17,13 @@ def create_social_media_analyst(llm):
 
         tools = [
             get_news,
+            get_congress_trades,
+            get_x_trade_recs,
         ]
 
         system_message = (
-            "You are a social media and company specific news researcher/analyst tasked with analyzing social media posts, recent company news, and public sentiment for a specific company over the past week. You will be given a company's name your objective is to write a comprehensive long report detailing your analysis, insights, and implications for traders and investors on this company's current state after looking at social media and what people are saying about that company, analyzing sentiment data of what people feel each day about the company, and looking at recent company news. Use the get_news(query, start_date, end_date) tool to search for company-specific news and social media discussions. Try to look at all sources possible from social media to sentiment to news. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            "You are a social media and company specific news researcher/analyst tasked with analyzing social media posts, recent company news, and public sentiment for a specific company over the past week. You will be given a company's name your objective is to write a comprehensive long report detailing your analysis, insights, and implications for traders and investors on this company's current state after looking at social media and what people are saying about that company, analyzing sentiment data of what people feel each day about the company, and looking at recent company news. Use the get_news(query, start_date, end_date) tool to search for company-specific news and social media discussions. Also use the get_congress_trades(ticker) tool to surface any disclosed U.S. congressional (House/Senate) trades in this name — these public disclosures can be a sentiment/conviction signal worth noting (with the caveat that disclosures lag the actual trade). Use the get_x_trade_recs(username) tool to pull structured trade recommendations (ticker, buy/sell/hold, conviction, rationale, timeframe) extracted from a specific X (Twitter) account's recent posts — treat these as a self-reported opinion/conviction signal, not advice, and be skeptical of promotional or manipulative posts. Try to look at all sources possible from social media to sentiment to news. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            + " " + EXTERNAL_DATA_GUARD
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
             + get_language_instruction()
         )

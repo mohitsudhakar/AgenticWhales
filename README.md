@@ -1,6 +1,262 @@
 
 # AgenticWhales: Multi-Agent Financial Intelligence
 
+Multi-agent LLM debate over a ticker → structured decision → paper-trading sandbox → cognitive journal. Two web surfaces: **`/fund`** (the product — autonomy spine, risk guards, paper trading, journal) and **`/analyze`** (legacy power-user surface — one-shot analyses + batches). The same `agenticwhales` Python package + CLI works headless.
+
+---
+
+## Running the full stack
+
+The whole product runs from **one process** — a FastAPI app that serves `/fund`, `/analyze`, the `/api/*` REST surface, WebSocket session streams, and embeds the scheduler + streaming worker + cron jobs. No separate workers, no message broker, no extra daemons.
+
+### Prereqs
+
+- Python **3.12+** (3.13 supported)
+- `git`, `pip` (or `uv` / `conda`)
+- **Optional but recommended:** Docker (for the local Supabase stack + `testcontainers`)
+- At least one LLM provider key (Google Gemini is the default; DeepSeek/OpenAI/Anthropic also work)
+- **Optional:** Alpaca paper-trading account for the live streaming worker
+
+### One-time setup
+
+```bash
+git clone https://github.com/TauricResearch/TradingAgents.git
+cd AgenticWhales
+
+# Virtualenv — pick one
+python3.12 -m venv .venv && source .venv/bin/activate
+# … or conda: conda create -n agenticwhales python=3.13 && conda activate agenticwhales
+
+# Install the package + the web extra (FastAPI, uvicorn, dotenv).
+pip install -e '.[web]'
+
+# Optional: integration tests against real Postgres (testcontainers + psycopg).
+pip install -e '.[integration]'
+
+# Drop your keys in .env (see "Environment variables" below).
+cp .env.example .env
+$EDITOR .env
+```
+
+### Start the server (every service in one command)
+
+```bash
+agenticwhales-web
+# or, equivalently, when developing:
+python -m web
+```
+
+Default bind is `127.0.0.1:8765`; override via `AGENTICWHALES_WEB_HOST` / `AGENTICWHALES_WEB_PORT`. The launch config in [.claude/launch.json](.claude/launch.json) pins port `8767` for the in-IDE preview, but the canonical port is 8765.
+
+Open the app:
+
+| URL | What it is |
+|---|---|
+| http://localhost:8765/ | 307-redirects to `/fund` |
+| http://localhost:8765/fund | The product: hero session-launcher, theses, decisions, journal, backtest, risk |
+| http://localhost:8765/analyze | Legacy power-user surface: one-shot analyses + batches with full model picker |
+| http://localhost:8765/healthz | Liveness — always 200 if the process is up |
+| http://localhost:8765/readyz | Readiness — 200 only when DB is reachable + leader heartbeat is fresh |
+| http://localhost:8765/metrics | Prometheus exposition (gate with `AGENTICWHALES_METRICS_TOKEN`) |
+
+### What runs inside the server process
+
+The single uvicorn process boots all of these:
+
+| Service | Where | Cadence |
+|---|---|---|
+| HTTP API + WebSocket session streams | [web/server.py](web/server.py) | always |
+| Recipe scheduler (APScheduler, leader-elected via Postgres advisory lock) | [web/scheduler.py](web/scheduler.py) | always; per-recipe `cron` / `interval` / `manual` |
+| Live streaming worker — Alpaca equity IEX + crypto US WS clients | [web/streaming_worker.py](web/streaming_worker.py) | leader-only; pumps every connected ticker |
+| **Outcome resolver** — closes the loop on every paper order whose `expected_hold_days` has elapsed (writes `decision_outcomes`, scores Brier) | [agenticwhales/outcomes.py](agenticwhales/outcomes.py) | **nightly, 02:00 UTC** (job `outcome_resolver_nightly`) |
+| **Prompt-eval harness** — canary flat-coin baseline vs the live PM | [agenticwhales/adaptive.py](agenticwhales/adaptive.py) | **weekly, Sundays 04:00 UTC** (job `prompt_eval_weekly`) |
+| Behavioral findings detector | [agenticwhales/behavioral.py](agenticwhales/behavioral.py) | post-decision, fire-and-forget |
+| Cost middleware (per-call attribution + global daily/monthly cap) | [agenticwhales/llm_clients/cost_middleware.py](agenticwhales/llm_clients/cost_middleware.py) | every LLM call |
+| Prometheus metrics + structlog | [agenticwhales/observability.py](agenticwhales/observability.py) | always |
+
+**Leader election:** the first uvicorn worker to claim a Postgres advisory lock on key `74737248` becomes the leader and runs the scheduler + crons + streaming worker. Others stay hot for HTTP and take over on heartbeat staleness within ~30s. With Supabase unconfigured (local dev) every worker thinks it's the leader — fine for single-process.
+
+### Environment variables
+
+Drop these into `.env`. `cp .env.example .env` covers the essentials; the table below is the full surface:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| **LLM provider keys** | | Set at least one; the default is Google. |
+| `GOOGLE_API_KEY` | — | Gemini (recommended default — flash + pro both work) |
+| `DEEPSEEK_API_KEY` | — | DeepSeek (good free-tier heterogeneity partner) |
+| `OPENAI_API_KEY` | — | GPT-5.x |
+| `ANTHROPIC_API_KEY` | — | Claude 4.x |
+| `XAI_API_KEY` / `DASHSCOPE_API_KEY` / `ZHIPU_API_KEY` / `OPENROUTER_API_KEY` | — | Grok / Qwen / GLM / OpenRouter passthrough |
+| `ALPHA_VANTAGE_API_KEY` | — | Optional; news + fundamentals fallback |
+| **Default model selection** | | |
+| `AGENTICWHALES_DEFAULT_PROVIDER` | `google` | Which provider the /fund hero defaults to |
+| `AGENTICWHALES_DEFAULT_DEEP_MODEL` | `gemini-3.1-pro-preview` | Manager-grade model |
+| `AGENTICWHALES_DEFAULT_QUICK_MODEL` | `gemini-3-flash-preview` | Analyst-grade model |
+| `AGENTICWHALES_EMBEDDING_MODEL` | auto | Memory v2 embeddings; `text-embedding-004` when `GOOGLE_API_KEY` set, else hashing-trick |
+| **Supabase (auth + per-user persistence)** | | Skip these for guest/local mode. |
+| `AGENTICWHALES_SUPABASE_URL` | — | `https://<ref>.supabase.co` |
+| `AGENTICWHALES_SUPABASE_ANON_KEY` | — | Public anon key — injected into the served HTML |
+| `AGENTICWHALES_SUPABASE_SERVICE_KEY` | — | Service-role key (server-side ONLY; bypasses RLS) |
+| **Alpaca streaming (Phase 3)** | | Both required for live WS. Use paper-tier keys. |
+| `ALPACA_API_KEY_ID` | — | Key ID from https://app.alpaca.markets (paper trading) |
+| `ALPACA_API_SECRET_KEY` | — | Secret key |
+| **Cache + cost** | | |
+| `AGENTICWHALES_CACHE_ENABLED` | `true` | Repeat-analysis cache (same ticker + date + config) |
+| `AGENTICWHALES_CACHE_TTL_MINUTES` | `30` | TTL for the cache above |
+| `AGENTICWHALES_PAPER_STARTING_CASH` | `100000` | Starting balance for a new paper account |
+| **Server bind + observability** | | |
+| `AGENTICWHALES_WEB_HOST` | `127.0.0.1` | Server bind host |
+| `AGENTICWHALES_WEB_PORT` | `8765` | Server bind port |
+| `AGENTICWHALES_LOG_LEVEL` | `INFO` | Log level (DEBUG / INFO / WARNING) |
+| `AGENTICWHALES_LOG_FORMAT` | `json` | `json` or `text` |
+| `AGENTICWHALES_METRICS_TOKEN` | — | If set, `/metrics` requires `?token=…` (Prometheus side-channel auth) |
+| `AGENTICWHALES_HIGH_CARD_METRICS` | `0` | Turn on per-user-id labels (Prometheus cardinality risk) |
+| **Misc** | | |
+| `TRADINGAGENTS_WEB_HOST` / `TRADINGAGENTS_WEB_PORT` | — | Legacy aliases for `AGENTICWHALES_WEB_HOST/PORT`, still honoured |
+
+### Database — where state lives
+
+Three modes, all driven by the same code path:
+
+**A. In-memory (default for local dev).** When `AGENTICWHALES_SUPABASE_*` are unset, every read/write goes to `web/auth.py:_memstore`. Resets on process restart. Perfect for testing the UI flow; no Postgres needed.
+
+**B. Local Supabase via Docker.** Recommended for hands-on dev with real persistence:
+
+```bash
+# Install the Supabase CLI (https://supabase.com/docs/guides/cli)
+brew install supabase/tap/supabase   # macOS
+
+supabase init                        # one-time, in repo root
+supabase start                       # boots Postgres + Studio at localhost:54323
+
+# Apply the schema (30+ tables across Phase 1/2/3).
+psql "$(supabase status -o json | jq -r .DB_URL)" -f docs/supabase-schema.sql
+
+# Wire the env:
+cat >> .env <<'EOF'
+AGENTICWHALES_SUPABASE_URL=http://localhost:54321
+AGENTICWHALES_SUPABASE_ANON_KEY=$(supabase status -o json | jq -r .ANON_KEY)
+AGENTICWHALES_SUPABASE_SERVICE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)
+EOF
+```
+
+**C. Hosted Supabase.** Same shape — point the env at your project ref + paste the keys. Apply the schema once in **Studio → SQL Editor** (paste & run [docs/supabase-schema.sql](docs/supabase-schema.sql)). RLS is on by every user-scoped table.
+
+### CLI — every subcommand
+
+`agenticwhales` is also a Typer CLI. Each sub-app talks to the same backend the web UI uses (in-memory or Supabase, whichever is configured).
+
+```bash
+# One-shot analysis (interactive picker) — same flow as /analyze
+agenticwhales analyze
+
+# Recipes — recurring/manual theses
+agenticwhales recipe create --name "Daily AAPL" --tickers AAPL \
+    --analysts market,quant,news \
+    --schedule-kind cron --schedule-expr "0 13 * * 1-5" \
+    --provider google --quick gemini-3-flash-preview --deep gemini-3.1-pro-preview \
+    --bull-model deepseek-v4 --bear-model gemini-3.1-pro-preview \
+    --policy paper_trade --conviction-threshold 7 --daily-budget-usd 2.0
+agenticwhales recipe list
+agenticwhales recipe trigger-now <id>
+agenticwhales recipe pause <id> | resume <id> | kill <id> | delete <id>
+
+# Paper account
+agenticwhales paper status
+agenticwhales paper positions
+agenticwhales paper orders --limit 20
+agenticwhales paper risk-events --limit 20
+agenticwhales paper kill-switch on|off
+
+# Cost tracking
+agenticwhales cost today
+agenticwhales cost month
+agenticwhales cost by-recipe
+
+# Phase 3: historical backtest replay (yfinance OHLCV + deterministic stub LLM)
+agenticwhales backtest run AAPL --from 2024-01-01 --to 2024-06-30 \
+    --cash 100000 --kelly-cap 0.10 --out backtest-aapl-2024h1.json
+
+# Phase 3: live Alpaca streaming dev aid (requires ALPACA_API_KEY_ID + SECRET)
+agenticwhales stream test --ticker AAPL --seconds 30
+agenticwhales stream test --ticker BTC-USD --seconds 30 --crypto
+```
+
+### Verifying everything works
+
+```bash
+# 1. Liveness + readiness
+curl -s http://localhost:8765/healthz                       # {"status":"ok"}
+curl -s http://localhost:8765/readyz                        # {"status":"ready","leader":true,...}
+
+# 2. Prometheus scrape (counter names start with aw_*)
+curl -s http://localhost:8765/metrics | grep '^aw_' | head
+
+# 3. Alpaca WS smoke
+agenticwhales stream test --ticker AAPL --seconds 10        # should print 5+ trades during market hours
+
+# 4. Recipe → fire → paper-order chain (with in-memory mode)
+curl -X POST http://localhost:8765/api/recipes -H "Content-Type: application/json" -d '{
+  "name":"verify","tickers":["AAPL"],"analysts":["market","quant"],
+  "llm_provider":"google","quick_model":"gemini-3-flash-preview",
+  "deep_model":"gemini-3.1-pro-preview",
+  "bull_model":"deepseek-v4","bear_model":"gemini-3.1-pro-preview",
+  "schedule_kind":"manual","output_policy":"paper_trade",
+  "conviction_threshold":7,"max_daily_token_cost_usd":2.0
+}' | jq
+
+# 5. Tests
+.venv/bin/pytest -q                                         # 478+ unit/E2E tests
+.venv/bin/pytest -m integration -q                          # 6 integration tests (real Postgres via testcontainers)
+```
+
+### Cron schedule reference
+
+All cron jobs are registered in [web/scheduler.py](web/scheduler.py) and only execute on the elected leader. Each job re-checks `_is_leader` at fire time so leadership handoff mid-run can't double-fire.
+
+| Job id | Cron (UTC) | Purpose |
+|---|---|---|
+| `prompt_eval_weekly` | `0 4 * * 0` (Sun 04:00) | Canary prompt-eval against live PM Brier |
+| `outcome_resolver_nightly` | `0 2 * * *` (daily 02:00) | Resolve mature paper orders → `decision_outcomes` |
+
+User-created recipes add their own jobs dynamically:
+- Cron recipes: `CronTrigger.from_crontab(recipe.schedule_expr, timezone="UTC")`
+- Interval recipes: `IntervalTrigger(seconds=...)`
+- Manual recipes: no job — fired only via `agenticwhales recipe trigger-now <id>` or `/api/recipes/{id}/trigger-now`
+
+### Observability + ops
+
+- **Structured logs** — `structlog` emits JSON to stdout when `AGENTICWHALES_LOG_FORMAT=json` (default). Every log line carries `correlation_id` (the active `fire_id` or `session_id`) and `user_id`.
+- **Prometheus metrics** — scrape `/metrics`. Key counters: `aw_recipe_fire_total{status}`, `aw_paper_order_total{side,status}`, `aw_risk_event_total{rule}`, `aw_llm_call_seconds{provider,model,agent}` (histogram), `aw_user_spend_today_usd{user_id}` (gated by `AGENTICWHALES_HIGH_CARD_METRICS=1`).
+- **OpenTelemetry** — every recipe fire is one trace; OTLP exporter ready, configure with `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Audit log** — `public.audit_log` is append-only with `actor`, `action`, `target_user_id`, `metadata`. Streaming fires, scheduler leader changes, impersonations, and risk events all land here.
+
+### Multi-worker / production
+
+Run multiple uvicorn workers behind a load balancer; the advisory-lock leader election handles fan-out:
+
+```bash
+agenticwhales-web --workers 4                               # if using uvicorn directly
+# or with gunicorn:
+gunicorn web.server:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8765
+```
+
+`/readyz` returns 503 if a worker thinks it's the leader but its heartbeat is stale — point your kubelet at it and rolling deploys just work. Test the failover behavior with `tests/integ/test_scheduler_leader.py` (when written; for now `test_scheduler_cron.py` covers the cron-registration logic).
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Missing Authorization bearer token` 401 | Supabase is configured but the browser isn't signed in | Click "Sign in with Google" in /fund or unset the `AGENTICWHALES_SUPABASE_*` env to switch to guest mode |
+| `ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY not set` | Streaming worker is starting on the leader without Alpaca creds | Drop the two keys into `.env`, restart the server |
+| `apscheduler not installed; recipe scheduler is disabled` | The `web` extra wasn't installed | `pip install -e '.[web]'` |
+| `/metrics` returns 403 | `AGENTICWHALES_METRICS_TOKEN` is set | Pass `?token=…` matching the env value |
+| Backtest returns "no OHLCV data" | `yfinance` rate-limit or non-trading-day window | Widen the date range; backtests refuse to peek past today (see [agenticwhales/asof.py](agenticwhales/asof.py)) |
+| In-flight session never completes | LLM provider key invalid or budget cap hit | `curl /api/observability/cost/today` to verify spend; check structured logs for `BudgetExceeded` |
+| Recipe-fire spam | A streaming `trigger_conditions` is too loose | Raise `streaming_max_fires_per_hour` cap on the recipe, or tighten the threshold |
+
+---
 
 ### Auth & quota (Supabase)
 

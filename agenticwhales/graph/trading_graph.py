@@ -18,6 +18,7 @@ from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
 
 from agenticwhales.agents import *
 from agenticwhales.default_config import DEFAULT_CONFIG
+from agenticwhales.heterogeneity import heterogeneity_check
 from agenticwhales.agents.utils.memory import TradingMemoryLog
 from agenticwhales.agents.utils.agent_states import (
     AgentState,
@@ -30,6 +31,7 @@ from agenticwhales.dataflows.config import set_config
 from agenticwhales.agents.utils.agent_utils import (
     get_stock_data,
     get_indicators,
+    get_risk_metrics,
     get_fundamentals,
     get_balance_sheet,
     get_cashflow,
@@ -69,6 +71,12 @@ class AgenticWhalesGraph:
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
 
+        # Heterogeneity Mandate: fail fast on config that quietly downgrades
+        # to single-family. Credential gaps still fall back gracefully — this
+        # only catches things like empty/typo preference lists or
+        # preference == upstream. See agenticwhales/heterogeneity.py.
+        heterogeneity_check(self.config)
+
         # Update the interface's config
         set_config(self.config)
 
@@ -98,16 +106,17 @@ class AgenticWhalesGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        # Heterogeneity Mandate (Shehata & Li 2026, Cor. 1): both synthesizers
-        # — Research Manager and Portfolio Manager — should be architecturally
-        # distinct from upstream agents. Build them from the synthesizer
-        # preference list independently so each gets the highest-priority
-        # available provider that differs from upstream.
+        # Synthesizer diversification (design heuristic — see
+        # default_config.py for the rationale): build both synthesizers
+        # (Research Manager and Portfolio Manager) from
+        # `synthesizer_provider_preference` so each gets the highest-priority
+        # available provider that differs from the upstream debaters.
+        # Empirically measured by tests/evals/diversity_engine_eval.py.
         self.research_manager_llm = self._build_diversified_synthesizer_llm("research_manager")
         self.portfolio_manager_llm = self._build_diversified_synthesizer_llm("portfolio_manager")
-        # Debater diversification: spread Bull/Bear and the three risk
-        # debaters across non-synthesizer providers to break the kinship-
-        # locked upstream pattern (Peer Pressure configurations in Table 1).
+        # Debater diversification (design heuristic): spread Bull/Bear and
+        # the three risk debaters across non-synthesizer providers so the
+        # upstream isn't a single-family united front.
         self.debater_llms = self._build_debater_llms()
 
         self.memory_log = TradingMemoryLog(self.config)
@@ -210,18 +219,21 @@ class AgenticWhalesGraph:
     def _build_diversified_synthesizer_llm(self, role: str) -> Any:
         """Return the LLM the named synthesizer (research or portfolio mgr) should use.
 
-        Both synthesizers are subject to the Synthesizer Gating Theorem
-        (Shehata & Li 2026, Thm 1) — terminal swarm integrity is gated by
-        the synthesizer's receptive logic (Tribalism Coefficient τ), not by
-        upstream agent quality. A synthesizer drawn from the same model
-        family as upstream agents inherits their correlated biases and the
-        Attention Latch (Λ → 2) collapses the swarm toward μ = 1.0.
+        Design heuristic: a synthesizer drawn from the same model family as
+        the upstream debaters tends to rubber-stamp the upstream consensus
+        rather than re-evaluate it, because shared training data produces
+        correlated priors. Drawing the synthesizer from a different family
+        is the cheapest available diversification, and applies to both the
+        Research Manager and the Portfolio Manager.
 
         We walk ``synthesizer_provider_preference`` and pick the first
         provider that (a) differs from the upstream provider (otherwise no
         diversity gain) and (b) has credentials configured. Falls back to
         the default deep-think LLM when no candidate is usable, so missing
         optional credentials never break a run.
+
+        The empirical claim is measured by tests/evals/diversity_engine_eval.py
+        — we are not assuming this win, we are measuring it.
         """
         if not self.config.get("diversify_synthesizers"):
             return self.deep_thinking_llm
@@ -258,9 +270,9 @@ class AgenticWhalesGraph:
         usable, all five fall back to ``quick_thinking_llm`` (the previous
         behaviour).
 
-        Assignment policy (Shehata & Li 2026, Table 1): assign providers
-        from ``debater_provider_preference`` to break the "Peer Pressure"
-        united-front upstream pattern. Bull and Bear get providers[0] and
+        Assignment policy (design heuristic): assign providers from
+        ``debater_provider_preference`` so the upstream debaters aren't a
+        single-family united front. Bull and Bear get providers[0] and
         providers[1 % len]; the three risk debaters cycle through with
         modular indexing so adjacent debaters in the round-robin never
         match. Providers with missing credentials are filtered out — if
@@ -348,9 +360,12 @@ class AgenticWhalesGraph:
                 [
                     # Quant Analyst shares price + indicator tools with the
                     # market analyst — its output shape (6-dim radar) is the
-                    # differentiator, not the inputs.
+                    # differentiator, not the inputs. It additionally gets
+                    # realized risk metrics (vol / Sharpe / max drawdown) to
+                    # ground the volatility axis in measured history.
                     get_stock_data,
                     get_indicators,
+                    get_risk_metrics,
                 ]
             ),
         }
@@ -429,6 +444,50 @@ class AgenticWhalesGraph:
         if updates:
             self.memory_log.batch_update_with_outcomes(updates)
 
+    def _augment_with_memory_v2(self, company_name: str, base_context: str) -> str:
+        """Prepend outcome-predictive journal retrievals to the legacy
+        per-ticker context block. The query is the ticker name itself plus
+        a small set of generic anchors so the cosine pass surfaces journal
+        entries about *this name* or *related setups*.
+
+        Per-user retrieval: pulls the user_id off the graph instance when
+        it was set by the runner. Anonymous / CLI single-user runs skip
+        the augmentation — embeddings live in the per-user store and there's
+        nothing to retrieve under the anonymous bucket unless the user has
+        journaled there explicitly.
+        """
+        user_id = getattr(self, "user_id", None)
+        if not user_id:
+            return base_context
+        try:
+            from agenticwhales import memory_v2
+        except Exception:
+            return base_context
+        results = memory_v2.retrieve_relevant(
+            user_id, f"{company_name} thesis recap reflection lesson",
+            k=3, source_filter="journal",
+        )
+        if not results:
+            return base_context
+
+        lines = [
+            "**Outcome-predictive journal retrievals** "
+            "(cosine × predictiveness):",
+        ]
+        for r in results:
+            preview = (r.body or "").strip().replace("\n", " ")
+            if len(preview) > 220:
+                preview = preview[:217] + "…"
+            lines.append(
+                f"- (cos {r.cosine:.2f}, pred {r.predictiveness:.2f}, "
+                f"score {r.score:.2f}) {preview}"
+            )
+        v2_block = "\n".join(lines)
+
+        if base_context:
+            return f"{v2_block}\n\n{base_context}"
+        return v2_block
+
     def propagate(self, company_name, trade_date):
         """Run the trading agents graph for a company on a specific date.
 
@@ -484,6 +543,21 @@ class AgenticWhalesGraph:
             )
         else:
             past_context = self.memory_log.get_past_context(company_name)
+
+        # Phase 2 #4 wiring: layer outcome-predictive journal retrieval on
+        # top of the legacy memory log. The new retriever scores entries by
+        # `cosine × predictiveness` (entry's past Brier component vs the
+        # cohort mean) — so it floats journal notes whose original decisions
+        # actually came out *right* on top of topically-similar but mis-
+        # calibrated past calls. Falls back silently when no embeddings
+        # are indexed for this user yet, so behaviour matches legacy.
+        try:
+            past_context = self._augment_with_memory_v2(
+                company_name, past_context,
+            )
+        except Exception:
+            # Memory v2 is a layered enhancement; never let it break a run.
+            pass
         recent_performance = self.memory_log.get_recent_performance_block(company_name)
         current_position = _portfolio.format_for_prompt(company_name)
         market_snapshot = _fetch_snap(company_name, trade_date)
@@ -539,7 +613,10 @@ class AgenticWhalesGraph:
                 self.config["data_cache_dir"], company_name, str(trade_date)
             )
 
-        return final_state, self.process_signal(final_state["final_trade_decision"])
+        return final_state, self.process_signal(
+            final_state["final_trade_decision"],
+            final_state.get("pm_decision"),
+        )
 
     def _maybe_run_extended_reflection(self, trade_date) -> None:
         """Run an M-day retrospective when enough days have elapsed.
@@ -630,6 +707,12 @@ class AgenticWhalesGraph:
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
 
-    def process_signal(self, full_signal):
-        """Process a signal to extract the core decision."""
-        return self.signal_processor.process_signal(full_signal)
+    def process_signal(self, full_signal, pm_decision=None):
+        """Process a signal to extract the core decision.
+
+        When ``pm_decision`` is supplied (a ``PortfolioDecision`` or its
+        ``model_dump`` dict), its structured ``rating`` field wins over the
+        regex over markdown. This is the trusted path; the regex is the
+        free-text fallback.
+        """
+        return self.signal_processor.process_signal(full_signal, pm_decision)

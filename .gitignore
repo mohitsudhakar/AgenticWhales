@@ -221,3 +221,6 @@ __marimo__/
 # Agentic Whales specific
 reports/
 .DS_Store
+
+# Claude Code working dir (per-developer worktrees + launch config)
+.claude/

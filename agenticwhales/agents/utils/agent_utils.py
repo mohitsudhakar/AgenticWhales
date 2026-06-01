@@ -7,6 +7,9 @@ from agenticwhales.agents.utils.core_stock_tools import (
 from agenticwhales.agents.utils.technical_indicators_tools import (
     get_indicators
 )
+from agenticwhales.agents.utils.quant_metrics_tools import (
+    get_risk_metrics
+)
 from agenticwhales.agents.utils.fundamental_data_tools import (
     get_fundamentals,
     get_balance_sheet,
@@ -16,7 +19,9 @@ from agenticwhales.agents.utils.fundamental_data_tools import (
 from agenticwhales.agents.utils.news_data_tools import (
     get_news,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
+    get_congress_trades,
+    get_x_trade_recs,
 )
 
 

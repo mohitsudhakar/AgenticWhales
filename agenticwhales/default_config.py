@@ -39,43 +39,58 @@ DEFAULT_CONFIG = {
     "anthropic_effort": None,           # "high", "medium", "low"
     # When True, BOTH synthesizers (Research Manager and Portfolio Manager)
     # use an LLM drawn from `synthesizer_provider_preference` rather than the
-    # upstream `deep_think_llm` provider. Shehata & Li (2026) prove the
-    # Synthesizer Gating Theorem: terminal swarm integrity is a gated
-    # function of the synthesizer's receptive logic (τ, the Tribalism
-    # Coefficient). Sharing a model family with upstream agents inherits
-    # their correlated biases (Λ→2, error→1.0). The Heterogeneity Mandate
-    # (Resilience Inequality, Corollary 1) is the technical requirement
-    # that the synthesizer node be architecturally distinct.
+    # upstream `deep_think_llm` provider.
+    #
+    # Design heuristic (correlated-failure reduction): when the synthesizer
+    # shares a model family with the upstream debaters it tends to inherit
+    # their biases — a Bull/Bear pair that both lean optimistic on a sector
+    # is more likely to be rubber-stamped by a same-family judge than by a
+    # cross-family one. Drawing the synthesizer from a different family is
+    # the cheapest available diversification.
+    #
+    # This is an architectural choice, not a proven theorem. The empirical
+    # claim ("synthesizer-family diversity reduces miscalibration vs.
+    # all-same-family") is measured by the Diversity Engine eval — see
+    # tests/evals/diversity_engine_eval.py.
     "diversify_synthesizers": True,
     # Ordered preference for synthesizer providers (used by both Research
     # Manager and Portfolio Manager). We walk this list and pick the first
     # provider that (a) has its API key set and (b) is not the upstream
     # provider (matching upstream gives no diversity benefit). If nothing
     # in the list is usable, we fall back to the default deep-think LLM.
-    # Order rationale: Shehata & Li (2026), Table 2, measured Claude Sonnet
-    # 4.6 as the lowest-τ synthesizer (4.5–31.2% vs Gemini's 60.1–98.9%);
-    # DeepSeek shows similarly low correction-rejection in our internal
-    # probes (tools/probe_tau_v2_deepseek.py) and is ~6–8x cheaper than
-    # Anthropic. OpenAI/xAI omitted from the default — add them to this
-    # list to enable, and credentials are picked up automatically.
+    #
+    # Order rationale (internal probes, not a published result):
+    # tools/probe_tau_v2_deepseek.py and probe_tau_v3_deepseek.py measured
+    # correction-acceptance rates across providers on a synthetic
+    # disagreement set. Anthropic and DeepSeek showed the highest rate of
+    # accepting a well-reasoned counter-argument from an upstream debater
+    # (i.e. they "judge" rather than "rubber-stamp"); DeepSeek is ~6-8x
+    # cheaper than Anthropic, so we list Anthropic first for quality and
+    # DeepSeek second for cost. Google sits behind both as a fallback.
+    # OpenAI/xAI omitted from the default — add them to this list to
+    # enable, credentials are picked up automatically.
     "synthesizer_provider_preference": ["anthropic", "deepseek", "google"],
     # When True, the Bull/Bear researchers and Aggressive/Conservative/Neutral
     # risk debaters are spread across multiple providers to break the
-    # "Peer Pressure" / kinship-locked upstream pattern (Shehata & Li 2026,
-    # Table 1: GGC, PPG, CCP configurations). With a united upstream front,
-    # the Attention Latch Factor Λ approaches 2 even when the synthesizer
-    # is architecturally distinct — terminal error rises to ~60% even with
-    # B=1.0 (Logic Oracle case). Heterogenizing the upstream agents is the
-    # only way to keep Λ near 1 and the linear gating equation valid.
+    # all-same-family upstream pattern.
+    #
+    # Design heuristic: even with a cross-family synthesizer, if every
+    # upstream debater is the same family they tend to converge on a
+    # united front — Bull and Bear both reason from the same priors, and
+    # the disagreement they surface is shallow. Spreading the debaters
+    # across providers makes the disagreement deeper and the synthesis
+    # job harder (which is what we want).
+    #
+    # The empirical claim ("debater-family diversity raises disagreement
+    # signal vs noise") is measured by the Diversity Engine eval.
     "diversify_debaters": True,
     # Ordered preference for debater providers (Bull/Bear, Aggressive/Conservative/Neutral).
     # Excludes Anthropic by default — Anthropic is reserved for synthesizers,
-    # so debaters use the remaining low-tribalism families to maximize
-    # architectural distance from the synthesizer (per the Heterogeneity
-    # Mandate). Bull and Bear are assigned providers[0] and providers[1];
-    # the three risk debaters cycle through with modular indexing. Providers
-    # without API keys are skipped at wiring time, with fallback to the
-    # default quick-thinking LLM.
+    # so debaters use other families to maximize provider distance from
+    # the synthesizer. Bull and Bear are assigned providers[0] and
+    # providers[1]; the three risk debaters cycle through with modular
+    # indexing. Providers without API keys are skipped at wiring time,
+    # with fallback to the default quick-thinking LLM.
     "debater_provider_preference": ["google", "deepseek"],
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
@@ -84,11 +99,14 @@ DEFAULT_CONFIG = {
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
     # Debate and discussion settings.
-    # Round count reduced from 5 → 2 per Shehata & Li (2026) Sycophantic
-    # Scaling Law: σ scales exponentially with task complexity K, and each
-    # extra round amplifies σ further when upstream is kinship-locked. With
-    # the debater diversification above, 2 rounds gives a genuine
-    # opening + rebuttal without compounding sycophantic pressure.
+    # Round count is 2 (opening + one rebuttal). The original upstream
+    # framework used 5; we found in internal smoke tests that beyond round 2
+    # the debaters tend to repeat earlier arguments with progressively
+    # weaker variations rather than introduce new evidence, so the marginal
+    # token spend stops buying signal. The diversification settings above
+    # ensure the two rounds carry real adversarial content rather than
+    # converging on a united front, which is where 2 rounds would otherwise
+    # be too short.
     "max_debate_rounds": 2,
     "max_risk_discuss_rounds": 2,
     # When True, the first turn of each debate is "blind" — Bull / Bear /
@@ -116,6 +134,8 @@ DEFAULT_CONFIG = {
         "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        "political_data": "quiverquant",     # Congressional disclosed trades
+        "x_social": "x_api",                 # X (Twitter) user trade recommendations
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

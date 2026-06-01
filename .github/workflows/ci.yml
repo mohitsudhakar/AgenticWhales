@@ -1,0 +1,53 @@
+name: CI
+
+# Run the test suite on every PR and on pushes to the long-lived branches.
+# The suite is hermetic: conftest strips Supabase env and forces offline mode,
+# so no API keys or network access are required.
+on:
+  pull_request:
+  push:
+    branches: [main, hedgefund]
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor (requires-python = ">=3.10") + the version the suite is
+        # developed against.
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Create virtualenv on Python ${{ matrix.python-version }}
+        # uv downloads the interpreter and builds an isolated .venv — avoids the
+        # runner's externally-managed system Python (PEP 668).
+        run: uv venv --python ${{ matrix.python-version }}
+
+      - name: Install project + test tooling
+        # The `web` extra pulls FastAPI/uvicorn used by the web tests.
+        # pytest + pytest-cov are the only test-time tools (the "subtests"
+        # in the output are native unittest.subTest, not a plugin).
+        # uv auto-targets the .venv created above.
+        run: uv pip install -e '.[web]' 'pytest>=8' 'pytest-cov>=5'
+
+      - name: Run tests
+        # Default addopts already deselect `integration` + `eval` markers.
+        run: >-
+          uv run python -m pytest -q -p no:cacheprovider
+          --cov=agenticwhales --cov=web --cov=cli --cov-branch
+          --cov-report=term-missing:skip-covered

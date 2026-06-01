@@ -1,0 +1,60 @@
+# Coverage configuration for AgenticWhales.
+#
+# The `omit` list excludes code that can't be meaningfully unit-tested in CI:
+#   - process entrypoints (__main__, uvicorn bootstrap)
+#   - interactive CLI command modules that shell out / print to a TTY
+#   - thin third-party SDK adapters (LangChain chat-model wrappers) whose only
+#     logic is constructing the vendor client — exercised by integration runs
+#   - live-network vendor adapters (yfinance / alpha_vantage HTTP) that need a
+#     real API; their pure-logic helpers are tested separately
+#
+# Everything else is expected to climb toward full coverage.
+
+[run]
+branch = true
+source =
+    agenticwhales
+    web
+    cli
+omit =
+    */__pycache__/*
+    */tests/*
+    # Process entrypoints
+    web/__main__.py
+    agenticwhales/__init__.py
+    # Interactive CLI surface (covered by smoke/integration, not unit)
+    cli/main.py
+    cli/announcements.py
+    cli/backtest.py
+    cli/cost.py
+    cli/recipes.py
+    cli/paper.py
+    cli/stream.py
+    cli/stats_handler.py
+    cli/config.py
+    # Thin LLM SDK adapters (vendor client construction only)
+    agenticwhales/llm_clients/openai_client.py
+    agenticwhales/llm_clients/anthropic_client.py
+    agenticwhales/llm_clients/azure_client.py
+    agenticwhales/llm_clients/google_client.py
+    # Live-network data vendors (need real API keys / HTTP)
+    agenticwhales/dataflows/y_finance.py
+    agenticwhales/dataflows/yfinance_news.py
+    agenticwhales/dataflows/alpha_vantage_common.py
+    agenticwhales/dataflows/alpha_vantage_stock.py
+    agenticwhales/dataflows/alpha_vantage_news.py
+    agenticwhales/dataflows/alpha_vantage_indicator.py
+    agenticwhales/dataflows/alpha_vantage_fundamentals.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+    \.\.\.$
+    raise AssertionError
+show_missing = true
+skip_covered = false
+precision = 1

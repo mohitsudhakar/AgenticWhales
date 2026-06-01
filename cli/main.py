@@ -39,6 +39,38 @@ app = typer.Typer(
     add_completion=True,  # Enable shell completion
 )
 
+# Phase 1 sub-apps — registered eagerly so `agenticwhales recipe ...`,
+# `agenticwhales paper ...`, `agenticwhales cost ...` work alongside the
+# existing top-level `analyze` flow.
+try:
+    from cli import cost as _cost_app
+    from cli import paper as _paper_app
+    from cli import recipes as _recipes_app
+
+    app.add_typer(_recipes_app.app, name="recipe")
+    app.add_typer(_paper_app.app, name="paper")
+    app.add_typer(_cost_app.app, name="cost")
+except Exception as _exc:  # pragma: no cover - defensive
+    # Don't break the existing CLI if Phase 1 wiring fails to import.
+    import logging as _log
+    _log.getLogger(__name__).warning("phase 1 CLI sub-apps not loaded: %s", _exc)
+
+# Phase 3 backtest sub-app — registered separately so a missing yfinance /
+# pandas dep doesn't break the rest of the Phase 1 CLI.
+try:
+    from cli import backtest as _backtest_app
+    app.add_typer(_backtest_app.app, name="backtest")
+except Exception as _exc:  # pragma: no cover - defensive
+    import logging as _log
+    _log.getLogger(__name__).warning("phase 3 backtest CLI not loaded: %s", _exc)
+
+try:
+    from cli import stream as _stream_app
+    app.add_typer(_stream_app.app, name="stream")
+except Exception as _exc:  # pragma: no cover - defensive
+    import logging as _log
+    _log.getLogger(__name__).warning("phase 3 stream CLI not loaded: %s", _exc)
+
 
 # Create a deque to store recent messages with a maximum length
 class MessageBuffer:
@@ -1165,7 +1197,10 @@ def run_analysis(checkpoint: bool = False):
 
         # Get final state and decision
         final_state = trace[-1]
-        decision = graph.process_signal(final_state["final_trade_decision"])
+        decision = graph.process_signal(
+            final_state["final_trade_decision"],
+            final_state.get("pm_decision"),
+        )
 
         # Update all agent statuses to completed
         for agent in message_buffer.agent_status:
@@ -1226,6 +1261,108 @@ def analyze(
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
     run_analysis(checkpoint=checkpoint)
+
+
+@app.command(name="analyze-transactions")
+def analyze_transactions_cmd(
+    csv_path: Path = typer.Argument(
+        ...,
+        help="Path to a brokerage transaction-history CSV (e.g. a Robinhood export).",
+    ),
+    llm: bool = typer.Option(
+        False,
+        "--llm",
+        help="Also run the LLM 4-lens behavioral analysis (requires an API key). "
+        "Without this flag only the deterministic metrics are computed.",
+    ),
+    provider: str = typer.Option(
+        DEFAULT_CONFIG.get("llm_provider", "openai"),
+        "--provider",
+        help="LLM provider for --llm analysis.",
+    ),
+    model: str = typer.Option(
+        DEFAULT_CONFIG.get("deep_think_llm", "gpt-5.4"),
+        "--model",
+        help="LLM model for --llm analysis.",
+    ),
+):
+    """Analyze a personal trading-history CSV: deterministic FIFO PnL +
+    behavioral flags, with an optional LLM behavioral review. Paper/analysis
+    only — never submits orders."""
+    from agenticwhales.transactions import analyze_csv_file
+
+    if not csv_path.exists():
+        console.print(f"[red]CSV file not found:[/red] {csv_path}")
+        raise typer.Exit(code=1)
+
+    with console.status("[bold green]Parsing & computing metrics..."):
+        result = analyze_csv_file(
+            str(csv_path),
+            run_llm=llm,
+            provider=provider.lower(),
+            model=model,
+            base_url=DEFAULT_CONFIG.get("backend_url"),
+        )
+
+    m = result.metrics
+    console.print(
+        Panel(
+            f"[bold]{m.total_transactions}[/bold] transactions  "
+            f"({m.date_range.start or '?'} → {m.date_range.end or '?'})",
+            title="Transaction Analysis",
+            border_style="cyan",
+        )
+    )
+
+    summary = Table(box=box.SIMPLE)
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Buys / Sells", f"{m.total_buys} / {m.total_sells}")
+    summary.add_row("Total invested", f"${m.total_invested:,.2f}")
+    summary.add_row("Total proceeds", f"${m.total_proceeds:,.2f}")
+    summary.add_row("Net realized PnL (FIFO)", f"${m.net_realized_pnl:,.2f}")
+    summary.add_row("Dividends", f"${m.total_dividends:,.2f}")
+    summary.add_row("Fees", f"${m.total_fees:,.2f}")
+    summary.add_row("Unique symbols", str(m.unique_symbols))
+    summary.add_row("Win / Lose symbols", f"{m.winning_symbols} / {m.losing_symbols}")
+    summary.add_row("Trades / month", f"{m.trade_frequency_per_month:.2f}")
+    summary.add_row("Avg trade size", f"${m.avg_trade_size:,.2f}")
+    summary.add_row("Option trades", str(m.option_trades))
+    summary.add_row(
+        "Top concentration",
+        f"{m.top_concentration.symbol} ({m.top_concentration.pct_of_invested:.0f}%)",
+    )
+    console.print(summary)
+
+    if m.behavioral_flags:
+        console.print("\n[bold yellow]Behavioral flags:[/bold yellow]")
+        for f in m.behavioral_flags:
+            console.print(f"  • {f}")
+
+    if llm:
+        a = result.analysis
+        console.print(
+            Panel(
+                f"[bold]{a.headline}[/bold]\nArchetype: {a.investor_archetype}\n"
+                f"Risk {a.risk_score} · Discipline {a.discipline_score} · "
+                f"Diversification {a.diversification_score}",
+                title="Behavioral Review (LLM)",
+                border_style="magenta",
+            )
+        )
+        for sec in a.sections:
+            console.print(f"\n[bold]{sec.title}[/bold]\n{sec.summary}")
+            for p in sec.points:
+                console.print(f"  • {p}")
+        if a.suggestions:
+            console.print("\n[bold]Suggestions:[/bold]")
+            for s in a.suggestions:
+                console.print(f"  • {s}")
+        if a.closing_reflection:
+            console.print(f"\n[italic]{a.closing_reflection}[/italic]")
+
+    for w in result.warnings:
+        console.print(f"[yellow]warning:[/yellow] {w}")
 
 
 if __name__ == "__main__":

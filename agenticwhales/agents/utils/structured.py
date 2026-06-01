@@ -54,15 +54,35 @@ def invoke_structured_or_freetext(
 ) -> str:
     """Run the structured call and render to markdown; fall back to free-text on any failure.
 
-    ``prompt`` is whatever the underlying LLM accepts (a string for chat
-    invocations, a list of message dicts for chat models that take that
-    shape). The same value is forwarded to the free-text path so the
-    fallback sees the same input the structured call did.
+    Back-compat wrapper for callers that only need the rendered markdown.
+    Prefer `invoke_structured_or_freetext_pair` when you also need the typed
+    Pydantic instance (e.g. for the Phase 1 paper-trade hook).
+    """
+    markdown, _ = invoke_structured_or_freetext_pair(
+        structured_llm, plain_llm, prompt, render, agent_name,
+    )
+    return markdown
+
+
+def invoke_structured_or_freetext_pair(
+    structured_llm: Optional[Any],
+    plain_llm: Any,
+    prompt: Any,
+    render: Callable[[T], str],
+    agent_name: str,
+) -> tuple[str, Optional[T]]:
+    """Like `invoke_structured_or_freetext`, but also returns the typed instance.
+
+    Returns `(rendered_markdown, structured_instance_or_None)`. The instance
+    is None when the structured call wasn't available OR fell back to plain
+    text. Phase 1's `_post_decision_hook` relies on the structured instance
+    to do risk-guard + Kelly sizing; the markdown stays the user-visible
+    artifact for the existing UI / memory log / saved reports.
     """
     if structured_llm is not None:
         try:
             result = structured_llm.invoke(prompt)
-            return render(result)
+            return render(result), result
         except Exception as exc:
             logger.warning(
                 "%s: structured-output invocation failed (%s); retrying once as free text",
@@ -70,4 +90,4 @@ def invoke_structured_or_freetext(
             )
 
     response = plain_llm.invoke(prompt)
-    return response.content
+    return response.content, None
