@@ -150,18 +150,18 @@ h1, h2, .serif, .hero-title, .page-title, .section-title {
 }
 
 .primary-btn {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   color: var(--on-accent);
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 10px;
   padding: 10px 12px;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
-  box-shadow: 0 6px 20px rgba(96,165,250,0.25);
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  box-shadow: none;
 }
-.primary-btn:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(96,165,250,0.35); }
+.primary-btn:hover { background: var(--accent-strong); }
 .primary-btn:active { transform: translateY(0); }
 
 .sidebar-section {
@@ -267,12 +267,10 @@ h1, h2, .serif, .hero-title, .page-title, .section-title {
 
 .page-header h1 {
   margin: 0;
+  font-family: var(--serif);
   font-size: 28px;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2) 60%, var(--accent-3));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 .page-header p { margin: 6px 0 0; }
 
@@ -617,8 +615,17 @@ h1, h2, .serif, .hero-title, .page-title, .section-title {
 
 /* ---------- Batch (basket) ---------- */
 
+/* Secondary / tertiary sidebar actions: quiet outlined buttons on paper —
+   one solid accent primary is enough; the rest stay restrained. */
 .primary-btn.secondary {
-  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.primary-btn.secondary:hover {
+  background: var(--bg-card);
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .basket-toolbar {
@@ -769,7 +776,13 @@ h1, h2, .serif, .hero-title, .page-title, .section-title {
 /* ---------- Portfolio editor ---------- */
 
 .primary-btn.tertiary {
-  background: linear-gradient(135deg, #fbbf24, #f472b6);
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.primary-btn.tertiary:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .portfolio-card {
@@ -1362,7 +1375,7 @@ h1, h2, .serif, .hero-title, .page-title, .section-title {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: rgba(11, 15, 23, 0.92);
+  background: rgba(247, 245, 240, 0.92);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
