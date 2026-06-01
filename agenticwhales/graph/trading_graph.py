@@ -15,6 +15,7 @@ from langgraph.prebuilt import ToolNode
 
 from agenticwhales.llm_clients import create_llm_client
 from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
+from agenticwhales.llm_clients.retry import apply_retry
 
 from agenticwhales.agents import *
 from agenticwhales.default_config import DEFAULT_CONFIG
@@ -96,15 +97,39 @@ class AgenticWhalesGraph:
             **llm_kwargs,
         )
 
-        self.deep_thinking_llm = deep_client.get_llm()
-        self.quick_thinking_llm = quick_client.get_llm()
+        # P2.5: wrap upstream LLMs in retry. The Phase 1 diversification
+        # status fallback handles long-running provider outages; retry is
+        # for transient 429 / 503 / connection-reset failures so a single
+        # blip doesn't kill an 18-LLM-call session.
+        self.deep_thinking_llm = apply_retry(deep_client.get_llm())
+        self.quick_thinking_llm = apply_retry(quick_client.get_llm())
+        # Per-role record of which provider each diversified slot ended up on,
+        # plus a per-role ``degraded`` flag that's True when the Heterogeneity
+        # Mandate could not be satisfied for that slot (fell back to upstream,
+        # or — for debaters — collided with an adjacent slot). P1.3 surfaces
+        # this to the web UI; P1.4 tests assert on it. The upstream provider
+        # used for the analyst stack and Trader is recorded for completeness.
+        self.diversification_status: Dict[str, Dict[str, Any]] = {
+            "upstream": {
+                "provider": self.config.get("llm_provider", "").lower(),
+                "degraded": False,
+            },
+        }
         # Heterogeneity Mandate (Shehata & Li 2026, Cor. 1): both synthesizers
         # — Research Manager and Portfolio Manager — should be architecturally
-        # distinct from upstream agents. Build them from the synthesizer
-        # preference list independently so each gets the highest-priority
-        # available provider that differs from upstream.
-        self.research_manager_llm = self._build_diversified_synthesizer_llm("research_manager")
-        self.portfolio_manager_llm = self._build_diversified_synthesizer_llm("portfolio_manager")
+        # distinct from upstream agents AND from each other (the Portfolio
+        # Manager is downstream of the Research Manager's ``investment_plan``,
+        # so they form a synthesizer chain; sharing a model family there
+        # reproduces the kinship-locked pattern the Mandate exists to break).
+        # P1.1: thread an ``exclude`` set so the second call cannot pick the
+        # same provider the first call already took.
+        self.research_manager_llm = self._build_diversified_synthesizer_llm(
+            "research_manager", exclude=set()
+        )
+        rm_provider = self.diversification_status["research_manager"]["provider"]
+        self.portfolio_manager_llm = self._build_diversified_synthesizer_llm(
+            "portfolio_manager", exclude={rm_provider}
+        )
         # Debater diversification: spread Bull/Bear and the three risk
         # debaters across non-synthesizer providers to break the kinship-
         # locked upstream pattern (Peer Pressure configurations in Table 1).
@@ -203,11 +228,20 @@ class AgenticWhalesGraph:
         extra: Dict[str, Any] = {}
         if self.callbacks:
             extra["callbacks"] = self.callbacks
-        return create_llm_client(
-            provider=provider, model=model, base_url=None, **extra,
-        ).get_llm()
+        # P2.5: apply_retry on every diversified-provider LLM too, so the
+        # debater and synthesizer slots get the same transient-failure
+        # protection as the upstream LLMs.
+        return apply_retry(
+            create_llm_client(
+                provider=provider, model=model, base_url=None, **extra,
+            ).get_llm()
+        )
 
-    def _build_diversified_synthesizer_llm(self, role: str) -> Any:
+    def _build_diversified_synthesizer_llm(
+        self,
+        role: str,
+        exclude: Optional[set] = None,
+    ) -> Any:
         """Return the LLM the named synthesizer (research or portfolio mgr) should use.
 
         Both synthesizers are subject to the Synthesizer Gating Theorem
@@ -218,35 +252,57 @@ class AgenticWhalesGraph:
         Attention Latch (Λ → 2) collapses the swarm toward μ = 1.0.
 
         We walk ``synthesizer_provider_preference`` and pick the first
-        provider that (a) differs from the upstream provider (otherwise no
-        diversity gain) and (b) has credentials configured. Falls back to
-        the default deep-think LLM when no candidate is usable, so missing
-        optional credentials never break a run.
+        provider that (a) differs from the upstream provider, (b) is not in
+        ``exclude`` (used to keep the two synthesizers in the chain on
+        different providers — P1.1), and (c) has credentials configured.
+        Falls back to the default deep-think LLM when no candidate is
+        usable, so missing optional credentials never break a run; in that
+        case the slot is recorded as ``degraded`` so the UI can surface it.
         """
+        exclude = {p.lower() for p in (exclude or set())}
+        upstream = self.config.get("llm_provider", "").lower()
+
         if not self.config.get("diversify_synthesizers"):
+            self.diversification_status[role] = {
+                "provider": upstream,
+                "degraded": True,
+                "reason": "diversify_synthesizers disabled",
+            }
             return self.deep_thinking_llm
 
-        upstream = self.config.get("llm_provider", "").lower()
         preference = self.config.get("synthesizer_provider_preference") or []
 
         for candidate in preference:
             candidate = candidate.lower()
             if candidate == upstream:
                 continue  # same family as upstream — no diversity gain
+            if candidate in exclude:
+                continue  # already taken by another synthesizer (P1.1)
             llm = self._create_provider_llm(candidate, mode="deep")
             if llm is None:
                 continue
             logger.info(
-                "%s diversification active: synthesizer will use %s (instead of %s).",
-                role, candidate, upstream,
+                "%s diversification active: synthesizer will use %s (upstream=%s, excluded=%s).",
+                role, candidate, upstream, sorted(exclude) or "none",
             )
+            self.diversification_status[role] = {
+                "provider": candidate,
+                "degraded": False,
+            }
             return llm
 
-        logger.info(
-            "%s diversification: no usable candidate in synthesizer_provider_preference "
-            "(upstream=%s); falling back to default deep-think LLM.",
-            role, upstream,
+        logger.warning(
+            "%s diversification DEGRADED: no usable candidate in "
+            "synthesizer_provider_preference (upstream=%s, excluded=%s); "
+            "falling back to upstream deep-think LLM. The Heterogeneity "
+            "Mandate is not satisfied for this slot.",
+            role, upstream, sorted(exclude) or "none",
         )
+        self.diversification_status[role] = {
+            "provider": upstream,
+            "degraded": True,
+            "reason": "no usable preference provider; fell back to upstream",
+        }
         return self.deep_thinking_llm
 
     def _build_debater_llms(self) -> Dict[str, Any]:
@@ -262,17 +318,28 @@ class AgenticWhalesGraph:
         from ``debater_provider_preference`` to break the "Peer Pressure"
         united-front upstream pattern. Bull and Bear get providers[0] and
         providers[1 % len]; the three risk debaters cycle through with
-        modular indexing so adjacent debaters in the round-robin never
-        match. Providers with missing credentials are filtered out — if
-        only one remains, debaters within a single team still differ from
-        each other where possible (otherwise they fall back to the upstream
-        quick-thinking LLM for that slot).
+        modular indexing so no two adjacent debaters in the round-robin
+        share a provider. The risk round-robin is Agg → Con → Neu → Agg,
+        so we need at least 3 usable providers to guarantee that — with
+        only 2, the third slot wraps around to providers[0] and collides
+        with the first. P1.2: when ``len(usable) < 3``, log a WARN and
+        mark each colliding debater slot as ``degraded`` so the UI can
+        surface the issue. The default ``debater_provider_preference``
+        now includes a third entry (xai) so this path is the exception
+        rather than the rule.
         """
+        upstream_provider = self.config.get("llm_provider", "").lower()
         default = self.quick_thinking_llm
         debaters = ["bull", "bear", "aggressive", "conservative", "neutral"]
         result: Dict[str, Any] = {name: default for name in debaters}
 
         if not self.config.get("diversify_debaters"):
+            for name in debaters:
+                self.diversification_status[name] = {
+                    "provider": upstream_provider,
+                    "degraded": True,
+                    "reason": "diversify_debaters disabled",
+                }
             return result
 
         preference = self.config.get("debater_provider_preference") or []
@@ -287,28 +354,96 @@ class AgenticWhalesGraph:
             usable.append((candidate, llm))
 
         if not usable:
-            logger.info(
-                "Debater diversification: no usable providers in "
-                "debater_provider_preference; all debaters use upstream quick LLM."
+            logger.warning(
+                "Debater diversification DEGRADED: no usable providers in "
+                "debater_provider_preference; all five debaters fall back to "
+                "the upstream quick LLM (%s).",
+                upstream_provider,
             )
+            for name in debaters:
+                self.diversification_status[name] = {
+                    "provider": upstream_provider,
+                    "degraded": True,
+                    "reason": "no usable preference provider; fell back to upstream",
+                }
             return result
 
-        # Pair assignment for Bull/Bear (avoid both same provider if 2+ available).
-        # Cycle assignment for the three risk debaters.
+        if len(usable) < 3:
+            logger.warning(
+                "Debater diversification PARTIALLY DEGRADED: only %d usable "
+                "debater providers (%s); the three-way risk debate (Agg → Con "
+                "→ Neu → Agg) requires 3 to guarantee no adjacent collision. "
+                "Add a third entry to debater_provider_preference, or set the "
+                "missing API keys, to fully satisfy the Heterogeneity Mandate.",
+                len(usable),
+                [p for p, _ in usable],
+            )
+
+        # Cycle assignment so adjacent slots never share a provider when
+        # ``len(usable) >= 3``. Bull/Bear are pairwise; Agg/Con/Neu form
+        # the three-way round-robin.
         bull_idx, bear_idx = 0, 1 % len(usable)
+        agg_idx, con_idx, neu_idx = 0 % len(usable), 1 % len(usable), 2 % len(usable)
         result["bull"] = usable[bull_idx][1]
         result["bear"] = usable[bear_idx][1]
-        result["aggressive"] = usable[0 % len(usable)][1]
-        result["conservative"] = usable[1 % len(usable)][1]
-        result["neutral"] = usable[2 % len(usable)][1]
+        result["aggressive"] = usable[agg_idx][1]
+        result["conservative"] = usable[con_idx][1]
+        result["neutral"] = usable[neu_idx][1]
 
-        # Emit a one-line summary of which provider each debater landed on.
-        assignment = {
-            name: next(p for p, llm in usable if llm is result[name])
-            for name in debaters
+        # Record per-debater provider + degraded flag (collision = degraded).
+        per_slot_idx = {
+            "bull": bull_idx,
+            "bear": bear_idx,
+            "aggressive": agg_idx,
+            "conservative": con_idx,
+            "neutral": neu_idx,
         }
-        logger.info("Debater diversification active: %s", assignment)
+        provider_for_slot = {
+            name: usable[idx][0] for name, idx in per_slot_idx.items()
+        }
+        # Adjacency: investment debate is Bull↔Bear; risk debate is
+        # Agg→Con, Con→Neu, Neu→Agg.
+        adjacent_pairs = [
+            ("bull", "bear"),
+            ("aggressive", "conservative"),
+            ("conservative", "neutral"),
+            ("neutral", "aggressive"),
+        ]
+        degraded_slots = set()
+        for a, b in adjacent_pairs:
+            if provider_for_slot[a] == provider_for_slot[b]:
+                degraded_slots.add(a)
+                degraded_slots.add(b)
+        for name in debaters:
+            self.diversification_status[name] = {
+                "provider": provider_for_slot[name],
+                "degraded": name in degraded_slots,
+            }
+            if name in degraded_slots:
+                self.diversification_status[name]["reason"] = (
+                    "collides with an adjacent debater (insufficient providers)"
+                )
+
+        logger.info(
+            "Debater diversification: assignments=%s, degraded=%s",
+            provider_for_slot,
+            sorted(degraded_slots) or "none",
+        )
         return result
+
+    def get_diversification_status(self) -> Dict[str, Any]:
+        """Return a snapshot of per-role provider assignments + degradation flags.
+
+        Public read used by the web layer (P1.3) to display a banner when
+        the Heterogeneity Mandate could not be fully satisfied for the
+        current session, and by tests (P1.4) to assert on the assignments.
+        """
+        roles = dict(self.diversification_status)
+        degraded = any(v.get("degraded") for k, v in roles.items() if k != "upstream")
+        return {
+            "degraded": degraded,
+            "assignments": roles,
+        }
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""

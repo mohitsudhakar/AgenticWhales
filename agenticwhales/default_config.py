@@ -76,7 +76,14 @@ DEFAULT_CONFIG = {
     # the three risk debaters cycle through with modular indexing. Providers
     # without API keys are skipped at wiring time, with fallback to the
     # default quick-thinking LLM.
-    "debater_provider_preference": ["google", "deepseek"],
+    #
+    # P1.2: the risk debate is a three-way round-robin (Agg → Con → Neu →
+    # Agg), so we need at least 3 usable providers to guarantee no adjacent
+    # collision. xAI is the third entry — it's low-tribalism per probe data,
+    # widely available, and disjoint from both the upstream (OpenAI) and the
+    # synthesizer pool (Anthropic / DeepSeek / Google). Sessions without an
+    # XAI_API_KEY automatically fall back to the 2-provider path with a WARN.
+    "debater_provider_preference": ["google", "deepseek", "xai"],
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,

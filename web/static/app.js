@@ -398,6 +398,56 @@ function renderSession() {
 function renderSessionStats() {
   $("#s-stats").innerHTML = formatStatsLine(state.session?.stats);
   $("#s-team-timings").innerHTML = formatTeamTimings(state.session?.team_timings);
+  renderDiversificationBanner(state.session?.diversification_status);
+}
+
+/**
+ * P1.3: render the Heterogeneity Mandate diversification status.
+ *
+ * ``status`` is the object emitted by SessionRunner._set_diversification_status,
+ * shaped {degraded: bool, assignments: {role -> {provider, degraded, reason?}}}.
+ * We show a green banner when fully satisfied and a yellow banner with the
+ * affected roles + fallback providers when any slot is degraded.
+ */
+function renderDiversificationBanner(status) {
+  const banner = $("#s-diversification-banner");
+  if (!banner) return;
+  if (!status || !status.assignments) {
+    banner.classList.add("hidden");
+    banner.innerHTML = "";
+    return;
+  }
+  banner.classList.remove("hidden");
+
+  const assignments = status.assignments || {};
+  // Roles other than "upstream"; "upstream" is informational only.
+  const roleEntries = Object.entries(assignments).filter(([k]) => k !== "upstream");
+  const degradedRoles = roleEntries.filter(([, v]) => v && v.degraded);
+
+  const upstream = assignments.upstream?.provider || "?";
+  const rows = roleEntries
+    .map(([role, info]) => {
+      const cls = info.degraded ? "div-degraded" : "div-ok";
+      const reason = info.degraded && info.reason ? ` — ${escapeHTML(info.reason)}` : "";
+      return `<span class="${cls}">${escapeHTML(role)}: <strong>${escapeHTML(info.provider || "?")}</strong>${reason}</span>`;
+    })
+    .join(" · ");
+
+  if (degradedRoles.length === 0) {
+    banner.className = "diversification-banner ok";
+    banner.innerHTML = `
+      <strong>Heterogeneity Mandate: OK</strong>
+      <span class="subtle">upstream=${escapeHTML(upstream)} · ${rows}</span>
+    `;
+  } else {
+    banner.className = "diversification-banner degraded";
+    const affected = degradedRoles.map(([r]) => r).join(", ");
+    banner.innerHTML = `
+      <strong>Heterogeneity Mandate: DEGRADED</strong>
+      <span class="subtle">${escapeHTML(affected)} on fallback · upstream=${escapeHTML(upstream)}</span>
+      <div class="diversification-detail">${rows}</div>
+    `;
+  }
 }
 
 async function cancelActiveSession() {
@@ -696,6 +746,15 @@ function handleEvent(event) {
   if (event.type === "team_timing") {
     s.team_timings = s.team_timings || {};
     s.team_timings[event.team] = event.timing;
+    renderSessionStats();
+    return;
+  }
+
+  if (event.type === "diversification_status") {
+    s.diversification_status = {
+      degraded: !!event.degraded,
+      assignments: event.assignments || {},
+    };
     renderSessionStats();
     return;
   }
