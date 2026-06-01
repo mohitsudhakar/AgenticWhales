@@ -172,6 +172,55 @@
     }
     .vision .v-foot b { color: #e7eaf0; font-weight: 600; }
 
+    /* button can be a <button> too — normalize */
+    button.btn { font: inherit; cursor: pointer; }
+
+    /* ---------- Waitlist modal ---------- */
+    .wl-overlay {
+      position: fixed; inset: 0; z-index: 100; display: none;
+      align-items: center; justify-content: center; padding: 20px;
+      background: rgba(20, 22, 28, 0.5); backdrop-filter: blur(3px);
+    }
+    .wl-overlay.open { display: flex; }
+    .wl-modal {
+      width: 100%; max-width: 460px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 16px;
+      box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.35);
+      padding: 30px 30px 26px; position: relative;
+    }
+    .wl-modal h3 { margin: 0 0 6px; font-size: 21px; }
+    .wl-modal .wl-sub { margin: 0 0 20px; color: var(--ink-2); font-size: 14.5px; }
+    .wl-close {
+      position: absolute; top: 14px; right: 14px; width: 30px; height: 30px;
+      border: none; background: transparent; color: var(--ink-3); font-size: 20px;
+      line-height: 1; cursor: pointer; border-radius: 6px;
+    }
+    .wl-close:hover { background: var(--line-2); color: var(--ink); }
+    .wl-field { margin-bottom: 13px; }
+    .wl-field label { display: block; font-size: 12.5px; color: var(--ink-2); font-weight: 600; margin-bottom: 5px; }
+    .wl-field input, .wl-field textarea {
+      width: 100%; font: inherit; font-size: 14.5px; color: var(--ink);
+      background: var(--paper); border: 1px solid var(--line);
+      border-radius: 8px; padding: 10px 12px; outline: none;
+    }
+    .wl-field input:focus, .wl-field textarea:focus { border-color: var(--accent); background: #fff; }
+    .wl-field textarea { resize: vertical; min-height: 56px; }
+    .wl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .wl-submit { width: 100%; justify-content: center; margin-top: 6px; }
+    .wl-msg { font-size: 13px; margin: 10px 0 0; min-height: 16px; }
+    .wl-msg.err { color: #b4341f; }
+    .wl-msg.ok { color: var(--accent-ink); }
+    .wl-fine { font-size: 11.5px; color: var(--ink-3); margin: 14px 0 0; line-height: 1.5; }
+    .wl-success { text-align: center; padding: 14px 0 6px; }
+    .wl-success .tick {
+      width: 46px; height: 46px; border-radius: 50%; background: var(--accent-soft);
+      color: var(--accent); display: inline-flex; align-items: center; justify-content: center;
+      font-size: 24px; margin-bottom: 12px;
+    }
+    .wl-success h3 { margin: 0 0 6px; }
+    .wl-success p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+    @media (max-width: 460px) { .wl-row { grid-template-columns: 1fr; } }
+
     /* disclaimer fine print */
     .disclaimer-section { border-top: none; padding: 8px 0 56px; }
     .disclaimer { color: var(--ink-3); font-size: 12.5px; max-width: 68ch; margin: 0 auto; line-height: 1.6; text-align: center; }
@@ -218,7 +267,7 @@
       <div class="nav-right">
         <a class="nav-link" href="#how">How it works</a>
         <a class="nav-link" href="#why">Why it's different</a>
-        <a class="btn btn-solid" href="/signin">Try it today</a>
+        <button type="button" class="btn btn-solid" data-waitlist>Join the waitlist</button>
       </div>
     </div>
   </header>
@@ -235,13 +284,13 @@
       </p>
 
       <div class="cta-row">
-        <a class="btn btn-solid btn-lg" href="/signin">
-          Try it today
+        <button type="button" class="btn btn-solid btn-lg" data-waitlist>
+          Join the waitlist
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        </a>
+        </button>
         <a class="btn btn-outline btn-lg" href="#how">See how it works</a>
       </div>
-      <p class="note">Sign in with <b>Google</b>, accept the disclaimer, and you're on the floor. Paper-trading only — no real money moves.</p>
+      <p class="note">Private beta — <b>join the waitlist</b> and we'll send your access. Paper-trading only; no real money moves.</p>
 
       <div class="stats">
         <div class="stat"><div class="n">11 agents</div><div class="l">on every decision</div></div>
@@ -308,7 +357,7 @@
             <li>Ask the fund why it did what it did — every call is logged, attributed and scored.</li>
           </ul>
         </div>
-        <a class="btn btn-solid btn-lg" href="/signin">Try it today</a>
+        <button type="button" class="btn btn-solid btn-lg" data-waitlist>Join the waitlist</button>
       </div>
     </div>
   </section>
@@ -350,6 +399,115 @@
       <div>© AgenticWhales · Paper-trading research platform</div>
     </div>
   </footer>
+
+  <!-- ===================== WAITLIST MODAL ===================== -->
+  <div class="wl-overlay" id="wl-overlay" role="dialog" aria-modal="true" aria-labelledby="wl-title">
+    <div class="wl-modal">
+      <button class="wl-close" id="wl-close" aria-label="Close">&times;</button>
+
+      <div id="wl-form-view">
+        <h3 id="wl-title" class="serif">Join the waitlist</h3>
+        <p class="wl-sub">AgenticWhales is in private beta. Leave your details and we'll send your access.</p>
+        <form id="wl-form" novalidate>
+          <div class="wl-field">
+            <label for="wl-email">Work email</label>
+            <input id="wl-email" name="email" type="email" autocomplete="email" required placeholder="you@firm.com" />
+          </div>
+          <div class="wl-row">
+            <div class="wl-field">
+              <label for="wl-name">Name</label>
+              <input id="wl-name" name="name" type="text" autocomplete="name" placeholder="Optional" />
+            </div>
+            <div class="wl-field">
+              <label for="wl-company">Firm</label>
+              <input id="wl-company" name="company" type="text" autocomplete="organization" placeholder="Optional" />
+            </div>
+          </div>
+          <div class="wl-field">
+            <label for="wl-note">Anything you want us to know?</label>
+            <textarea id="wl-note" name="note" placeholder="Optional"></textarea>
+          </div>
+          <button type="submit" class="btn btn-solid btn-lg wl-submit" id="wl-submit">Join the waitlist</button>
+          <p class="wl-msg" id="wl-msg" role="status" aria-live="polite"></p>
+          <p class="wl-fine">We'll only use this to send your beta access and occasional product updates. No spam.</p>
+        </form>
+      </div>
+
+      <div id="wl-success-view" class="wl-success" hidden>
+        <div class="tick" aria-hidden="true">&#10003;</div>
+        <h3 class="serif">You're on the list.</h3>
+        <p>Thanks — we'll be in touch at the email you gave us.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var overlay = document.getElementById("wl-overlay");
+      var formView = document.getElementById("wl-form-view");
+      var successView = document.getElementById("wl-success-view");
+      var form = document.getElementById("wl-form");
+      var emailEl = document.getElementById("wl-email");
+      var msgEl = document.getElementById("wl-msg");
+      var submitBtn = document.getElementById("wl-submit");
+      var lastFocus = null;
+
+      function open() {
+        lastFocus = document.activeElement;
+        formView.hidden = false; successView.hidden = true;
+        msgEl.textContent = ""; msgEl.className = "wl-msg";
+        overlay.classList.add("open");
+        setTimeout(function () { emailEl.focus(); }, 30);
+        document.addEventListener("keydown", onKey);
+      }
+      function close() {
+        overlay.classList.remove("open");
+        document.removeEventListener("keydown", onKey);
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+      }
+      function onKey(e) { if (e.key === "Escape") close(); }
+
+      document.querySelectorAll("[data-waitlist]").forEach(function (b) {
+        b.addEventListener("click", function (e) { e.preventDefault(); open(); });
+      });
+      document.getElementById("wl-close").addEventListener("click", close);
+      overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        msgEl.textContent = ""; msgEl.className = "wl-msg";
+        var email = (emailEl.value || "").trim();
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          msgEl.textContent = "Please enter a valid email."; msgEl.className = "wl-msg err";
+          emailEl.focus(); return;
+        }
+        submitBtn.disabled = true; submitBtn.textContent = "Joining…";
+        try {
+          var res = await fetch("/api/waitlist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: email,
+              name: document.getElementById("wl-name").value.trim(),
+              company: document.getElementById("wl-company").value.trim(),
+              note: document.getElementById("wl-note").value.trim(),
+              source: "landing",
+            }),
+          });
+          if (!res.ok) {
+            var j = await res.json().catch(function () { return {}; });
+            throw new Error((j && j.detail) || ("HTTP " + res.status));
+          }
+          formView.hidden = true; successView.hidden = false;
+        } catch (err) {
+          msgEl.textContent = "Something went wrong — " + (err.message || err) + ". Please try again.";
+          msgEl.className = "wl-msg err";
+        } finally {
+          submitBtn.disabled = false; submitBtn.textContent = "Join the waitlist";
+        }
+      });
+    })();
+  </script>
 </body>
 
 </html>

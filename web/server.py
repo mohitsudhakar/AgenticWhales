@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -19,7 +19,7 @@ from agenticwhales import conviction_decay, portfolio
 from agenticwhales.llm_clients.model_catalog import MODEL_OPTIONS
 from agenticwhales.universe import universe_for_api
 
-from . import admin, auth, batch_storage, storage
+from . import admin, auth, batch_storage, storage, waitlist
 from .auth import authenticate_websocket, get_current_user_id, require_admin
 from .batch_runner import BatchRunner, build_batch
 from .runner import (
@@ -195,6 +195,51 @@ async def welcome_page() -> HTMLResponse:
     """Alias for the marketing landing page (same content as /). Kept so any
     previously-shared /welcome links keep working."""
     return _render_html("welcome.html")
+
+
+# --------------------------------------------------------------------------
+# Waitlist — public signup + admin-only export. Stored in the app's normal
+# dual-mode store (Supabase or in-memory), with an optional live Google Sheet
+# mirror via WAITLIST_SHEET_WEBHOOK_URL. No new credentials required.
+# --------------------------------------------------------------------------
+
+class WaitlistPayload(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    name: str = Field("", max_length=120)
+    company: str = Field("", max_length=160)
+    note: str = Field("", max_length=1000)
+    source: str = Field("landing", max_length=60)
+
+
+@app.post("/api/waitlist")
+async def join_waitlist(payload: WaitlistPayload) -> Dict[str, Any]:
+    """Public: join the waitlist. Idempotent on email. Returns a small JSON
+    ack (never the stored row's internal id)."""
+    try:
+        waitlist.add_signup(
+            email=payload.email, name=payload.name, company=payload.company,
+            note=payload.note, source=payload.source or "landing",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "message": "You're on the list — we'll be in touch."}
+
+
+@app.get("/api/waitlist/count")
+async def waitlist_count() -> Dict[str, Any]:
+    """Public: how many have joined (drives the 'N already joined' social proof)."""
+    return {"count": auth.count_waitlist_signups()}
+
+
+@app.get("/api/waitlist/export.csv")
+async def waitlist_export(user_id: str = Depends(require_admin)) -> PlainTextResponse:
+    """Admin-only: download every signup as CSV (the 'spreadsheet')."""
+    csv_text = waitlist.to_csv(auth.list_waitlist_signups())
+    return PlainTextResponse(
+        csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="waitlist.csv"'},
+    )
 
 
 @app.get("/usage", response_class=HTMLResponse)

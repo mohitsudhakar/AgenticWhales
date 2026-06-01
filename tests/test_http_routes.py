@@ -32,13 +32,15 @@ def _wipe():
 
 class TestRouting:
     def test_root_serves_marketing_page(self, client):
-        """`/` is the public marketing landing page. Its 'Try it today' CTAs
-        link to /signin (the sign-in + disclaimer gate). We verify it returns
-        200 HTML and points at /signin."""
+        """`/` is the public marketing landing page. Its primary CTAs open the
+        waitlist modal (private beta); the sign-in gate is still linked. We
+        verify it returns 200 HTML with the waitlist CTAs wired up."""
         r = client.get("/")
         assert r.status_code == 200
-        assert "/signin" in r.text          # CTAs route to the sign-in gate
-        assert "Try it today" in r.text      # marketing copy present
+        assert "Join the waitlist" in r.text     # primary CTA copy
+        assert "data-waitlist" in r.text         # modal trigger hook
+        assert "/api/waitlist" in r.text         # signup endpoint wired
+        assert "/signin" in r.text               # sign-in gate still linked
 
     def test_welcome_alias_matches_root(self, client):
         """/welcome is an alias of the marketing page (back-compat for any
