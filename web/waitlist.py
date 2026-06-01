@@ -125,3 +125,27 @@ def to_csv(rows) -> str:
             r.get("company", ""), r.get("note", ""), r.get("source", ""),
         ])
     return buf.getvalue()
+
+
+# --- public-facing vanity counter -------------------------------------------
+#
+# The landing page shows social proof, not the raw signup count:
+#   - always at least 100 ("100+ already joined") for early credibility, and
+#   - once real signups cross DOUBLE_THRESHOLD, we display 2x the real number.
+# This is a marketing display value only; the admin export + DB always hold the
+# true figure.
+
+DISPLAY_FLOOR = 100
+DOUBLE_THRESHOLD = 50
+
+
+def display_count(real_count: int) -> int:
+    """Map the true signup count to the number shown in the UI.
+
+    - below the doubling threshold: floored at DISPLAY_FLOOR (so it reads
+      "100+" while the list is still small).
+    - at/above the threshold: 2x the real count, still never below the floor.
+    """
+    n = max(0, int(real_count))
+    shown = n * 2 if n >= DOUBLE_THRESHOLD else n
+    return max(DISPLAY_FLOOR, shown)

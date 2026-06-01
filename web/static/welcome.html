@@ -242,6 +242,20 @@
       .prow p { grid-column: 2; margin-top: 4px; }
       .why { grid-template-columns: 1fr; gap: 0; }
     }
+    /* social proof under the hero CTA */
+    .proof { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; min-height: 22px; }
+    .proof.hidden { display: none; }
+    .proof .dots { display: inline-flex; }
+    .proof .dot-av {
+      width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--paper);
+      margin-left: -7px; background: var(--accent-soft);
+    }
+    .proof .dot-av:first-child { margin-left: 0; }
+    .proof .dot-av:nth-child(2) { background: #dfe9f6; }
+    .proof .dot-av:nth-child(3) { background: #f5e3ec; }
+    .proof .proof-text { font-size: 13.5px; color: var(--ink-2); }
+    .proof .proof-text b { color: var(--ink); font-weight: 600; }
+
     @media (max-width: 700px) {
       .vision { padding: 36px 28px; }
     }
@@ -291,6 +305,11 @@
         <a class="btn btn-outline btn-lg" href="#how">See how it works</a>
       </div>
       <p class="note">Private beta — <b>join the waitlist</b> and we'll send your access. Paper-trading only; no real money moves.</p>
+
+      <div class="proof hidden" id="wl-proof">
+        <span class="dots" aria-hidden="true"><span class="dot-av"></span><span class="dot-av"></span><span class="dot-av"></span></span>
+        <span class="proof-text"><b id="wl-proof-count">100+</b> already joined the waitlist</span>
+      </div>
 
       <div class="stats">
         <div class="stat"><div class="n">11 agents</div><div class="l">on every decision</div></div>
@@ -452,6 +471,23 @@
       var submitBtn = document.getElementById("wl-submit");
       var lastFocus = null;
 
+      // Social-proof counter — shows the server's vanity "display" figure
+      // (floored at 100, doubled past the threshold). Hidden until it loads so
+      // it never flashes a wrong number.
+      function loadProof() {
+        fetch("/api/waitlist/count")
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j) return;
+            var proof = document.getElementById("wl-proof");
+            var el = document.getElementById("wl-proof-count");
+            if (el) el.textContent = (j.display || 100) + "+";
+            if (proof) proof.classList.remove("hidden");
+          })
+          .catch(function () { /* leave it hidden on error */ });
+      }
+      loadProof();
+
       function open() {
         lastFocus = document.activeElement;
         formView.hidden = false; successView.hidden = true;
@@ -499,6 +535,7 @@
             throw new Error((j && j.detail) || ("HTTP " + res.status));
           }
           formView.hidden = true; successView.hidden = false;
+          loadProof();  // refresh the counter to reflect the new signup
         } catch (err) {
           msgEl.textContent = "Something went wrong — " + (err.message || err) + ". Please try again.";
           msgEl.className = "wl-msg err";

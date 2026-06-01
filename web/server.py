@@ -227,8 +227,11 @@ async def join_waitlist(payload: WaitlistPayload) -> Dict[str, Any]:
 
 @app.get("/api/waitlist/count")
 async def waitlist_count() -> Dict[str, Any]:
-    """Public: how many have joined (drives the 'N already joined' social proof)."""
-    return {"count": auth.count_waitlist_signups()}
+    """Public: social-proof counter for the landing page. `display` is the
+    vanity figure shown in the UI (floored at 100, doubled past the threshold);
+    `count` is the true figure (kept for the admin/debug surface)."""
+    real = auth.count_waitlist_signups()
+    return {"count": real, "display": waitlist.display_count(real)}
 
 
 @app.get("/api/waitlist/export.csv")

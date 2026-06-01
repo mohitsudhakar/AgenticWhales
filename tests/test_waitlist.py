@@ -126,7 +126,28 @@ def test_post_waitlist_missing_email_422(client):
 def test_waitlist_count_public(client):
     client.post("/api/waitlist", json={"email": "a@b.com"})
     client.post("/api/waitlist", json={"email": "c@d.com"})
-    assert client.get("/api/waitlist/count").json()["count"] == 2
+    body = client.get("/api/waitlist/count").json()
+    assert body["count"] == 2            # true figure
+    assert body["display"] == 100        # vanity floor
+
+
+@pytest.mark.parametrize("real,shown", [
+    (0, 100),      # empty → floor
+    (3, 100),      # small → floor (reads "100+")
+    (49, 100),     # just below threshold → still floor
+    (50, 100),     # at threshold: 50*2 = 100 (equals floor)
+    (60, 120),     # past threshold → doubled
+    (250, 500),    # doubled
+])
+def test_display_count_curve(real, shown):
+    assert waitlist.display_count(real) == shown
+
+
+def test_count_endpoint_reflects_doubling(client, monkeypatch):
+    # 60 real signups → UI shows 120
+    monkeypatch.setattr(auth, "count_waitlist_signups", lambda: 60)
+    body = client.get("/api/waitlist/count").json()
+    assert body["count"] == 60 and body["display"] == 120
 
 
 def test_waitlist_export_requires_admin(client):
