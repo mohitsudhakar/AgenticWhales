@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="darkreader-lock" />
+  <title>AgenticWhales — Your personal AI hedge fund</title>
+  <meta name="description"
+    content="AgenticWhales is a multi-agent investment research system: a committee of AI analysts debates every ticker, sizes the bet under hard risk limits, paper-trades the verdict, and grades itself against the outcome." />
+
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+
+  <!-- Link-preview card -->
+  <meta property="og:title" content="AgenticWhales — Your personal AI hedge fund" />
+  <meta property="og:description"
+    content="A committee of agents researches every ticker, debates it, sizes the bet under hard risk limits, paper-trades the verdict, and learns from every outcome." />
+  <meta property="og:type" content="website" />
+
+  <style>
+    :root {
+      /* Light, warm-paper palette — restrained, editorial. */
+      --paper: #faf8f4;
+      --surface: #ffffff;
+      --ink: #1b1e26;
+      --ink-2: #4c5462;
+      --ink-3: #828a98;
+      --line: #e7e3da;
+      --line-2: #efece5;
+      --accent: #186a55;        /* deep emerald — the single accent */
+      --accent-soft: #e7f1ec;
+      --accent-ink: #12513f;
+      /* brand gradient kept ONLY for the hairline top rule + mark */
+      --brand: linear-gradient(90deg, #6ee7b7, #60a5fa, #f472b6);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+
+    body {
+      margin: 0;
+      /* System UI stack — Segoe UI leads on Windows, then macOS/Linux fallbacks. */
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--ink);
+      background: var(--paper);
+      text-rendering: optimizeLegibility;
+    }
+
+    /* Serif display for headings — Georgia/Palatino render cleanly on every
+       Windows + macOS box, no web-font download, no FOUT. */
+    .serif {
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 0 28px; }
+
+    /* thin brand rule at the very top */
+    .topbar { height: 3px; background: var(--brand); }
+
+    /* ---------- Nav ---------- */
+    header.nav { border-bottom: 1px solid var(--line); background: var(--paper); }
+    .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; letter-spacing: 0.01em; }
+    .brand img { width: 24px; height: 24px; border-radius: 6px; display: block; }
+    .nav-right { display: flex; align-items: center; gap: 22px; }
+    .nav-link { font-size: 14px; color: var(--ink-2); }
+    .nav-link:hover { color: var(--ink); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 14px; font-weight: 600; border-radius: 8px;
+      padding: 9px 16px; border: 1px solid transparent;
+      transition: background .15s ease, border-color .15s ease, color .15s ease;
+      cursor: pointer; white-space: nowrap;
+    }
+    .btn-solid { background: var(--ink); color: #fff; }
+    .btn-solid:hover { background: #000; }
+    .btn-outline { background: transparent; color: var(--ink); border-color: var(--line); }
+    .btn-outline:hover { border-color: var(--ink-3); background: #fff; }
+    .btn svg { width: 15px; height: 15px; }
+
+    /* ---------- Hero ---------- */
+    .hero { padding: 84px 0 56px; max-width: 760px; }
+    .eyebrow {
+      font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--accent-ink); font-weight: 600; margin: 0 0 20px;
+    }
+    h1.head {
+      font-size: clamp(30px, 4.4vw, 46px);
+      line-height: 1.12; margin: 0 0 22px;
+    }
+    h1.head em { font-style: normal; color: var(--accent); }
+    .lede { font-size: 18px; color: var(--ink-2); margin: 0 0 30px; max-width: 60ch; }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn-lg { padding: 13px 24px; font-size: 15.5px; border-radius: 9px; }
+    .note { margin: 18px 0 0; font-size: 13.5px; color: var(--ink-3); }
+    .note b { color: var(--ink-2); font-weight: 600; }
+
+    /* ---------- Stat row (typographic, no big gradient numerals) ---------- */
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      margin-top: 56px;
+    }
+    .stat { padding: 22px 22px 22px 0; }
+    .stat:not(:last-child) { border-right: 1px solid var(--line-2); }
+    .stat .n { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+    .stat .l { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; line-height: 1.4; }
+
+    /* ---------- Sections ---------- */
+    section { padding: 72px 0; border-top: 1px solid var(--line); }
+    .sec-head { max-width: 60ch; margin-bottom: 44px; }
+    .sec-eyebrow { font-size: 12px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin: 0 0 12px; }
+    h2.sec { font-size: clamp(22px, 3vw, 30px); line-height: 1.2; margin: 0 0 14px; }
+    .sec-sub { font-size: 16.5px; color: var(--ink-2); margin: 0; }
+
+    /* pipeline — editorial numbered rows, not emoji cards */
+    .pipe { display: grid; gap: 0; }
+    .prow {
+      display: grid; grid-template-columns: 56px 200px 1fr; gap: 24px; align-items: baseline;
+      padding: 22px 0; border-top: 1px solid var(--line-2);
+    }
+    .prow:first-child { border-top: none; }
+    .prow .pn { font-size: 14px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .prow h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.005em; }
+    .prow p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+
+    /* why — quiet two-column list with thin rules, no icons */
+    .why { display: grid; grid-template-columns: 1fr 1fr; gap: 0 48px; }
+    .feat { padding: 22px 0; border-top: 1px solid var(--line-2); }
+    .feat h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+    .feat h3::before { content: ""; width: 14px; height: 2px; background: var(--accent); display: inline-block; border-radius: 2px; }
+    .feat p { margin: 0; font-size: 14px; color: var(--ink-2); }
+
+    /* audience */
+    .audience {
+      background: var(--accent-soft);
+      border: 1px solid #d8e7e0; border-radius: 14px; padding: 36px;
+      display: flex; gap: 36px; align-items: center; flex-wrap: wrap;
+    }
+    .audience .txt { flex: 1 1 360px; }
+    .audience h2 { margin: 0 0 10px; font-size: 23px; }
+    .audience p { margin: 0; color: var(--accent-ink); font-size: 15.5px; }
+    .audience ul { margin: 16px 0 0; padding-left: 18px; color: var(--accent-ink); font-size: 14.5px; }
+    .audience li { margin: 7px 0; }
+    .audience li b { font-weight: 600; }
+
+    /* vision — dark editorial band that closes the page with the long arc */
+    .vision-section { border-top: none; padding-top: 0; }
+    .vision {
+      background: var(--ink); color: #fff; border-radius: 16px;
+      padding: 52px 56px;
+      background-image:
+        radial-gradient(600px 240px at 100% 0%, rgba(96, 165, 250, 0.16), transparent 60%),
+        radial-gradient(520px 220px at 0% 100%, rgba(110, 231, 183, 0.12), transparent 60%);
+    }
+    .vision .v-eyebrow {
+      font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+      color: #8fe3c4; font-weight: 600; margin: 0 0 16px;
+    }
+    .vision h2 { font-size: clamp(22px, 3vw, 31px); line-height: 1.24; margin: 0; max-width: 24ch; }
+    .vision h2 em { font-style: normal; color: #9fc6ff; }
+    .vision p { color: #c3c8d2; font-size: 16px; margin: 18px 0 0; max-width: 64ch; }
+    .vision .v-foot {
+      margin: 26px 0 0; padding-top: 22px; border-top: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 13px; color: #98a0ad;
+    }
+    .vision .v-foot b { color: #e7eaf0; font-weight: 600; }
+
+    /* button can be a <button> too — normalize */
+    button.btn { font: inherit; cursor: pointer; }
+
+    /* ---------- Waitlist modal ---------- */
+    .wl-overlay {
+      position: fixed; inset: 0; z-index: 100; display: none;
+      align-items: center; justify-content: center; padding: 20px;
+      background: rgba(20, 22, 28, 0.5); backdrop-filter: blur(3px);
+    }
+    .wl-overlay.open { display: flex; }
+    .wl-modal {
+      width: 100%; max-width: 460px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 16px;
+      box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.35);
+      padding: 30px 30px 26px; position: relative;
+    }
+    .wl-modal h3 { margin: 0 0 6px; font-size: 21px; }
+    .wl-modal .wl-sub { margin: 0 0 20px; color: var(--ink-2); font-size: 14.5px; }
+    .wl-close {
+      position: absolute; top: 14px; right: 14px; width: 30px; height: 30px;
+      border: none; background: transparent; color: var(--ink-3); font-size: 20px;
+      line-height: 1; cursor: pointer; border-radius: 6px;
+    }
+    .wl-close:hover { background: var(--line-2); color: var(--ink); }
+    .wl-field { margin-bottom: 13px; }
+    .wl-field label { display: block; font-size: 12.5px; color: var(--ink-2); font-weight: 600; margin-bottom: 5px; }
+    .wl-field input, .wl-field textarea {
+      width: 100%; font: inherit; font-size: 14.5px; color: var(--ink);
+      background: var(--paper); border: 1px solid var(--line);
+      border-radius: 8px; padding: 10px 12px; outline: none;
+    }
+    .wl-field input:focus, .wl-field textarea:focus { border-color: var(--accent); background: #fff; }
+    .wl-field textarea { resize: vertical; min-height: 56px; }
+    .wl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .wl-submit { width: 100%; justify-content: center; margin-top: 6px; }
+    .wl-msg { font-size: 13px; margin: 10px 0 0; min-height: 16px; }
+    .wl-msg.err { color: #b4341f; }
+    .wl-msg.ok { color: var(--accent-ink); }
+    .wl-fine { font-size: 11.5px; color: var(--ink-3); margin: 14px 0 0; line-height: 1.5; }
+    .wl-success { text-align: center; padding: 14px 0 6px; }
+    .wl-success .tick {
+      width: 46px; height: 46px; border-radius: 50%; background: var(--accent-soft);
+      color: var(--accent); display: inline-flex; align-items: center; justify-content: center;
+      font-size: 24px; margin-bottom: 12px;
+    }
+    .wl-success h3 { margin: 0 0 6px; }
+    .wl-success p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+    @media (max-width: 460px) { .wl-row { grid-template-columns: 1fr; } }
+
+    /* disclaimer fine print */
+    .disclaimer-section { border-top: none; padding: 8px 0 56px; }
+    .disclaimer { color: var(--ink-3); font-size: 12.5px; max-width: 68ch; margin: 0 auto; line-height: 1.6; text-align: center; }
+    .disclaimer b { color: var(--ink-2); font-weight: 600; }
+
+    /* footer */
+    footer { border-top: 1px solid var(--line); }
+    .foot-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 26px 0; color: var(--ink-3); font-size: 13px; }
+    .foot-inner a { color: var(--ink-2); }
+    .foot-inner a:hover { color: var(--ink); }
+    .foot-inner .brand { font-size: 13px; color: var(--ink-2); }
+
+    @media (max-width: 820px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .stat:nth-child(2) { border-right: none; }
+      .stat { border-bottom: 1px solid var(--line-2); padding-right: 0; }
+      .prow { grid-template-columns: 40px 1fr; }
+      .prow h3 { grid-column: 2; }
+      .prow p { grid-column: 2; margin-top: 4px; }
+      .why { grid-template-columns: 1fr; gap: 0; }
+    }
+    /* social proof under the hero CTA */
+    .proof { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; min-height: 22px; }
+    .proof.hidden { display: none; }
+    .proof .dots { display: inline-flex; }
+    .proof .dot-av {
+      width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--paper);
+      margin-left: -7px; background: var(--accent-soft);
+    }
+    .proof .dot-av:first-child { margin-left: 0; }
+    .proof .dot-av:nth-child(2) { background: #dfe9f6; }
+    .proof .dot-av:nth-child(3) { background: #f5e3ec; }
+    .proof .proof-text { font-size: 13.5px; color: var(--ink-2); }
+    .proof .proof-text b { color: var(--ink); font-weight: 600; }
+
+    @media (max-width: 700px) {
+      .vision { padding: 36px 28px; }
+    }
+    @media (max-width: 520px) {
+      .hero { padding-top: 56px; }
+      .stats { grid-template-columns: 1fr; }
+      .stat:not(:last-child) { border-right: none; }
+      .btn-lg { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar"></div>
+
+  <!-- ===================== NAV ===================== -->
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/">
+        <img src="/static/favicon.svg" alt="AgenticWhales" />
+        <span>AgenticWhales</span>
+      </a>
+      <div class="nav-right">
+        <a class="nav-link" href="#how">How it works</a>
+        <a class="nav-link" href="#why">Why it's different</a>
+        <button type="button" class="btn btn-solid" data-waitlist>Join the waitlist</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== HERO ===================== -->
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">Multi-agent investment research</p>
+      <h1 class="head serif">A committee of AI analysts that researches, debates, and <em>sizes every trade</em>.</h1>
+      <p class="lede">
+        AgenticWhales puts every ticker on trial. Specialist agents file briefs, a bull and a bear argue it out, a risk
+        committee weighs in, and a portfolio manager hands down a structured verdict — then sizes the bet under hard
+        risk limits, paper-trades it, and grades itself against the outcome.
+      </p>
+
+      <div class="cta-row">
+        <button type="button" class="btn btn-solid btn-lg" data-waitlist>
+          Join the waitlist
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <a class="btn btn-outline btn-lg" href="#how">See how it works</a>
+      </div>
+      <p class="note">Private beta — <b>join the waitlist</b> and we'll send your access. Paper-trading only; no real money moves.</p>
+
+      <div class="proof hidden" id="wl-proof">
+        <span class="dots" aria-hidden="true"><span class="dot-av"></span><span class="dot-av"></span><span class="dot-av"></span></span>
+        <span class="proof-text"><b id="wl-proof-count">100+</b> already joined the waitlist</span>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="n">11 agents</div><div class="l">on every decision</div></div>
+        <div class="stat"><div class="n">&lt; 2 min</div><div class="l">research to verdict</div></div>
+        <div class="stat"><div class="n">24 / 7</div><div class="l">autonomous recipes &amp; alerts</div></div>
+        <div class="stat"><div class="n">Fully auditable</div><div class="l">every call Brier-scored</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="sec-eyebrow">The decision pipeline</p>
+        <h2 class="sec serif">A trading desk's workflow, run by agents.</h2>
+        <p class="sec-sub">Every analysis flows through the same committee a real fund uses — but the soft, persuadable
+          layer never touches the money math. The portfolio manager emits a structured decision; deterministic risk and
+          sizing logic does the rest.</p>
+      </div>
+
+      <div class="pipe">
+        <div class="prow"><span class="pn">01</span><h3>Put it on trial</h3><p>Market, news, quant and fundamental analysts each file an evidence-backed brief.</p></div>
+        <div class="prow"><span class="pn">02</span><h3>Bull vs. bear</h3><p>Two researchers argue opposite sides — drawn from different model families to avoid a united front.</p></div>
+        <div class="prow"><span class="pn">03</span><h3>The risk committee</h3><p>Aggressive, conservative and neutral voices stress-test the trade before it is sized.</p></div>
+        <div class="prow"><span class="pn">04</span><h3>A structured verdict</h3><p>The portfolio manager hands down a rating, conviction, expected return and probability — not prose.</p></div>
+        <div class="prow"><span class="pn">05</span><h3>Size, fill, grade</h3><p>Fractional-Kelly sizing under hard limits, a paper fill, then Brier-scored against reality.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHY ===================== -->
+  <section id="why">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="sec-eyebrow">Why it's different</p>
+        <h2 class="sec serif">Discipline is the product.</h2>
+        <p class="sec-sub">Anyone can ask a model for a stock pick. AgenticWhales is the system around the model — the
+          risk spine, the audit trail, and the feedback loop that compound into an edge.</p>
+      </div>
+
+      <div class="why">
+        <div class="feat"><h3>Hard risk limits</h3><p>Position caps, daily-drawdown halts, slippage bounds and kill switches bound every trade — autonomous or manual. The model never overrides them.</p></div>
+        <div class="feat"><h3>Deterministic sizing</h3><p>Fractional-Kelly position sizing, calibrated to the system's own track record. No vibes — auditable math you can replay.</p></div>
+        <div class="feat"><h3>A cognitive journal</h3><p>It keeps a journal on your behaviour too — flagging tilt, revenge trades and overconfidence before they cost you.</p></div>
+        <div class="feat"><h3>The signals a desk watches</h3><p>News, congressional disclosures, social flow, fundamentals and technicals — folded into one verdict, with provenance.</p></div>
+        <div class="feat"><h3>It learns</h3><p>Every resolved outcome feeds calibration, memory and prompt evaluation — so stated probabilities track reality over time.</p></div>
+        <div class="feat"><h3>Reproducible by design</h3><p>Every decision can be replayed from the exact data, model and prompt it saw. Performance you can verify, not just claim.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== AUDIENCE ===================== -->
+  <section>
+    <div class="wrap">
+      <div class="audience">
+        <div class="txt">
+          <h2 class="serif">Built for people who live in markets.</h2>
+          <p>Whether you run a book at a multi-manager fund or simply take your own capital seriously, AgenticWhales
+            gives you a tireless research committee and a disciplined risk process.</p>
+          <ul>
+            <li>Spin up recurring <b>recipes</b> that re-analyse your watchlist on a schedule or a market event.</li>
+            <li>Paper-trade the verdicts and watch a calibrated track record build, name by name.</li>
+            <li>Ask the fund why it did what it did — every call is logged, attributed and scored.</li>
+          </ul>
+        </div>
+        <button type="button" class="btn btn-solid btn-lg" data-waitlist>Join the waitlist</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== VISION ===================== -->
+  <section class="vision-section">
+    <div class="wrap">
+      <div class="vision">
+        <p class="v-eyebrow">Where this is going</p>
+        <h2 class="serif">The goal is a fully agentic hedge fund — one that <em>runs itself</em>.</h2>
+        <p>Today it researches, sizes, and paper-trades under your eye. The arc is an autonomous fund that
+          sources its own data, constructs and rebalances a portfolio across positions, learns continuously from its
+          own track record, and explains every move — operated in plain language, bounded by hard risk limits you set.</p>
+        <p class="v-foot">The principles never move: <b>the model proposes, the risk engine disposes</b> — sizing,
+          limits, and execution stay deterministic and auditable, and live capital is always an explicit, gated step.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DISCLAIMER ===================== -->
+  <section class="disclaimer-section">
+    <div class="wrap">
+      <p class="disclaimer">
+        AgenticWhales is a research and education tool. It executes <b>paper trades only</b> — no real orders are
+        placed and no money is moved. Nothing here is financial, investment or trading advice. Markets involve risk;
+        past simulated performance does not predict future results.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer>
+    <div class="wrap foot-inner">
+      <a class="brand" href="/">
+        <img src="/static/favicon.svg" alt="" style="width:20px;height:20px;border-radius:5px;" />
+        <span>AgenticWhales</span>
+      </a>
+      <div><a href="#how">How it works</a> &nbsp;·&nbsp; <a href="/signin">Sign in</a></div>
+      <div>© AgenticWhales · Paper-trading research platform</div>
+    </div>
+  </footer>
+
+  <!-- ===================== WAITLIST MODAL ===================== -->
+  <div class="wl-overlay" id="wl-overlay" role="dialog" aria-modal="true" aria-labelledby="wl-title">
+    <div class="wl-modal">
+      <button class="wl-close" id="wl-close" aria-label="Close">&times;</button>
+
+      <div id="wl-form-view">
+        <h3 id="wl-title" class="serif">Join the waitlist</h3>
+        <p class="wl-sub">AgenticWhales is in private beta. Leave your details and we'll send your access.</p>
+        <form id="wl-form" novalidate>
+          <div class="wl-field">
+            <label for="wl-email">Work email</label>
+            <input id="wl-email" name="email" type="email" autocomplete="email" required placeholder="you@firm.com" />
+          </div>
+          <div class="wl-row">
+            <div class="wl-field">
+              <label for="wl-name">Name</label>
+              <input id="wl-name" name="name" type="text" autocomplete="name" placeholder="Optional" />
+            </div>
+            <div class="wl-field">
+              <label for="wl-company">Firm</label>
+              <input id="wl-company" name="company" type="text" autocomplete="organization" placeholder="Optional" />
+            </div>
+          </div>
+          <div class="wl-field">
+            <label for="wl-note">Anything you want us to know?</label>
+            <textarea id="wl-note" name="note" placeholder="Optional"></textarea>
+          </div>
+          <button type="submit" class="btn btn-solid btn-lg wl-submit" id="wl-submit">Join the waitlist</button>
+          <p class="wl-msg" id="wl-msg" role="status" aria-live="polite"></p>
+          <p class="wl-fine">We'll only use this to send your beta access and occasional product updates. No spam.</p>
+        </form>
+      </div>
+
+      <div id="wl-success-view" class="wl-success" hidden>
+        <div class="tick" aria-hidden="true">&#10003;</div>
+        <h3 class="serif">You're on the list.</h3>
+        <p>Thanks — we'll be in touch at the email you gave us.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var overlay = document.getElementById("wl-overlay");
+      var formView = document.getElementById("wl-form-view");
+      var successView = document.getElementById("wl-success-view");
+      var form = document.getElementById("wl-form");
+      var emailEl = document.getElementById("wl-email");
+      var msgEl = document.getElementById("wl-msg");
+      var submitBtn = document.getElementById("wl-submit");
+      var lastFocus = null;
+
+      // Social-proof counter — shows the server's vanity "display" figure
+      // (floored at 100, doubled past the threshold). Hidden until it loads so
+      // it never flashes a wrong number.
+      function loadProof() {
+        fetch("/api/waitlist/count")
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j) return;
+            var proof = document.getElementById("wl-proof");
+            var el = document.getElementById("wl-proof-count");
+            if (el) el.textContent = (j.display || 100) + "+";
+            if (proof) proof.classList.remove("hidden");
+          })
+          .catch(function () { /* leave it hidden on error */ });
+      }
+      loadProof();
+
+      function open() {
+        lastFocus = document.activeElement;
+        formView.hidden = false; successView.hidden = true;
+        msgEl.textContent = ""; msgEl.className = "wl-msg";
+        overlay.classList.add("open");
+        setTimeout(function () { emailEl.focus(); }, 30);
+        document.addEventListener("keydown", onKey);
+      }
+      function close() {
+        overlay.classList.remove("open");
+        document.removeEventListener("keydown", onKey);
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+      }
+      function onKey(e) { if (e.key === "Escape") close(); }
+
+      document.querySelectorAll("[data-waitlist]").forEach(function (b) {
+        b.addEventListener("click", function (e) { e.preventDefault(); open(); });
+      });
+      document.getElementById("wl-close").addEventListener("click", close);
+      overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        msgEl.textContent = ""; msgEl.className = "wl-msg";
+        var email = (emailEl.value || "").trim();
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          msgEl.textContent = "Please enter a valid email."; msgEl.className = "wl-msg err";
+          emailEl.focus(); return;
+        }
+        submitBtn.disabled = true; submitBtn.textContent = "Joining…";
+        try {
+          var res = await fetch("/api/waitlist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: email,
+              name: document.getElementById("wl-name").value.trim(),
+              company: document.getElementById("wl-company").value.trim(),
+              note: document.getElementById("wl-note").value.trim(),
+              source: "landing",
+            }),
+          });
+          if (!res.ok) {
+            var j = await res.json().catch(function () { return {}; });
+            throw new Error((j && j.detail) || ("HTTP " + res.status));
+          }
+          formView.hidden = true; successView.hidden = false;
+          loadProof();  // refresh the counter to reflect the new signup
+        } catch (err) {
+          msgEl.textContent = "Something went wrong — " + (err.message || err) + ". Please try again.";
+          msgEl.className = "wl-msg err";
+        } finally {
+          submitBtn.disabled = false; submitBtn.textContent = "Join the waitlist";
+        }
+      });
+    })();
+  </script>
+</body>
+
+</html>

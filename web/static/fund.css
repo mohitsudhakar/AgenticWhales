@@ -1153,7 +1153,7 @@
   gap: 4px;
   margin-bottom: 16px;
   padding: 4px;
-  background: rgba(28,38,64,0.45);
+  background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 12px;
   width: max-content;
@@ -1173,11 +1173,11 @@
   white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.lab-subnav-btn:hover { background: rgba(255,255,255,0.03); color: var(--text); }
+.lab-subnav-btn:hover { background: var(--hover); color: var(--text); }
 .lab-subnav-btn.active {
-  background: var(--bg-elev);
+  background: var(--bg-card);
   color: var(--text);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  box-shadow: 0 1px 2px rgba(27,30,36,0.06), 0 2px 8px -4px rgba(27,30,36,0.12);
 }
 
 /* ============================================================================
@@ -1286,14 +1286,12 @@
 }
 .hero-headline {
   margin: 0 0 12px;
+  font-family: var(--serif);
   font-size: 38px;
-  font-weight: 700;
-  line-height: 1.08;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #f0f4ff 0%, #cad8ff 60%, #6ee7b7 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  color: var(--text);            /* solid ink — was an invisible clipped gradient on light */
 }
 @media (max-width: 800px) {
   .hero-headline { font-size: 28px; }
@@ -1476,10 +1474,7 @@
 .hero-round-num {
   font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6ee7b7, #60a5fa);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--accent-strong);   /* was a pale clipped gradient, invisible on light */
 }
 .hero-round-name { font-size: 12px; color: var(--text-dim); }
 .hero-cancel {

@@ -34,7 +34,9 @@ pip install -e '.[web]'
 pip install -e '.[integration]'
 
 # Drop your keys in .env (see "Environment variables" below).
-cp .env.example .env
+# NOTE: `-n` (no-clobber) so this can NEVER overwrite an existing .env that
+# already has your keys. If .env exists, this is a safe no-op — edit it directly.
+cp -n .env.example .env
 $EDITOR .env
 ```
 
@@ -78,7 +80,7 @@ The single uvicorn process boots all of these:
 
 ### Environment variables
 
-Drop these into `.env`. `cp .env.example .env` covers the essentials; the table below is the full surface:
+Drop these into `.env`. `cp -n .env.example .env` (no-clobber — won't touch an existing `.env`) scaffolds the essentials; the table below is the full surface:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -372,7 +374,7 @@ pip install .
 
 Alternatively, run with Docker:
 ```bash
-cp .env.example .env  # add your API keys
+cp -n .env.example .env  # scaffold .env if missing (no-clobber), then add your API keys
 docker compose run --rm agenticwhales
 ```
 
@@ -401,9 +403,10 @@ For enterprise providers (e.g. Azure OpenAI, AWS Bedrock), copy `.env.enterprise
 
 For local models, configure Ollama with `llm_provider: "ollama"` in your config.
 
-Alternatively, copy `.env.example` to `.env` and fill in your keys:
+Alternatively, scaffold `.env` from the template and fill in your keys. The
+`-n` (no-clobber) flag means this will **not** overwrite an existing `.env`:
 ```bash
-cp .env.example .env
+cp -n .env.example .env
 ```
 
 ### CLI Usage

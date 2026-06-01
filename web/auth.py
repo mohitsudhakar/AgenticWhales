@@ -1808,6 +1808,49 @@ def tier_default_spend_caps(tier: str) -> Dict[str, float]:
     return dict(_TIER_DEFAULTS.get(tier, _TIER_DEFAULTS["novice"]))
 
 
+# --- waitlist ---------------------------------------------------------------
+
+def save_waitlist_signup(row: Dict[str, Any]) -> None:
+    """Persist a waitlist signup. Dual-mode like the rest of storage: Postgres
+    when configured, in-memory otherwise. Keyed on the (lower-cased) email so a
+    repeat signup updates the existing row rather than duplicating.
+
+    Caller supplies the full dict (id, email, name, company, note, source,
+    created_at). The DB table is `waitlist_signups` with a unique `email`."""
+    _memstore[("waitlist_signups", row["email"])] = row
+    if not _db_writable():
+        return
+    _upsert_columns("waitlist_signups", row, on_conflict="email")
+
+
+def get_waitlist_signup(email: str) -> Optional[Dict[str, Any]]:
+    key = (email or "").strip().lower()
+    if _db_writable():
+        rows = _select_columns("waitlist_signups", filters={"email": key}, limit=1)
+        if rows:
+            return rows[0]
+    return _memstore.get(("waitlist_signups", key))
+
+
+def list_waitlist_signups(*, limit: int = 5000) -> List[Dict[str, Any]]:
+    """All signups, newest first. Admin-only surface (export)."""
+    if _db_writable():
+        rows = _select_columns(
+            "waitlist_signups", filters={}, order="created_at.desc", limit=limit,
+        )
+        if rows:
+            return rows
+    rows = [
+        v for (t, _), v in _memstore.items() if t == "waitlist_signups"
+    ]
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return rows[:limit]
+
+
+def count_waitlist_signups() -> int:
+    return len(list_waitlist_signups(limit=100000))
+
+
 # --- test helper -----------------------------------------------------------
 
 def _reset_memstore_for_tests() -> None:
