@@ -181,6 +181,15 @@ async def analyze_page() -> HTMLResponse:
     return _render_html("index.html")
 
 
+@app.get("/welcome", response_class=HTMLResponse)
+async def welcome_page() -> HTMLResponse:
+    """Public marketing landing page (shareable). Static, no auth, no data —
+    its 'Try it today' CTAs link to /fund, where the Google sign-in + disclaimer
+    gate takes over. Kept separate from the root sign-in landing so the URL can
+    be shared with prospects without dropping them straight into the auth modal."""
+    return _render_html("welcome.html")
+
+
 @app.get("/usage", response_class=HTMLResponse)
 async def usage_page() -> HTMLResponse:
     """Standalone admin-only usage dashboard. The page itself is served to

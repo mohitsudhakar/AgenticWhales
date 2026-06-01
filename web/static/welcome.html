@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="darkreader-lock" />
+  <title>AgenticWhales — Your personal AI hedge fund</title>
+  <meta name="description"
+    content="AgenticWhales is an autonomous, multi-agent investment system: a pod of AI analysts debates every ticker, sizes risk under hard limits, paper-trades the verdict, and learns from every outcome." />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+
+  <!-- Open Graph / link-preview card (for sharing the URL) -->
+  <meta property="og:title" content="AgenticWhales — Your personal AI hedge fund" />
+  <meta property="og:description"
+    content="A pod of agents researches every ticker, debates it, sizes the bet under hard risk limits, paper-trades the verdict, and learns from every outcome." />
+  <meta property="og:type" content="website" />
+
+  <style>
+    :root {
+      --navy: #0b0f17;
+      --navy-2: #0f1521;
+      --panel: #131a28;
+      --panel-2: #182233;
+      --ink: #e6ecf5;
+      --ink-soft: #9fb0c8;
+      --ink-faint: #6b7c96;
+      --line: rgba(255, 255, 255, 0.08);
+      --mint: #6ee7b7;
+      --blue: #60a5fa;
+      --pink: #f472b6;
+      --grad: linear-gradient(120deg, #6ee7b7 0%, #60a5fa 50%, #f472b6 100%);
+      --radius: 18px;
+      --shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.65);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1100px 600px at 80% -10%, rgba(96, 165, 250, 0.18), transparent 60%),
+        radial-gradient(900px 500px at 5% 0%, rgba(110, 231, 183, 0.14), transparent 55%),
+        radial-gradient(900px 600px at 50% 120%, rgba(244, 114, 182, 0.12), transparent 60%),
+        var(--navy);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.55;
+    }
+
+    a { color: inherit; }
+
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+    /* ---------- Nav ---------- */
+    header.nav {
+      position: sticky; top: 0; z-index: 20;
+      backdrop-filter: blur(10px);
+      background: rgba(11, 15, 23, 0.72);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand img { width: 30px; height: 30px; border-radius: 8px; display: block; }
+    .brand .tag { font-size: 13px; color: var(--ink-faint); font-weight: 500; }
+    .nav-cta {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 9px 16px; border-radius: 999px;
+      font-weight: 650; font-size: 14px; text-decoration: none;
+      color: #07111a; background: var(--grad);
+      box-shadow: 0 8px 22px -8px rgba(96, 165, 250, 0.6);
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 12px 28px -8px rgba(96, 165, 250, 0.75); }
+
+    /* ---------- Hero ---------- */
+    .hero { padding: 84px 0 56px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 13px; border-radius: 999px;
+      border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03);
+      color: var(--ink-soft); font-size: 13px; font-weight: 550;
+      margin-bottom: 22px;
+    }
+    .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(110, 231, 183, 0.18); }
+
+    h1.head {
+      font-size: clamp(38px, 6vw, 68px);
+      line-height: 1.04; letter-spacing: -0.025em;
+      margin: 0 0 20px; font-weight: 780; max-width: 16ch;
+    }
+    h1.head .grad {
+      background: var(--grad); -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+    }
+    .sub { font-size: clamp(17px, 2.4vw, 21px); color: var(--ink-soft); max-width: 60ch; margin: 0 0 34px; }
+
+    .cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 11px;
+      padding: 18px 34px; border-radius: 14px;
+      font-size: 18px; font-weight: 720; text-decoration: none;
+      color: #07111a; background: var(--grad);
+      box-shadow: 0 18px 44px -14px rgba(96, 165, 250, 0.7);
+      transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+    }
+    .btn-primary:hover { transform: translateY(-2px); filter: saturate(1.08); box-shadow: 0 22px 54px -14px rgba(96, 165, 250, 0.85); }
+    .btn-primary svg { width: 20px; height: 20px; }
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 17px 24px; border-radius: 14px; text-decoration: none;
+      font-size: 16px; font-weight: 600; color: var(--ink);
+      border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03);
+      transition: border-color .16s ease, background .16s ease;
+    }
+    .btn-ghost:hover { border-color: rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.06); }
+    .cta-note { margin-top: 16px; color: var(--ink-faint); font-size: 14px; }
+    .cta-note b { color: var(--ink-soft); font-weight: 600; }
+
+    /* ---------- Stat strip ---------- */
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
+      margin: 58px 0 0; padding: 26px; border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+    }
+    .stat .n { font-size: 30px; font-weight: 760; letter-spacing: -0.02em; }
+    .stat .n .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat .l { font-size: 13px; color: var(--ink-faint); margin-top: 4px; }
+
+    /* ---------- Section ---------- */
+    section { padding: 72px 0; }
+    .eyebrow { color: var(--blue); font-weight: 680; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+    h2.sec { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.02em; margin: 0 0 14px; font-weight: 740; }
+    .sec-sub { color: var(--ink-soft); font-size: 18px; max-width: 62ch; margin: 0 0 40px; }
+
+    /* pipeline */
+    .pipe { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+    .step {
+      border: 1px solid var(--line); border-radius: 14px; padding: 20px 18px;
+      background: linear-gradient(180deg, var(--panel), var(--navy-2));
+      position: relative;
+    }
+    .step .k { font-size: 12px; color: var(--ink-faint); font-weight: 700; letter-spacing: 0.06em; }
+    .step h3 { font-size: 16px; margin: 8px 0 6px; letter-spacing: -0.01em; }
+    .step p { font-size: 13.5px; color: var(--ink-soft); margin: 0; }
+    .step .bar { height: 3px; width: 38px; border-radius: 3px; background: var(--grad); margin-bottom: 14px; }
+
+    /* feature grid */
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .card {
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 26px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
+      transition: transform .16s ease, border-color .16s ease;
+    }
+    .card:hover { transform: translateY(-3px); border-color: rgba(96, 165, 250, 0.35); }
+    .card .ic { font-size: 26px; margin-bottom: 14px; display: block; }
+    .card h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.01em; }
+    .card p { margin: 0; color: var(--ink-soft); font-size: 14.5px; }
+
+    /* who / audience callout */
+    .audience {
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 34px;
+      background: linear-gradient(135deg, rgba(110, 231, 183, 0.07), rgba(244, 114, 182, 0.06));
+      display: flex; gap: 30px; align-items: center; flex-wrap: wrap;
+    }
+    .audience .txt { flex: 1 1 340px; }
+    .audience h2 { margin: 0 0 10px; font-size: 26px; letter-spacing: -0.02em; }
+    .audience p { margin: 0; color: var(--ink-soft); }
+    .audience ul { margin: 14px 0 0; padding-left: 18px; color: var(--ink-soft); font-size: 14.5px; }
+    .audience li { margin: 6px 0; }
+
+    /* final CTA */
+    .final {
+      text-align: center; padding: 80px 30px;
+      border: 1px solid var(--line); border-radius: 24px; margin: 30px 0 0;
+      background:
+        radial-gradient(700px 300px at 50% -20%, rgba(96, 165, 250, 0.22), transparent 60%),
+        linear-gradient(180deg, var(--panel-2), var(--navy-2));
+      box-shadow: var(--shadow);
+    }
+    .final h2 { font-size: clamp(28px, 4.5vw, 44px); margin: 0 0 14px; letter-spacing: -0.025em; font-weight: 760; }
+    .final p { color: var(--ink-soft); font-size: 18px; max-width: 52ch; margin: 0 auto 30px; }
+
+    /* footer */
+    footer { border-top: 1px solid var(--line); margin-top: 70px; }
+    .foot-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 28px 0; color: var(--ink-faint); font-size: 13px; }
+    .foot-inner a { color: var(--ink-soft); text-decoration: none; }
+    .foot-inner a:hover { color: var(--ink); }
+    .disclaimer { color: var(--ink-faint); font-size: 12.5px; max-width: 70ch; margin: 6px auto 0; line-height: 1.6; }
+
+    @media (max-width: 880px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .pipe { grid-template-columns: repeat(2, 1fr); }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .pipe { grid-template-columns: 1fr; }
+      .btn-primary, .btn-ghost { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ===================== NAV ===================== -->
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">
+        <img src="/static/favicon.svg" alt="AgenticWhales" />
+        <span>AgenticWhales</span>
+        <span class="tag">· your personal AI hedge fund</span>
+      </div>
+      <a class="nav-cta" href="/fund">Try it today →</a>
+    </div>
+  </header>
+
+  <!-- ===================== HERO ===================== -->
+  <div class="wrap">
+    <div class="hero">
+      <div class="pill"><span class="dot"></span> Multi-agent research · paper trading · learns from every outcome</div>
+      <h1 class="head">An <span class="grad">AI hedge fund</span> that researches, debates, and sizes every trade.</h1>
+      <p class="sub">
+        AgenticWhales puts every ticker on trial. A pod of specialist agents files briefs, a bull and a bear argue it
+        out, a risk committee weighs in, and a Portfolio Manager hands down a structured verdict — then sizes the bet
+        under hard risk limits, paper-trades it, and grades itself against the outcome.
+      </p>
+
+      <div class="cta-row">
+        <a class="btn-primary" href="/fund">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" stroke="#07111a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Try it today
+        </a>
+        <a class="btn-ghost" href="#how">See how it works</a>
+      </div>
+      <div class="cta-note">Sign in with <b>Google</b>, accept the disclaimer, and you're on the floor. Paper-trading only — no real money moves.</div>
+
+      <!-- stat strip -->
+      <div class="stats">
+        <div class="stat"><div class="n"><span class="grad">11</span></div><div class="l">specialist agents per decision</div></div>
+        <div class="stat"><div class="n"><span class="grad">&lt;2</span> min</div><div class="l">research → structured verdict</div></div>
+        <div class="stat"><div class="n"><span class="grad">24/7</span></div><div class="l">autonomous recipes &amp; alerts</div></div>
+        <div class="stat"><div class="n"><span class="grad">100%</span></div><div class="l">decisions auditable &amp; Brier-scored</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section id="how">
+    <div class="wrap">
+      <div class="eyebrow">The decision pipeline</div>
+      <h2 class="sec">A trading desk's workflow, run by agents.</h2>
+      <p class="sec-sub">Every analysis flows through the same committee a real fund uses — but the soft, persuadable
+        layer never touches the money math. The Portfolio Manager emits a structured decision; deterministic risk and
+        sizing logic does the rest.</p>
+
+      <div class="pipe">
+        <div class="step"><div class="bar"></div><div class="k">01 · ANALYSTS</div><h3>Put it on trial</h3><p>Market, news, quant &amp; fundamental analysts each file an evidence-backed brief.</p></div>
+        <div class="step"><div class="bar"></div><div class="k">02 · DEBATE</div><h3>Bull vs. bear</h3><p>Two researchers argue opposite sides — drawn from different model families to avoid a united front.</p></div>
+        <div class="step"><div class="bar"></div><div class="k">03 · RISK</div><h3>The risk committee</h3><p>Aggressive, conservative &amp; neutral voices stress-test the trade before it's sized.</p></div>
+        <div class="step"><div class="bar"></div><div class="k">04 · VERDICT</div><h3>Structured decision</h3><p>The PM hands down a rating, conviction, expected return &amp; probability — not prose.</p></div>
+        <div class="step"><div class="bar"></div><div class="k">05 · LEARN</div><h3>Size, fill, grade</h3><p>Fractional-Kelly sizing under hard limits, a paper fill, then Brier-scored against reality.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHY ===================== -->
+  <section style="padding-top:0;">
+    <div class="wrap">
+      <div class="eyebrow">Why it's different</div>
+      <h2 class="sec">Discipline is the product.</h2>
+      <p class="sec-sub">Anyone can ask a model for a stock pick. AgenticWhales is the system around the model — the
+        risk spine, the audit trail, and the feedback loop that compound into an edge.</p>
+
+      <div class="grid">
+        <div class="card"><span class="ic">⚖️</span><h3>Hard risk limits</h3><p>Position caps, daily-drawdown halts, slippage bounds, and kill switches bound <em>every</em> trade — autonomous or manual. The LLM never overrides them.</p></div>
+        <div class="card"><span class="ic">🧮</span><h3>Deterministic sizing</h3><p>Fractional-Kelly position sizing, calibrated to the system's own track record. No vibes — auditable math you can replay.</p></div>
+        <div class="card"><span class="ic">📓</span><h3>A cognitive journal</h3><p>It keeps a journal on <em>your</em> behaviour too — flagging tilt, revenge trades, and overconfidence before they cost you.</p></div>
+        <div class="card"><span class="ic">🛰️</span><h3>The signals a desk watches</h3><p>News, congressional disclosures, social flow, fundamentals and technicals — folded into one verdict, with provenance.</p></div>
+        <div class="card"><span class="ic">🔁</span><h3>It learns</h3><p>Every resolved outcome feeds calibration, memory, and prompt evaluation — so stated probabilities track reality over time.</p></div>
+        <div class="card"><span class="ic">🔍</span><h3>Fully auditable</h3><p>Every decision is reproducible from the exact data, model, and prompt it saw. Performance you can trust, not market it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== AUDIENCE ===================== -->
+  <section style="padding-top:0;">
+    <div class="wrap">
+      <div class="audience">
+        <div class="txt">
+          <h2>Built for people who live in markets.</h2>
+          <p>Whether you run a book at a multi-manager fund or just take your own capital seriously, AgenticWhales gives
+            you a tireless research pod and a disciplined risk process — in your pocket.</p>
+          <ul>
+            <li>Spin up recurring <b>recipes</b> that re-analyse your watchlist on a schedule or on a market event.</li>
+            <li>Paper-trade the verdicts and watch a calibrated track record build, name by name.</li>
+            <li>Ask the fund why it did what it did — every call is logged, attributed, and scored.</li>
+          </ul>
+        </div>
+        <a class="btn-primary" href="/fund">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" stroke="#07111a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Try it today
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FINAL CTA ===================== -->
+  <div class="wrap">
+    <div class="final">
+      <h2>Step onto the floor.</h2>
+      <p>Sign in with Google, accept the disclaimer, and run your first analysis in under two minutes.</p>
+      <a class="btn-primary" href="/fund" style="font-size:19px; padding:19px 40px;">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6" stroke="#07111a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Try it today
+      </a>
+      <p class="disclaimer" style="margin-top:26px;">
+        AgenticWhales is a research &amp; education tool. It executes <b>paper trades only</b> — no real orders are
+        placed and no money is moved. Nothing here is financial, investment, or trading advice. Markets involve risk;
+        past simulated performance does not predict future results.
+      </p>
+    </div>
+  </div>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer>
+    <div class="wrap foot-inner">
+      <div class="brand" style="font-size:14px;">
+        <img src="/static/favicon.svg" alt="" />
+        <span>AgenticWhales</span>
+      </div>
+      <div>
+        <a href="/fund">Launch the fund</a> &nbsp;·&nbsp;
+        <a href="#how">How it works</a>
+      </div>
+      <div>© AgenticWhales · Paper-trading research platform</div>
+    </div>
+  </footer>
+</body>
+
+</html>
