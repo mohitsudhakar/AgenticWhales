@@ -15,6 +15,26 @@
 
 ---
 
+## Operating layer — what's actually in flight
+
+> Added per the 2026-06-02 executive critique (Decision F). A dependency DAG is
+> not an operating plan; without a single "now" and a stop-list, work begins
+> everywhere and lands nowhere — which is how a ratified P0 slipped two days.
+
+- **Now (WIP = 1):** **M1a** — the deterministic replay substrate. *Nothing else
+  in Horizon 1 starts until M1a replays one date byte-identically twice.*
+- **Next:** M1b (the generator on the substrate), then M2 → M3 (the go/no-go).
+- **Stop-list — do not touch until M3 returns a verdict:** portfolio construction
+  (M6), data vendors (M11), behavioral coach (M12), execution/broker (M14),
+  multi-market (M15). Building any of these before the edge is proven is building
+  on an unproven foundation.
+- **Definition of shipped:** a milestone is *done* only when its code is
+  **committed and merged to `main`**, not when it exists in a working tree. (The
+  2026-06-01 trust fix sat applied-but-uncommitted for 48h while production kept
+  serving the defect — "done in a working tree" is not done.)
+
+---
+
 ## How to read a milestone
 
 ```
@@ -36,23 +56,57 @@ Status legend: ☐ not started · ◐ in progress · ☑ done.
 > on *"does the real LLM debate beat Classical-alone and a flat-coin prior,
 > out-of-sample, net of realistic costs?"*
 
-### ☐ M1 — Replayable real-LLM walk-forward backtest  · G1 · H1  ★ highest leverage
+> **M1 was re-cut into M1a + M1b** per the 2026-06-02 critique (Decisions B, C).
+> As originally written, M1 bundled a substrate that does not exist (a
+> deterministic replay store) with the generator that runs on it — unbounded and
+> certain to stall. Split, M1a is independently testable and M1b becomes a small
+> wrapper. The original acceptance bar ("≥1 ticker, ≥1 year") was one draw from
+> one regime — an anecdote, not a scoreboard; it is now two bars (smoke + evidence).
+
+### ☐ M1a — Deterministic replay substrate  · G1 · H1  ★ Now (WIP=1)
+**Goal:** make a dated decision *reproducible* — same date in, byte-identical
+inputs out — so any equity curve built on it is evidence, not noise.
+**Deliverable:** a **content-addressed replay cache** keyed on
+`(ticker, as-of-date, prompt-hash, model, config)`, immutable, plus **frozen
+tool-data snapshots** so that analysts which fetch news / prices / embeddings
+read from the snapshot, not the live web.
+**Acceptance bar:** replay the *same* date twice → **byte-identical** model
+inputs (smoke bar). Two determinism traps must be closed and tested:
+- **LLM nondeterminism** — force `temperature = 0` for replay; any `temp > 0`
+  makes the curve unreproducible.
+- **Tool-data look-ahead** — the `asof` guard checks the *requested* date, not
+  the *content's* date; a live fetch pulls post-as-of data straight through it.
+  The snapshot must freeze *tool outputs*, not just the date parameter.
+**Lands in:** new `agenticwhales/replay.py` (the content-addressed store +
+snapshot freezer); `agenticwhales/asof.py` (extend the guard to assert on
+snapshot provenance). **Do not** reuse `auth.find_cached_session` — that cache is
+keyed for live session reuse, not dated deterministic replay.
+**Depends on:** nothing. **Start here.**
+
+### ☐ M1b — Real-LLM decision generator on the substrate  · G1 · H1
 **Goal:** run the *actual* agent graph at each historical date and produce a
 walk-forward equity curve, not a stub.
-**Deliverable:** an `llm_decision_generator(...)` that conforms to the existing
-`DecisionGenerator` protocol and drives the real graph, plus a CLI/endpoint to
-run a dated range and emit metrics.
-**Acceptance bar:** for ≥1 ticker over ≥1 year, produce an equity curve with
-Sharpe, max-drawdown, hit-rate, turnover — reproducible from cached as-of data,
-with **zero look-ahead** (the `asof` guard holds across the whole run).
-**Lands in:**
-- `agenticwhales/backtest.py` — `run_backtest(decision_fn=...)` already accepts a
-  generator (the seam exists; stub is `momentum_stub_generator`).
-- New: `agenticwhales/graph/backtest_generator.py` — wraps `AgenticWhalesGraph`
-  + `asof.as_of_date(...)` so each day's decision sees only past data.
-- Cost control: cache per (ticker, date, config) so a re-run is cheap; reuse the
-  session cache pattern in `web/server.py` / `web/auth.find_cached_session`.
-**Depends on:** nothing. **Start here.**
+**Deliverable:** an `llm_decision_generator(...)` conforming to the existing
+`DecisionGenerator` protocol, driving the real graph against M1a's snapshot, plus
+a CLI/endpoint to run a dated range and emit metrics.
+**Acceptance bar — two bars, not one:**
+- *Smoke* (entry): one ticker, one date, `temp=0`, replayed twice byte-identical,
+  zero look-ahead — runs end-to-end as an N=1 smoke test *before* any multi-year
+  run, so we don't discover a leak after burning the budget.
+- *Evidence* (exit, feeds M3): a **panel of ≥20 names across sectors + ≥1 crypto
+  over ≥3 years spanning at least one drawdown regime**, reporting the
+  **distribution** of per-name Sharpe / max-drawdown / hit-rate / turnover — not a
+  single aggregate number.
+**Lands in:** `agenticwhales/backtest.py` (`run_backtest(decision_fn=...)`, seam
+exists; stub is `momentum_stub_generator`); new
+`agenticwhales/graph/backtest_generator.py` (wraps `AgenticWhalesGraph` to read
+only from M1a's snapshot).
+**Cost envelope (required before the evidence run):** a dry-run estimate of
+`dates × names × agents × providers` LLM calls and a **per-backtest budget cap**
+distinct from the global daily/monthly cost cap — otherwise a multi-year panel run
+either trips the global cap mid-run (producing a non-deterministic partial curve)
+or silently throttles. `agenticwhales/backtest.py` has *no* cost guard today.
+**Depends on:** M1a.
 
 ### ☐ M2 — Realistic slippage / market-impact model  · G6(partial) · H1
 **Goal:** backtests and paper trades pay realistic costs so the equity curve
@@ -68,10 +122,15 @@ costs on, and the cost drag reported as a line item.
 ### ☐ M3 — Baseline gauntlet + the go/no-go report  · G1 · H1
 **Goal:** answer the existential question with a chart, not a vibe.
 **Deliverable:** a report comparing M1's net-of-cost curve against **buy-and-hold,
-equal-weight, flat-coin p=0.5, and Classical-Analyst-alone** (`classical.analyze_classical`).
+equal-weight, flat-coin p=0.5, Classical-Analyst-alone** (`classical.analyze_classical`),
+**and a cost-and-turnover-matched random sizer** (same names, same trade count,
+same costs, random signs). Added per Decision E: beating buy-and-hold can be pure
+beta; beating a turnover-matched random trader on the *same* names net of cost is
+the first honest evidence of *skill*, not exposure.
 **Acceptance bar:** a committed report (numbers + plot) and an explicit verdict:
-*does the debate beat Classical-alone net of cost?* If no, that's a valid,
-valuable result — it redirects the whole roadmap.
+*does the debate beat Classical-alone **and the turnover-matched random sizer**,
+net of cost?* If no, that's a valid, valuable result — it redirects the whole
+roadmap.
 **Lands in:** `tests/evals/` (new `llm_backtest_eval.py`), `tests/evals/reports/`.
 **Depends on:** M1, M2.
 
@@ -213,21 +272,23 @@ exists to build on. **Depends on:** M13, M14.
 ## Critical path (the short version)
 
 ```
-M1 (real-LLM backtest)  ──►  M2 (costs)  ──►  M3 (go/no-go)  ◀── the H1 gate
-        │                                          │
-        └─► M5 (labels) ─► M4 (calibration)        ▼  (only if M3 says "yes")
-        └─► M8 (agent evals)              M6 (portfolio) ─► M7 (regime)
-        └─► M9 (memory)                              │
-                                          M10–M13 (compounding + trust)
-                                                     │
-                                          M14–M16 (real capital)
+M1a (replay substrate) ─► M1b (real-LLM gen) ─► M2 (costs) ─► M3 (go/no-go) ◀─ H1 gate
+        │                        │                                  │
+        │                        └─► M5 (labels) ─► M4 (calibration) ▼ (only if M3="yes")
+        │                        └─► M8 (agent evals)      M6 (portfolio) ─► M7 (regime)
+        └─ byte-identical replay  └─► M9 (memory)                  │
+           is the gate to M1b                          M10–M13 (compounding + trust)
+                                                                   │
+                                                        M14–M16 (real capital)
 ```
 
-**Next action for the next session:** start **M1** — write
-`agenticwhales/graph/backtest_generator.py` that adapts `AgenticWhalesGraph`
-into a `DecisionGenerator` under the `asof` guard, and wire it into
-`backtest.run_backtest(decision_fn=...)`. The seam already exists; the stub
-generator (`momentum_stub_generator`) shows the exact shape to match.
+**Next action for the next session:** start **M1a** (the only "now") — create
+`agenticwhales/replay.py` with a content-addressed store keyed on
+`(ticker, as-of-date, prompt-hash, model, config)` and a tool-output snapshot
+freezer, with `temp=0` enforced. Its acceptance test is the gate to M1b: replay
+one date twice and assert the model inputs are **byte-identical**. Only then write
+`agenticwhales/graph/backtest_generator.py` (M1b) to run the real graph against
+that frozen snapshot.
 
 ---
 
