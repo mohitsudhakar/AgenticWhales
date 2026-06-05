@@ -127,25 +127,21 @@ def to_csv(rows) -> str:
     return buf.getvalue()
 
 
-# --- public-facing vanity counter -------------------------------------------
+# --- public-facing signup counter -------------------------------------------
 #
-# The landing page shows social proof, not the raw signup count:
-#   - always at least 100 ("100+ already joined") for early credibility, and
-#   - once real signups cross DOUBLE_THRESHOLD, we display 2x the real number.
-# This is a marketing display value only; the admin export + DB always hold the
-# true figure.
+# For a *financial* product, social proof must be true. We show the real signup
+# count, and only once it crosses PROOF_MIN — below that we show nothing rather
+# than a fabricated floor. (Reverses the prior 100-floor / 2x-doubling vanity
+# logic: per the 2026-06-01 executive critique, Decision B, that was an
+# unambiguous trust defect for a finance brand.)
 
-DISPLAY_FLOOR = 100
-DOUBLE_THRESHOLD = 50
+PROOF_MIN = 25  # below this, the UI hides the counter entirely (display == 0)
 
 
 def display_count(real_count: int) -> int:
-    """Map the true signup count to the number shown in the UI.
+    """The number shown in the UI: the true count, or 0 (hidden) below PROOF_MIN.
 
-    - below the doubling threshold: floored at DISPLAY_FLOOR (so it reads
-      "100+" while the list is still small).
-    - at/above the threshold: 2x the real count, still never below the floor.
+    No floor, no multiplier — what the landing page shows is what the DB holds.
     """
     n = max(0, int(real_count))
-    shown = n * 2 if n >= DOUBLE_THRESHOLD else n
-    return max(DISPLAY_FLOOR, shown)
+    return n if n >= PROOF_MIN else 0

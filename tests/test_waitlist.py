@@ -128,26 +128,26 @@ def test_waitlist_count_public(client):
     client.post("/api/waitlist", json={"email": "c@d.com"})
     body = client.get("/api/waitlist/count").json()
     assert body["count"] == 2            # true figure
-    assert body["display"] == 100        # vanity floor
+    assert body["display"] == 0          # below PROOF_MIN → hidden, not floored
 
 
 @pytest.mark.parametrize("real,shown", [
-    (0, 100),      # empty → floor
-    (3, 100),      # small → floor (reads "100+")
-    (49, 100),     # just below threshold → still floor
-    (50, 100),     # at threshold: 50*2 = 100 (equals floor)
-    (60, 120),     # past threshold → doubled
-    (250, 500),    # doubled
+    (0, 0),                              # empty → hidden
+    (3, 0),                             # small → hidden (no fabricated floor)
+    (24, 0),                           # just below threshold → hidden
+    (25, 25),                          # at threshold → true count, shown
+    (60, 60),                          # above threshold → true count, no doubling
+    (250, 250),                        # true count, no doubling
 ])
 def test_display_count_curve(real, shown):
     assert waitlist.display_count(real) == shown
 
 
-def test_count_endpoint_reflects_doubling(client, monkeypatch):
-    # 60 real signups → UI shows 120
+def test_count_endpoint_reports_true_figure(client, monkeypatch):
+    # 60 real signups → UI shows the real 60 (no doubling, no floor)
     monkeypatch.setattr(auth, "count_waitlist_signups", lambda: 60)
     body = client.get("/api/waitlist/count").json()
-    assert body["count"] == 60 and body["display"] == 120
+    assert body["count"] == 60 and body["display"] == 60
 
 
 def test_waitlist_export_requires_admin(client):

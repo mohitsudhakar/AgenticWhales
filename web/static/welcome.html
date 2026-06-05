@@ -308,7 +308,7 @@
 
       <div class="proof hidden" id="wl-proof">
         <span class="dots" aria-hidden="true"><span class="dot-av"></span><span class="dot-av"></span><span class="dot-av"></span></span>
-        <span class="proof-text"><b id="wl-proof-count">100+</b> already joined the waitlist</span>
+        <span class="proof-text"><b id="wl-proof-count"></b> already joined the waitlist</span>
       </div>
 
       <div class="stats">
@@ -471,17 +471,20 @@
       var submitBtn = document.getElementById("wl-submit");
       var lastFocus = null;
 
-      // Social-proof counter — shows the server's vanity "display" figure
-      // (floored at 100, doubled past the threshold). Hidden until it loads so
-      // it never flashes a wrong number.
+      // Signup counter — shows the server's true "display" figure, which the
+      // API reports as 0 until it clears a real threshold. We render it only
+      // when it's a genuine number; otherwise the counter stays hidden (no
+      // fabricated floor). Hidden until it loads so it never flashes.
       function loadProof() {
         fetch("/api/waitlist/count")
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (j) {
             if (!j) return;
+            var shown = parseInt(j.display, 10) || 0;
+            if (shown <= 0) return; // below threshold → leave it hidden
             var proof = document.getElementById("wl-proof");
             var el = document.getElementById("wl-proof-count");
-            if (el) el.textContent = (j.display || 100) + "+";
+            if (el) el.textContent = String(shown);
             if (proof) proof.classList.remove("hidden");
           })
           .catch(function () { /* leave it hidden on error */ });

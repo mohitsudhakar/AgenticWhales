@@ -227,9 +227,9 @@ async def join_waitlist(payload: WaitlistPayload) -> Dict[str, Any]:
 
 @app.get("/api/waitlist/count")
 async def waitlist_count() -> Dict[str, Any]:
-    """Public: social-proof counter for the landing page. `display` is the
-    vanity figure shown in the UI (floored at 100, doubled past the threshold);
-    `count` is the true figure (kept for the admin/debug surface)."""
+    """Public: signup counter for the landing page. `display` is the figure the
+    UI shows — the true count once it clears `waitlist.PROOF_MIN`, else 0
+    (hidden). `count` is always the true figure (admin/debug surface)."""
     real = auth.count_waitlist_signups()
     return {"count": real, "display": waitlist.display_count(real)}
 
