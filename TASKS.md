@@ -20,6 +20,7 @@ Repo-specific task tracker. Managed via `/track` (run from this repo) or edit by
 
 ## Done
 
+- [x] (P1) 2026-06-06 — committed + pushed the strict-mode/asof work and triaged all 4 open PRs vs the North Star: #4 (M14 broker, stop-list + conflicting), #7 (debate-collision fixes, aligned but conflicting), #9 (stale status doc, superseded), #10 (complete+green but M11/M12 stop-list) — all marked needs-work/gated; none merged (owner-confirmed gate on #10).
 - [x] (P1) 2026-06-06 — strict (raise-on-future) mode for the as-of guard (`as_of_date(d, strict=True)`); M1a's determinism test must run in strict mode so a leaky generator can't pass the byte-identical bar (Decision C, 06-05 critique). Code + 6 tests + ROADMAP acceptance note.
 - [x] (P1) D4 — signal processing prefers structured `PortfolioDecision.rating` over the regex fallback.
 - [x] (P1) D1 — Heterogeneity Mandate made first-class with a diagram callout and fail-fast `heterogeneity_check()`.
