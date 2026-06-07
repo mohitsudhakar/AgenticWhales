@@ -395,12 +395,27 @@ def generate_llm_decisions(
                 continue
         # Defense-in-depth: strict as-of binding even though `feats` is already
         # a pure function of the bounded slice (no accessor is called here).
+        # Thinking models occasionally emit structured output missing required
+        # fields; retry a couple of times, then SKIP the date rather than
+        # fabricate a decision (which would inject fake signal). A skipped date
+        # simply has no position for every strategy.
+        decision = None
         with as_of_date(d, strict=strict):
-            decision = run_debate(
-                symbol, d, feats,
-                invoke_text=invoke_text, invoke_structured=invoke_structured,
-                force_commit=force_commit,
-            )
+            for attempt in range(3):
+                try:
+                    decision = run_debate(
+                        symbol, d, feats,
+                        invoke_text=invoke_text, invoke_structured=invoke_structured,
+                        force_commit=force_commit,
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("edge_probe: debate failed %s %s (attempt %d/3): %s",
+                                symbol, d, attempt + 1, exc)
+        if decision is None:
+            log.warning("edge_probe: SKIP %s %s after repeated structured-output failures",
+                        symbol, d)
+            continue
         decisions[d] = decision
         if cache:
             cache.put(symbol, d, feats, decision)

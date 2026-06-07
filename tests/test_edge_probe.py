@@ -196,6 +196,24 @@ def test_force_commit_cache_variant_isolation(tmp_path):
     assert base.get("AAPL", as_of, feats) is not None
 
 
+def test_generate_skips_on_persistent_structured_failure():
+    """A judge that always fails validation -> that date is skipped, run survives."""
+    hist = _make_history(days=400)
+    window = ep.Window("t", hist.index[120].date().isoformat(),
+                       hist.index[-1].date().isoformat())
+    sched = ep.monthly_schedule(hist, window)
+
+    def text(msgs):
+        return "x"
+
+    def always_fail(msgs):
+        raise ValueError("2 validation errors for PortfolioDecision")
+
+    out = ep.generate_llm_decisions("AAPL", hist, sched,
+                                    invoke_text=text, invoke_structured=always_fail)
+    assert out == {}  # every date skipped, no crash
+
+
 def test_run_debate_returns_decision():
     hist = _make_history(days=200)
     feats = ep.build_features(hist)

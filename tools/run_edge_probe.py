@@ -111,10 +111,14 @@ def main(argv=None) -> int:
                 log.warning("skip %s/%s: %s", symbol, window.name, exc)
                 continue
             log.info("  %s …", symbol)
-            r = ep.run_symbol(
-                symbol, window, history,
-                invoke_text=invoke_text, invoke_structured=invoke_structured,
-                cache=cache, random_seeds=seeds, force_commit=args.force_commit)
+            try:
+                r = ep.run_symbol(
+                    symbol, window, history,
+                    invoke_text=invoke_text, invoke_structured=invoke_structured,
+                    cache=cache, random_seeds=seeds, force_commit=args.force_commit)
+            except Exception as exc:  # noqa: BLE001 — one symbol must not kill the panel
+                log.warning("run_symbol failed for %s/%s: %s", symbol, window.name, exc)
+                continue
             per_symbol.append(r)
             if "llm" in r:
                 log.info("    LLM Sharpe=%s  random=%s  classical=%s  buy&hold=%s  (n=%s)",
