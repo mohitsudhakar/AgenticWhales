@@ -76,7 +76,11 @@ inputs (smoke bar). Two determinism traps must be closed and tested:
   makes the curve unreproducible.
 - **Tool-data look-ahead** — the `asof` guard checks the *requested* date, not
   the *content's* date; a live fetch pulls post-as-of data straight through it.
-  The snapshot must freeze *tool outputs*, not just the date parameter.
+  The snapshot must freeze *tool outputs*, not just the date parameter. **The
+  determinism test must run the guard in strict mode** (`as_of_date(d, strict=True)`,
+  landed 2026-06-06) so a future-dated request *raises* instead of being silently
+  truncated — otherwise a leaky generator passes the byte-identical bar for the
+  wrong reason. Truncation is disallowed during replay.
 **Lands in:** new `agenticwhales/replay.py` (the content-addressed store +
 snapshot freezer); `agenticwhales/asof.py` (extend the guard to assert on
 snapshot provenance). **Do not** reuse `auth.find_cached_session` — that cache is
