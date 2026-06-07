@@ -69,7 +69,10 @@ def main(argv=None) -> int:
     p.add_argument("--provider", default="deepseek")
     p.add_argument("--smoke", action="store_true",
                    help="1 symbol (AAPL), 1 window (w1) — quick real-LLM sanity check")
-    p.add_argument("--cache", default=str(Path.home() / ".tradingagents" / "edge_probe_cache.jsonl"))
+    p.add_argument("--force-commit", action="store_true",
+                   help="ablation: forbid Hold, force a directional call (isolates timidity from no-signal)")
+    p.add_argument("--cache", default=None,
+                   help="decision cache path (default: variant-specific file under ~/.tradingagents)")
     p.add_argument("--out", default=None, help="report path (default: docs/reviews/<date>-edge-probe.md)")
     p.add_argument("--random-seeds", type=int, default=20)
     args = p.parse_args(argv)
@@ -86,10 +89,16 @@ def main(argv=None) -> int:
     log.info("edge probe: %d symbols × %d windows · model=%s",
              len(symbols), len(windows), args.model)
 
+    variant = "forced-commit" if args.force_commit else ""
     invoke_text, invoke_structured = ep.default_invokers(
         provider=args.provider, model=args.model)
-    cache = ep.DecisionCache(Path(args.cache), model=args.model)
+    cache_path = Path(args.cache) if args.cache else (
+        Path.home() / ".tradingagents" /
+        ("edge_probe_cache_forced.jsonl" if args.force_commit else "edge_probe_cache.jsonl"))
+    cache = ep.DecisionCache(cache_path, model=args.model, variant=variant)
     seeds = tuple(range(args.random_seeds))
+    if args.force_commit:
+        log.info("FORCED-COMMIT ablation: Hold is forbidden (isolating timidity from no-signal)")
 
     window_results = []
     for window in windows:
@@ -105,7 +114,7 @@ def main(argv=None) -> int:
             r = ep.run_symbol(
                 symbol, window, history,
                 invoke_text=invoke_text, invoke_structured=invoke_structured,
-                cache=cache, random_seeds=seeds)
+                cache=cache, random_seeds=seeds, force_commit=args.force_commit)
             per_symbol.append(r)
             if "llm" in r:
                 log.info("    LLM Sharpe=%s  random=%s  classical=%s  buy&hold=%s  (n=%s)",
@@ -129,8 +138,9 @@ def main(argv=None) -> int:
     log.info("VERDICT: %s — %s", verdict["verdict"], verdict["reason"])
 
     generated = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    suffix = "-smoke" if args.smoke else ("-forced" if args.force_commit else "")
     out = Path(args.out) if args.out else Path("docs/reviews") / (
-        f"{_dt.date.today().isoformat()}-edge-probe{'-smoke' if args.smoke else ''}.md")
+        f"{_dt.date.today().isoformat()}-edge-probe{suffix}.md")
     path = ep.write_report(window_results, verdict, out, model=args.model, generated=generated)
     log.info("report → %s", path)
     print(f"\nVERDICT: {verdict['verdict']}\n{verdict['reason']}\nreport: {path}")

@@ -150,6 +150,52 @@ def _fake_invokers(rating=PortfolioRating.OVERWEIGHT):
     return invoke_text, invoke_structured
 
 
+def test_force_commit_coerces_hold():
+    """With force_commit, a Hold from the judge is coerced to a directional call."""
+    hist = _make_history(days=200)
+    feats = ep.build_features(hist)
+
+    def hold_text(msgs):
+        return "x"
+
+    def hold_structured(msgs):
+        return PortfolioDecision(
+            rating=PortfolioRating.HOLD, executive_summary="x", investment_thesis="x",
+            expected_return_pct=-3.0, prob_of_profit=0.4)
+
+    dec = ep.run_debate("AAPL", hist.index[-1].date(), feats,
+                        invoke_text=hold_text, invoke_structured=hold_structured,
+                        force_commit=True)
+    # Negative expected return -> coerced short.
+    assert dec.rating == PortfolioRating.UNDERWEIGHT
+
+
+def test_force_commit_respects_lean_direction():
+    dec = PortfolioDecision(rating=PortfolioRating.HOLD, executive_summary="x",
+                            investment_thesis="x", expected_return_pct=4.0)
+    assert ep._coerce_directional(dec).rating == PortfolioRating.OVERWEIGHT
+
+
+def test_coerce_leaves_directional_untouched():
+    dec = PortfolioDecision(rating=PortfolioRating.SELL, executive_summary="x",
+                            investment_thesis="x")
+    assert ep._coerce_directional(dec).rating == PortfolioRating.SELL
+
+
+def test_force_commit_cache_variant_isolation(tmp_path):
+    """The same (symbol,date,features) caches separately per variant."""
+    base = ep.DecisionCache(tmp_path / "c.jsonl", model="m", variant="")
+    forced = ep.DecisionCache(tmp_path / "c.jsonl", model="m", variant="forced-commit")
+    hist = _make_history(days=200)
+    feats = ep.build_features(hist)
+    as_of = hist.index[-1].date()
+    dec = PortfolioDecision(rating=PortfolioRating.HOLD, executive_summary="x", investment_thesis="x")
+    base.put("AAPL", as_of, feats, dec)
+    # Forced variant must NOT see the baseline-variant entry.
+    assert forced.get("AAPL", as_of, feats) is None
+    assert base.get("AAPL", as_of, feats) is not None
+
+
 def test_run_debate_returns_decision():
     hist = _make_history(days=200)
     feats = ep.build_features(hist)

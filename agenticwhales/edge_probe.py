@@ -201,6 +201,26 @@ InvokeText = Callable[[List[Tuple[str, str]]], str]
 InvokeStructured = Callable[[List[Tuple[str, str]]], PortfolioDecision]
 
 
+def _coerce_directional(decision: PortfolioDecision) -> PortfolioDecision:
+    """Force a Hold into the nearest directional call (forced-commit ablation).
+
+    Uses the decision's own expected_return_pct / prob_of_profit as the tie-break,
+    so the coercion respects whatever lean the model already expressed.
+    """
+    if decision.rating != PortfolioRating.HOLD:
+        return decision
+    er = decision.expected_return_pct
+    pp = decision.prob_of_profit
+    if er is not None and er != 0:
+        long = er > 0
+    elif pp is not None and pp != 0.5:
+        long = pp > 0.5
+    else:
+        long = True  # deterministic default; no information either way
+    decision.rating = PortfolioRating.OVERWEIGHT if long else PortfolioRating.UNDERWEIGHT
+    return decision
+
+
 def run_debate(
     symbol: str,
     as_of: _dt.date,
@@ -208,11 +228,16 @@ def run_debate(
     *,
     invoke_text: InvokeText,
     invoke_structured: InvokeStructured,
+    force_commit: bool = False,
 ) -> PortfolioDecision:
     """Bull (blind) + Bear (blind) + Judge -> structured PortfolioDecision.
 
     Blind first round: bull and bear do not see each other, preserving
     independence (mirrors the production graph's `blind_first_round`).
+
+    When `force_commit=True`, the judge is forbidden from choosing Hold — the
+    ablation that isolates "the model is too timid" (cause #1) from "there is no
+    signal in the chart" (cause #5). Any residual Hold is coerced directionally.
     """
     ctx = _features_block(symbol, as_of, features)
     bull = invoke_text([
@@ -229,16 +254,30 @@ def run_debate(
          "short or flat. Cite specific numbers. Be honest about weak signals. <=120 words."),
         ("human", ctx),
     ])
+    if force_commit:
+        judge_system = (
+            "You are a portfolio manager who MUST take a directional position. "
+            "Hold is NOT permitted. Weigh the bull and bear cases against the "
+            "point-in-time features and choose long (Buy/Overweight) or short "
+            "(Underweight/Sell) based on the balance of evidence, even when the "
+            "call is close — commit to the more probable direction. Provide the "
+            "structured decision fields, including expected_return_pct, "
+            "expected_volatility_pct, prob_of_profit (0-1), and expected_hold_days "
+            "(~21 for a monthly horizon)."
+        )
+    else:
+        judge_system = (
+            "You are a portfolio manager. Weigh the bull and bear cases against the "
+            "point-in-time features and decide a position. Base your rating only on the "
+            "evidence; a Hold is appropriate when signals conflict. Provide the structured "
+            "decision fields, including expected_return_pct, expected_volatility_pct, "
+            "prob_of_profit (0-1), and expected_hold_days (~21 for a monthly horizon)."
+        )
     decision = invoke_structured([
-        ("system",
-         "You are a portfolio manager. Weigh the bull and bear cases against the "
-         "point-in-time features and decide a position. Base your rating only on the "
-         "evidence; a Hold is appropriate when signals conflict. Provide the structured "
-         "decision fields, including expected_return_pct, expected_volatility_pct, "
-         "prob_of_profit (0-1), and expected_hold_days (~21 for a monthly horizon)."),
+        ("system", judge_system),
         ("human", f"{ctx}\n\nBULL CASE:\n{bull}\n\nBEAR CASE:\n{bear}\n"),
     ])
-    return decision
+    return _coerce_directional(decision) if force_commit else decision
 
 
 def default_invokers(
@@ -277,9 +316,10 @@ def default_invokers(
 class DecisionCache:
     """JSONL-backed cache of final decisions keyed by (symbol, date, features, model)."""
 
-    def __init__(self, path: Optional[Path], model: str):
+    def __init__(self, path: Optional[Path], model: str, variant: str = ""):
         self.path = Path(path) if path else None
         self.model = model
+        self.variant = variant
         self._mem: Dict[str, dict] = {}
         if self.path and self.path.exists():
             for line in self.path.read_text().splitlines():
@@ -290,7 +330,7 @@ class DecisionCache:
     def _key(self, symbol: str, as_of: _dt.date, features: Dict) -> str:
         blob = json.dumps(
             {"s": symbol, "d": as_of.isoformat(), "f": features,
-             "m": self.model, "v": PROMPT_VERSION},
+             "m": self.model, "v": PROMPT_VERSION, "var": self.variant},
             sort_keys=True,
         )
         return hashlib.sha256(blob.encode()).hexdigest()
@@ -339,6 +379,7 @@ def generate_llm_decisions(
     invoke_structured: InvokeStructured,
     cache: Optional[DecisionCache] = None,
     strict: bool = True,
+    force_commit: bool = False,
 ) -> Dict[_dt.date, PortfolioDecision]:
     """Run the debate on each schedule date using only data <= that date."""
     decisions: Dict[_dt.date, PortfolioDecision] = {}
@@ -358,6 +399,7 @@ def generate_llm_decisions(
             decision = run_debate(
                 symbol, d, feats,
                 invoke_text=invoke_text, invoke_structured=invoke_structured,
+                force_commit=force_commit,
             )
         decisions[d] = decision
         if cache:
@@ -533,6 +575,7 @@ def run_symbol(
     cache: Optional[DecisionCache] = None,
     cost_bps: Optional[float] = None,
     random_seeds: Sequence[int] = tuple(range(20)),
+    force_commit: bool = False,
 ) -> Dict:
     """Run LLM + all baselines for one (symbol, window). Returns per-strategy metrics."""
     cost = cost_bps if cost_bps is not None else COST_BPS_OVERRIDE.get(symbol, DEFAULT_COST_BPS)
@@ -543,6 +586,7 @@ def run_symbol(
     llm_decisions = generate_llm_decisions(
         symbol, history, schedule,
         invoke_text=invoke_text, invoke_structured=invoke_structured, cache=cache,
+        force_commit=force_commit,
     )
     llm_w = weights_from_decisions(llm_decisions)
 
