@@ -40,6 +40,7 @@ from typing import Callable, Optional, TypeVar
 log = logging.getLogger(__name__)
 
 _AS_OF: ContextVar[Optional[_dt.date]] = ContextVar("aw_as_of_date", default=None)
+_STRICT: ContextVar[bool] = ContextVar("aw_as_of_strict", default=False)
 
 F = TypeVar("F", bound=Callable)
 
@@ -74,23 +75,34 @@ def _parse_date(value) -> Optional[_dt.date]:
 
 
 @contextmanager
-def as_of_date(date):
+def as_of_date(date, *, strict: bool = False):
     """Bind an as-of date for the duration of the `with` block.
 
     Accepts a `date`, `datetime`, or ISO-format string. Nested blocks restore
     the prior value on exit. None unsets (useful in nested test fixtures).
+
+    When `strict=True`, future-dated requests *raise* `LookAheadViolation`
+    instead of being silently truncated to the as-of date — required for the
+    replay / look-ahead acceptance test so a leaky generator cannot pass clean.
     """
     parsed = _parse_date(date) if date is not None else None
     token = _AS_OF.set(parsed)
+    strict_token = _STRICT.set(bool(strict))
     try:
         yield parsed
     finally:
+        _STRICT.reset(strict_token)
         _AS_OF.reset(token)
 
 
 def current_as_of() -> Optional[_dt.date]:
     """Return the current as-of date (or None if not inside a `with as_of_date`)."""
     return _AS_OF.get()
+
+
+def is_strict() -> bool:
+    """Return True if the active as-of binding is in strict (raise-on-future) mode."""
+    return _STRICT.get()
 
 
 def bounded_to_as_of(*, date_arg: str = "end_date", date_arg_pos: Optional[int] = None) -> Callable[[F], F]:
@@ -121,6 +133,14 @@ def bounded_to_as_of(*, date_arg: str = "end_date", date_arg_pos: Optional[int] 
             end = _parse_date(end_raw)
             if end is None or end <= bound:
                 return fn(*args, **kwargs)
+            # Future-dated request. In strict mode this is a hard error — the
+            # whole point of the replay acceptance test is to surface, not
+            # silently repair, look-ahead.
+            if _STRICT.get():
+                raise LookAheadViolation(
+                    f"{fn.__name__}: {date_arg} {end} > as_of {bound} in strict mode "
+                    f"(truncation disabled during replay)"
+                )
             # Find start to verify the truncated window is non-empty.
             for sk in ("start_date", "from_date", "curr_date"):
                 if sk in kwargs:
