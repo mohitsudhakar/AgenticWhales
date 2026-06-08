@@ -149,17 +149,58 @@ def test_history_guest_is_empty(client):
     assert h["signed_in"] is False and h["audits"] == []
 
 
-def test_audit_persists_and_history_returns_it(client):
+def test_audit_persists_and_history_returns_summary(client):
     from web.auth import get_current_user_id
     server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-1"
     try:
-        r = client.post("/api/coach/audit", json={"use_demo": True})
-        assert r.status_code == 200
+        assert client.post("/api/coach/audit", json={"use_demo": True}).status_code == 200
         h = client.get("/api/coach/history").json()
         assert h["signed_in"] is True
-        mine = [a for a in h["audits"] if a["user_id"] == "coach-test-user-1"]
-        assert len(mine) >= 1
-        assert "discipline_score" in mine[0] and "leak_summary" in mine[0]
+        assert len(h["audits"]) >= 1
+        a = h["audits"][0]
+        assert "discipline_score" in a and "n_trades" in a
+        assert "transactions" not in a  # history is summary-only (light payload)
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_latest_recomputes_full_report_from_persisted_trades(client):
+    from web.auth import get_current_user_id
+    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-2"
+    try:
+        client.post("/api/coach/audit", json={"use_demo": True})
+        r = client.get("/api/coach/latest").json()
+        assert r["signed_in"] and r["has_audit"]
+        rep = r["report"]
+        assert rep["n_trades"] == 12 and r["report"]["n_transactions"] == 24
+        assert len(rep["leaks"]) >= 1 and "evidence" in rep["leaks"][0]  # full detail, not just summary
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_latest_no_audit_for_fresh_user(client):
+    from web.auth import get_current_user_id
+    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-fresh-user"
+    try:
+        r = client.get("/api/coach/latest").json()
+        assert r["signed_in"] is True and r["has_audit"] is False
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_pretrade_uses_signed_in_users_history(client, monkeypatch):
+    import agenticwhales.decision_support as ds
+    monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {"available": False, "symbol": "NVDA"})
+    from web.auth import get_current_user_id
+    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-3"
+    try:
+        client.post("/api/coach/audit", json={"use_demo": True})  # persist their (demo) history
+        # No demo flag, no transactions -> server should load THEIR history and catch the revenge trade.
+        r = client.post("/api/pretrade/check", json={
+            "trade": {"symbol": "NVDA", "side": "long", "qty": 300, "entry_price": 120},
+            "equity": 200000, "use_demo_history": False, "include_ai": False}).json()
+        assert r["verdict"] == "BLOCK"
+        assert any("revenge" in c["name"].lower() for c in r["checks"])
     finally:
         server.app.dependency_overrides.clear()
 

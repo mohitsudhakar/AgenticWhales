@@ -64,8 +64,8 @@ def _ocr_pdf_to_markdown(pdf_bytes: bytes) -> str:
     return str(content or "")
 
 
-def _persist_audit(user_id: str, report_dict: Dict) -> None:
-    """Save an audit summary for signed-in users (no-op for guests)."""
+def _persist_audit(user_id: str, report_dict: Dict, txns: List[Transaction]) -> None:
+    """Save an audit (summary + raw trades) for signed-in users (no-op for guests)."""
     if not user_id or user_id == auth.ANONYMOUS_USER_ID:
         return
     try:
@@ -79,9 +79,25 @@ def _persist_audit(user_id: str, report_dict: Dict) -> None:
             "n_trades": int(report_dict.get("n_trades", 0)),
             "leak_summary": [{"name": l["name"], "dollars": l["dollars"]}
                              for l in report_dict.get("leaks", [])],
+            "transactions": [t.model_dump() for t in txns],
         })
     except Exception as exc:  # noqa: BLE001 — persistence must never break the audit
         log.warning("coach audit persist failed: %s", exc)
+
+
+def _latest_user_trades(user_id: str) -> List[Transaction]:
+    """The signed-in user's most recently-uploaded trades (empty for guests)."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return []
+    row = auth.get_latest_coach_audit(user_id)
+    raw = (row or {}).get("transactions") or []
+    out = []
+    for t in raw:
+        try:
+            out.append(Transaction(**t))
+        except Exception:  # noqa: BLE001
+            continue
+    return out
 
 # Provider used to extract transactions from PDF statements (DeepSeek key is in .env).
 _EXTRACT_PROVIDER = "deepseek"
@@ -128,7 +144,7 @@ async def coach_audit(p: AuditPayload, user_id: str = Depends(get_current_user_i
                             status_code=400)
     report = coach.audit_trades(txns, fees_paid=p.fees_paid)
     out = report.to_dict()
-    _persist_audit(user_id, out)
+    _persist_audit(user_id, out, txns)
     return out
 
 
@@ -183,16 +199,33 @@ async def coach_upload(file: UploadFile = File(...),
     out = report.to_dict()
     out["warnings"] = warnings
     out["n_transactions"] = len(txns)
-    _persist_audit(user_id, out)
+    _persist_audit(user_id, out, txns)
     return out
 
 
 @router.get("/api/coach/history")
 async def coach_history(user_id: str = Depends(get_current_user_id)):
-    """A signed-in user's past audits, newest first — powers the score-over-time chart."""
+    """A signed-in user's past audit summaries, newest first — the score trend."""
     if not user_id or user_id == auth.ANONYMOUS_USER_ID:
         return {"signed_in": False, "audits": []}
     return {"signed_in": True, "audits": auth.list_coach_audits(user_id)}
+
+
+@router.get("/api/coach/latest")
+async def coach_latest(user_id: str = Depends(get_current_user_id)):
+    """The signed-in user's latest audit, recomputed from their persisted trades.
+    Drives the returning-user dashboard (no re-upload needed)."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return {"signed_in": False, "has_audit": False}
+    row = auth.get_latest_coach_audit(user_id)
+    txns = _latest_user_trades(user_id)
+    if not row or not txns:
+        return {"signed_in": True, "has_audit": False}
+    report = coach.audit_trades(txns)  # deterministic recompute; fast, no network
+    out = report.to_dict()
+    out["created_at"] = row.get("created_at")
+    out["n_transactions"] = len(txns)
+    return {"signed_in": True, "has_audit": True, "report": out}
 
 
 def coach_extract_pdf(text: str, on_warn) -> List[Transaction]:
@@ -226,7 +259,7 @@ class PretradePayload(BaseModel):
 
 
 @router.post("/api/pretrade/check")
-async def pretrade_check(p: PretradePayload):
+async def pretrade_check(p: PretradePayload, user_id: str = Depends(get_current_user_id)):
     recent = None
     profile = None
     txns: List[Transaction] = []
@@ -234,6 +267,9 @@ async def pretrade_check(p: PretradePayload):
         txns = coach.sample_history()
     elif p.transactions:
         txns = [Transaction(**t.model_dump()) for t in p.transactions]
+    else:
+        # Signed-in: check against the user's OWN history automatically.
+        txns = _latest_user_trades(user_id)
     if txns:
         recent = coach.reconstruct_round_trips(txns)
         profile = coach.audit_trades(txns)

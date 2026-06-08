@@ -58,16 +58,16 @@
   <!-- Hero -->
   <header class="max-w-6xl mx-auto px-6 pt-20 pb-16">
     <div class="max-w-3xl">
-      <div class="pill text-emerald mb-5">Behavioral edge, not market prediction</div>
-      <h1 class="font-display text-5xl sm:text-6xl leading-[1.05] mb-6">
+      <div id="heroPill" class="pill text-emerald mb-5">Behavioral edge, not market prediction</div>
+      <h1 id="heroTitle" class="font-display text-5xl sm:text-6xl leading-[1.05] mb-6">
         Know what your <span class="italic">habits</span> cost you —<br>then stop repeating them.
       </h1>
-      <p class="text-lg text-muted leading-relaxed mb-8 max-w-2xl">
+      <p id="heroSub" class="text-lg text-muted leading-relaxed mb-8 max-w-2xl">
         We don't sell predictions. We turn your own trading history into discipline:
         a dollar-quantified audit of your behavioral leaks, and a pre-trade check that
         catches the mistake <span class="text-ink font-medium">before</span> you click buy.
       </p>
-      <div class="flex flex-wrap gap-3">
+      <div id="heroCtas" class="flex flex-wrap gap-3">
         <a href="#audit" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2">
           See a live audit <i data-lucide="arrow-down" class="w-4 h-4"></i></a>
         <a href="#check" class="border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition">Try the pre-trade check</a>
@@ -131,7 +131,7 @@
           <label class="flex flex-col gap-1.5"><span class="text-muted">Account equity</span>
             <input id="t_equity" type="number" value="200000" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
           <label class="flex items-center gap-2 mt-6 text-muted">
-            <input id="t_demo" type="checkbox" checked class="accent-emerald w-4 h-4"> use sample history</label>
+            <input id="t_demo" type="checkbox" checked class="accent-emerald w-4 h-4"> <span id="demoLabel">use sample history</span>
         </div>
         <button id="checkBtn" class="mt-6 w-full bg-ink text-cream py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center justify-center gap-2">
           <i data-lucide="shield-check" class="w-4 h-4"></i> Check this trade</button>
@@ -222,7 +222,7 @@ $('csvFile').onchange = async (e) => {
     if(r.error){ alert(r.error); return; }
     renderAudit(r);
     if(r.warnings && r.warnings.length) console.warn('extraction warnings:', r.warnings);
-    loadHistory();
+    if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); loadHistory(); }
     window.location.hash='#audit';
   } catch(err){ alert('Upload failed: '+err); }
   finally { lbl.textContent = prev; e.target.value=''; }
@@ -284,20 +284,77 @@ function renderSupport(d){
   </div>`;
 }
 
-// ---- Auth + discipline-over-time ----
+// ---- Auth + journey (guest / new / returning) ----
+let CURRENT = null;
+const BTN_DARK = 'bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2';
+const BTN_LINE = 'border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition flex items-center gap-2';
+const firstName = (u) => (u?.displayName && u.displayName !== 'trader') ? u.displayName.split(' ')[0]
+  : (u?.email ? u.email.split('@')[0] : '');
+const isSignedIn = (u) => !!(u && !u.isGuest && (u.email || u.displayName));
+
 function updateAuthUI(user){
+  CURRENT = user;
   const b = $('authBtn'), u = $('authUser'); b.classList.remove('hidden');
-  if(user && !user.isGuest && (user.email || user.displayName)){
-    const label = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
-    u.textContent = label; u.classList.remove('hidden');
-    b.textContent = 'Sign out';
-    b.onclick = () => window.AgenticWhalesAuth.signOut();
+  if(isSignedIn(user)){
+    u.textContent = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
+    u.classList.remove('hidden');
+    b.textContent = 'Sign out'; b.onclick = () => window.AgenticWhalesAuth.signOut();
   } else {
     u.classList.add('hidden'); u.textContent = '';
-    b.textContent = 'Sign in';
-    b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
+    b.textContent = 'Sign in'; b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
   }
-  loadHistory();
+  applyJourney(user);
+}
+
+function renderHero(mode, name){
+  const upload = `onclick="document.getElementById('csvFile').click()"`;
+  const H = {
+    guest: { pill:['Behavioral edge, not market prediction','text-emerald'],
+      title:'Know what your <span class="italic">habits</span> cost you —<br>then stop repeating them.',
+      sub:"We don't sell predictions. We turn your own trading history into discipline: a dollar-quantified audit of your behavioral leaks, and a pre-trade check that catches the mistake <span class=\"text-ink font-medium\">before</span> you click buy.",
+      ctas:`<a href="#audit" class="${BTN_DARK}">See a live audit <i data-lucide="arrow-down" class="w-4 h-4"></i></a><a href="#check" class="${BTN_LINE}">Try the pre-trade check</a>` },
+    new: { pill:['Welcome to AgenticWhales','text-muted'],
+      title:`Let's run your <span class="italic">first</span> audit${name?', '+name:''}.`,
+      sub:"Upload a statement — CSV, PDF, or a screenshot — and I'll show you, in dollars, exactly what your habits cost you, and the rules that fix them. Nothing is shared; we never place orders.",
+      ctas:`<button ${upload} class="${BTN_DARK}"><i data-lucide="upload" class="w-4 h-4"></i> Upload your statement</button><button onclick="loadDemo();location.hash='#audit'" class="${BTN_LINE}">See a sample first</button>` },
+    returning: { pill:['Welcome back','text-muted'],
+      title:`Here's where your <span class="italic">discipline</span> stands${name?', '+name:''}.`,
+      sub:"Your latest audit and discipline trend are below. Upload a new statement anytime to refresh them, or run a trade past the pre-trade check.",
+      ctas:`<button ${upload} class="${BTN_DARK}"><i data-lucide="upload" class="w-4 h-4"></i> Upload a new statement</button><a href="#check" class="${BTN_LINE}">Pre-trade check</a>` },
+  }[mode];
+  $('heroPill').textContent = H.pill[0]; $('heroPill').className = 'pill mb-5 ' + H.pill[1];
+  $('heroTitle').innerHTML = H.title; $('heroSub').innerHTML = H.sub; $('heroCtas').innerHTML = H.ctas;
+  lucide.createIcons();
+}
+
+function renderEmptyAudit(){
+  $('scorecard').innerHTML = `<div class="card p-10 lg:col-span-3 text-center fade-in">
+    <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto mb-3 text-muted"></i>
+    <p class="font-display text-2xl mb-2">No audit yet</p>
+    <p class="text-muted mb-5 max-w-md mx-auto">Upload your trading history and I'll quantify what your habits cost you — and exactly how to fix them.</p>
+    <button onclick="document.getElementById('csvFile').click()" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Upload CSV / PDF / image</button></div>`;
+  $('leaks').innerHTML = '';
+  lucide.createIcons();
+}
+
+function setPretradeMode(signedIn){
+  const demo = $('t_demo'), lbl = $('demoLabel');
+  if(signedIn){ demo.checked = false; demo.classList.add('hidden'); lbl.textContent = 'checking against your history'; }
+  else { demo.checked = true; demo.classList.remove('hidden'); lbl.textContent = 'use sample history'; }
+}
+
+async function applyJourney(user){
+  const signedIn = isSignedIn(user);
+  setPretradeMode(signedIn);
+  if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false}); return; }
+  const name = firstName(user);
+  let latest = null;
+  try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
+  if(latest && latest.has_audit){
+    renderHero('returning', name); renderAudit(latest.report); loadHistory();
+  } else {
+    renderHero('new', name); renderEmptyAudit(); renderTrend({signed_in:true, audits:[]});
+  }
 }
 
 async function loadHistory(){
@@ -339,12 +396,12 @@ function renderTrend(r){
 function whenAuthReady(cb, n=0){
   if(window.AgenticWhalesAuth){ cb(); }
   else if(n<40){ setTimeout(()=>whenAuthReady(cb, n+1), 150); }
-  else { renderTrend({signed_in:false}); } // Supabase unconfigured -> guest CTA
+  else { applyJourney(null); } // Supabase unavailable -> guest journey
 }
-whenAuthReady(()=>{ window.AgenticWhalesAuth.onChange(updateAuthUI); });
 
 lucide.createIcons();
-loadDemo();
+applyJourney(null); // optimistic guest render so the page isn't blank during auth load
+whenAuthReady(() => window.AgenticWhalesAuth.onChange(updateAuthUI));
 </script>
 </body>
 </html>

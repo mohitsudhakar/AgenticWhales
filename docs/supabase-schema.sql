@@ -1108,8 +1108,13 @@ create table if not exists public.coach_audits (
   total_pnl numeric(20,8) not null default 0,
   disciplined_pnl numeric(20,8) not null default 0,
   n_trades integer not null default 0,
-  leak_summary jsonb
+  leak_summary jsonb,
+  transactions jsonb          -- raw extracted trades, so a returning user's audit
+                              -- is reconstructable without re-uploading
 );
+
+-- Idempotent column add for databases created before `transactions` existed.
+alter table public.coach_audits add column if not exists transactions jsonb;
 
 create index if not exists coach_audits_user_idx
   on public.coach_audits (user_id, created_at desc);

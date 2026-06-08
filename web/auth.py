@@ -704,19 +704,40 @@ def insert_coach_audit(row: Dict[str, Any]) -> None:
     _upsert_columns("coach_audits", row, on_conflict="id")
 
 
+_AUDIT_SUMMARY_COLS = "id,created_at,discipline_score,total_pnl,disciplined_pnl,n_trades"
+
+
 def list_coach_audits(user_id: str, *, limit: int = 60) -> list:
-    """Return a user's coach audits, newest first (for the discipline-over-time chart)."""
+    """A user's audit *summaries*, newest first (for the discipline-over-time chart).
+    Deliberately excludes the heavy `transactions`/`leak_summary` payloads."""
     if _db_writable():
         return _select_columns(
             "coach_audits", filters={"user_id": user_id},
-            order="created_at.desc", limit=limit,
+            order="created_at.desc", limit=limit, select=_AUDIT_SUMMARY_COLS,
         )
     out = [
-        r for (t, _), r in _memstore.items()
+        {k: r.get(k) for k in ("id", "created_at", "discipline_score",
+                               "total_pnl", "disciplined_pnl", "n_trades")}
+        for (t, _), r in _memstore.items()
         if t == "coach_audits" and r.get("user_id") == user_id
     ]
     out.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     return out[:limit]
+
+
+def get_latest_coach_audit(user_id: str) -> Optional[Dict[str, Any]]:
+    """The user's most recent audit row INCLUDING its raw `transactions`,
+    so the dashboard can recompute the full report without a re-upload."""
+    if _db_writable():
+        rows = _select_columns(
+            "coach_audits", filters={"user_id": user_id},
+            order="created_at.desc", limit=1,
+        )
+        return rows[0] if rows else None
+    mine = [r for (t, _), r in _memstore.items()
+            if t == "coach_audits" and r.get("user_id") == user_id]
+    mine.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return mine[0] if mine else None
 
 
 def _delete_where(table: str, filters: Dict[str, Any]) -> bool:
