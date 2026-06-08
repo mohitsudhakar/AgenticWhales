@@ -286,3 +286,22 @@ def test_pretrade_includes_decision_support(client, monkeypatch):
         "equity": 100000, "include_ai": False})
     ds_out = r.json()["decision_support"]
     assert ds_out["available"] and ds_out["rating"] == "Buy"
+
+
+def test_extract_concurrency_matches_sequential(monkeypatch):
+    import hashlib
+    from agenticwhales.transactions import extract as ex
+    from agenticwhales.transactions.models import Transaction
+
+    def fake(llm, chunk):
+        s = "S" + hashlib.md5(chunk.encode()).hexdigest()[:6]
+        return [Transaction(date="2025-01-01", type="Buy", symbol=s, quantity=1, price=1, amount=-1)]
+
+    monkeypatch.setattr(ex, "_extract_chunk_with_retry", fake)
+    text = "\n".join(f"row {i}" for i in range(3000))
+    seq = ex.extract_transactions(text, llm=object(), concurrency=1, chunk_chars=2000)
+    prog = []
+    par = ex.extract_transactions(text, llm=object(), concurrency=6, chunk_chars=2000,
+                                  on_progress=lambda d, n: prog.append((d, n)))
+    assert len(par) == len(seq) and len(par) > 1          # parallel == sequential, multi-chunk
+    assert prog[-1][0] == prog[-1][1] == len(prog)        # progress reported once per chunk, to completion

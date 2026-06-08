@@ -260,10 +260,14 @@ async def coach_latest(user_id: str = Depends(optional_user_id)):
     return {"signed_in": True, "has_audit": True, "report": out}
 
 
+_EXTRACT_CONCURRENCY = 8  # chunks are independent; extract them in parallel
+
+
 def coach_extract_pdf(text: str, on_warn, on_progress=None) -> List[Transaction]:
     from agenticwhales.transactions.extract import extract_transactions
     return extract_transactions(text, provider=_EXTRACT_PROVIDER, model=_EXTRACT_MODEL,
-                                on_warn=on_warn, on_progress=on_progress)
+                                on_warn=on_warn, on_progress=on_progress,
+                                concurrency=_EXTRACT_CONCURRENCY)
 
 
 # --------------------------------------------------------------------------- #
@@ -320,12 +324,12 @@ def _ocr_with_progress(jid: str, pdf_bytes: bytes) -> str:
     except Exception:  # noqa: BLE001
         pages = [pdf_bytes]
     if len(pages) <= 1:
-        _job_set(jid, stage="ocr", pct=40, message="Running OCR…")
+        _job_set(jid, stage="ocr", pct=30, message="Running OCR…")
         return _ocr_pdf_to_markdown(pdf_bytes)
     md = []
     n = len(pages)
     for i, pg in enumerate(pages, 1):
-        _job_set(jid, stage="ocr", pct=10 + int(60 * (i - 1) / n),
+        _job_set(jid, stage="ocr", pct=8 + int(46 * (i - 1) / n),
                  message=f"Reading the document — OCR page {i} of {n}…")
         md.append(_ocr_pdf_to_markdown(pg))
     return "\n\n".join(md)
@@ -354,11 +358,11 @@ def _run_upload_job(jid: str, data: bytes, name: str, ctype: str, user_id: str) 
         if (is_image or is_pdf) and not txns:
             if not text.strip():
                 raise ValueError("No readable text found in the document.")
-            _job_set(jid, stage="extract", pct=72, message="Extracting transactions…")
+            _job_set(jid, stage="extract", pct=55, message="Extracting transactions…")
             txns = coach_extract_pdf(
                 text, warnings.append,
                 on_progress=lambda i, n: _job_set(
-                    jid, stage="extract", pct=70 + int(18 * i / max(n, 1)),
+                    jid, stage="extract", pct=55 + int(37 * i / max(n, 1)),
                     message=f"Extracting transactions ({i} of {n})…"))
 
         if not txns:
