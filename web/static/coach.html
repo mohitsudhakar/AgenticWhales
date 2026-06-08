@@ -83,8 +83,8 @@
         <button id="loadDemo" class="border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
           <i data-lucide="sparkles" class="w-4 h-4"></i> Load sample trader</button>
         <label class="bg-ink text-cream px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition flex items-center gap-2">
-          <i data-lucide="upload" class="w-4 h-4"></i> Upload your CSV
-          <input id="csvFile" type="file" accept=".csv" class="hidden">
+          <i data-lucide="upload" class="w-4 h-4"></i> <span id="uploadLabel">Upload CSV / PDF</span>
+          <input id="csvFile" type="file" accept=".csv,.pdf" class="hidden">
         </label>
       </div>
     </div>
@@ -192,11 +192,17 @@ async function loadDemo(){
 $('loadDemo').onclick = loadDemo;
 $('csvFile').onchange = async (e) => {
   const f = e.target.files[0]; if(!f) return;
-  const text = await f.text();
-  const r = await (await fetch('/api/coach/audit',{method:'POST',headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({csv_text:text})})).json();
-  if(r.error){ alert(r.error); return; }
-  renderAudit(r); window.location.hash='#audit';
+  const lbl = $('uploadLabel'); const prev = lbl.textContent;
+  lbl.textContent = f.name.toLowerCase().endsWith('.pdf') ? 'Reading PDF…' : 'Analyzing…';
+  try {
+    const fd = new FormData(); fd.append('file', f);
+    const r = await (await fetch('/api/coach/upload', {method:'POST', body: fd})).json();
+    if(r.error){ alert(r.error); return; }
+    renderAudit(r);
+    if(r.warnings && r.warnings.length) console.warn('extraction warnings:', r.warnings);
+    window.location.hash='#audit';
+  } catch(err){ alert('Upload failed: '+err); }
+  finally { lbl.textContent = prev; e.target.value=''; }
 };
 
 const vColor = { GO:'emerald', CAUTION:'amber', BLOCK:'crimson' };

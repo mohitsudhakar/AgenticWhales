@@ -6,9 +6,11 @@ All deterministic and read-only — no orders, ever. Mounted on the main app via
 
 from __future__ import annotations
 
+import io
+import logging
 from typing import List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -17,6 +19,17 @@ from agenticwhales.transactions.models import Transaction
 from agenticwhales.transactions.parser import parse_transactions_csv
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+# Provider used to extract transactions from PDF statements (DeepSeek key is in .env).
+_EXTRACT_PROVIDER = "deepseek"
+_EXTRACT_MODEL = "deepseek-chat"
+
+
+def _pdf_to_text(data: bytes) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(data))
+    return "\n".join((page.extract_text() or "") for page in reader.pages)
 
 
 class TxnIn(BaseModel):
@@ -53,6 +66,52 @@ async def coach_audit(p: AuditPayload):
                             status_code=400)
     report = coach.audit_trades(txns, fees_paid=p.fees_paid)
     return report.to_dict()
+
+
+@router.post("/api/coach/upload")
+async def coach_upload(file: UploadFile = File(...)):
+    """Accept a brokerage history as CSV or PDF. CSV is parsed deterministically;
+    PDF text is extracted and passed through the LLM transaction extractor."""
+    data = await file.read()
+    name = (file.filename or "").lower()
+    ctype = (file.content_type or "").lower()
+    warnings: List[str] = []
+    txns: List[Transaction] = []
+
+    if name.endswith(".pdf") or "pdf" in ctype:
+        try:
+            text = _pdf_to_text(data)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"error": f"Could not read the PDF: {exc}"}, status_code=400)
+        if not text.strip():
+            return JSONResponse(
+                {"error": "No text found in the PDF — it may be a scanned image (OCR not supported yet)."},
+                status_code=400)
+        try:
+            txns = coach_extract_pdf(text, warnings.append)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("pdf extraction failed: %s", exc)
+            return JSONResponse({"error": f"PDF extraction failed: {exc}"}, status_code=400)
+    else:
+        text = data.decode("utf-8", errors="replace")
+        try:
+            txns = parse_transactions_csv(text)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"error": f"Could not parse the CSV: {exc}"}, status_code=400)
+
+    if not txns:
+        return JSONResponse({"error": "No transactions found in the file."}, status_code=400)
+    report = coach.audit_trades(txns)
+    out = report.to_dict()
+    out["warnings"] = warnings
+    out["n_transactions"] = len(txns)
+    return out
+
+
+def coach_extract_pdf(text: str, on_warn) -> List[Transaction]:
+    from agenticwhales.transactions.extract import extract_transactions
+    return extract_transactions(text, provider=_EXTRACT_PROVIDER, model=_EXTRACT_MODEL,
+                                on_warn=on_warn)
 
 
 @router.get("/api/coach/demo")
