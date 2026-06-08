@@ -212,20 +212,49 @@ async function loadDemo(){
 }
 
 $('loadDemo').onclick = loadDemo;
+function showProgress(pct, msg){
+  pct = Math.max(2, Math.min(100, pct||0));
+  $('scorecard').innerHTML = `<div class="card p-10 lg:col-span-3 fade-in">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-5 h-5 border-2 border-line border-t-emerald rounded-full animate-spin"></div>
+      <span class="font-display text-2xl">Analyzing your history…</span></div>
+    <p class="text-muted mb-4">${msg||'Working…'}</p>
+    <div class="h-2 bg-line rounded-full overflow-hidden"><div class="h-full bg-emerald" style="width:${pct}%;transition:width .4s ease"></div></div>
+    <p class="text-xs text-muted mt-2">${Math.round(pct)}%</p>
+    <p class="text-xs text-muted mt-1">Large or scanned files can take a minute or two — you can keep this tab open.</p></div>`;
+  $('leaks').innerHTML = '';
+}
+function showProgressError(msg){
+  $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${msg||'Something went wrong.'}</p></div>`;
+  $('leaks').innerHTML = ''; lucide.createIcons();
+}
+
 $('csvFile').onchange = async (e) => {
   const f = e.target.files[0]; if(!f) return;
-  const lbl = $('uploadLabel'); const prev = lbl.textContent;
-  lbl.textContent = /\.(pdf|png|jpe?g|webp|bmp|tiff?)$/i.test(f.name) ? 'Reading…' : 'Analyzing…';
+  e.target.value = '';
+  window.location.hash = '#audit';
+  showProgress(2, 'Uploading your file…');
+  let jid;
   try {
     const fd = new FormData(); fd.append('file', f);
-    const r = await (await fetch('/api/coach/upload', {method:'POST', body: fd})).json();
-    if(r.error){ alert(r.error); return; }
-    renderAudit(r);
-    if(r.warnings && r.warnings.length) console.warn('extraction warnings:', r.warnings);
-    if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); loadHistory(); }
-    window.location.hash='#audit';
-  } catch(err){ alert('Upload failed: '+err); }
-  finally { lbl.textContent = prev; e.target.value=''; }
+    const j = await (await fetch('/api/coach/upload_async', {method:'POST', body: fd})).json();
+    if(!j.job_id){ showProgressError(j.error || 'Upload failed.'); return; }
+    jid = j.job_id;
+  } catch(err){ showProgressError('Upload failed: ' + err); return; }
+  const es = new EventSource(`/api/coach/jobs/${jid}/stream`);
+  es.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    if(d.status === 'error'){ es.close(); showProgressError(d.error); return; }
+    showProgress(d.pct, d.message);
+    if(d.status === 'done'){
+      es.close();
+      const r = d.report || {};
+      renderAudit(r);
+      if(r.warnings && r.warnings.length) console.warn('warnings:', r.warnings);
+      if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); loadHistory(); }
+    }
+  };
+  es.onerror = () => { es.close(); showProgressError('Lost connection to the server. Please retry.'); };
 };
 
 const vColor = { GO:'emerald', CAUTION:'amber', BLOCK:'crimson' };

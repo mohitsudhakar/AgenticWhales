@@ -134,6 +134,46 @@ def test_ocr_unavailable_returns_503(client, monkeypatch):
     assert r.status_code == 503
 
 
+def test_pdf_pages_split():
+    assert len(coach_api._pdf_pages(_minimal_pdf("one page"))) == 1
+
+
+def test_run_upload_job_csv_completes():
+    jid = coach_api._new_job()
+    coach_api._run_upload_job(jid, _sample_csv().encode(), "h.csv", "text/csv", "anonymous")
+    j = coach_api._JOBS[jid]
+    assert j["status"] == "done" and j["report"]["n_trades"] == 12 and j["pct"] == 100
+
+
+def test_run_upload_job_scanned_pdf_uses_ocr(monkeypatch):
+    monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", lambda b: "AAPL buy/sell text")
+    monkeypatch.setattr(coach_api, "coach_extract_pdf",
+                        lambda text, on_warn, on_progress=None: _fake_txns())
+    jid = coach_api._new_job()
+    coach_api._run_upload_job(jid, _minimal_pdf(""), "scan.pdf", "application/pdf", "anonymous")
+    assert coach_api._JOBS[jid]["status"] == "done"
+    assert coach_api._JOBS[jid]["report"]["n_trades"] == 1
+
+
+def test_upload_async_returns_job_id(client):
+    r = client.post("/api/coach/upload_async", files={"file": ("h.csv", _sample_csv(), "text/csv")})
+    assert r.status_code == 200 and "job_id" in r.json()
+
+
+def test_job_stream_emits_done_with_report(client):
+    jid = coach_api._new_job()
+    coach_api._job_set(jid, status="done", stage="done", pct=100, message="Done.",
+                       report={"discipline_score": 14, "n_trades": 12})
+    body = client.get(f"/api/coach/jobs/{jid}/stream").text
+    assert '"status": "done"' in body and '"discipline_score": 14' in body
+
+
+def test_job_stream_unknown_job():
+    from fastapi.testclient import TestClient
+    body = TestClient(server.app).get("/api/coach/jobs/nope/stream").text
+    assert "unknown or expired job" in body
+
+
 def test_pretrade_endpoint_blocks_revenge(client, monkeypatch):
     import agenticwhales.decision_support as ds
     monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {"available": False, "symbol": "NVDA"})
@@ -151,7 +191,7 @@ def test_history_guest_is_empty(client):
 
 def test_audit_persists_and_history_returns_summary(client):
     from web.auth import get_current_user_id
-    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-1"
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "coach-test-user-1"
     try:
         assert client.post("/api/coach/audit", json={"use_demo": True}).status_code == 200
         h = client.get("/api/coach/history").json()
@@ -166,7 +206,7 @@ def test_audit_persists_and_history_returns_summary(client):
 
 def test_latest_recomputes_full_report_from_persisted_trades(client):
     from web.auth import get_current_user_id
-    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-2"
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "coach-test-user-2"
     try:
         client.post("/api/coach/audit", json={"use_demo": True})
         r = client.get("/api/coach/latest").json()
@@ -180,7 +220,7 @@ def test_latest_recomputes_full_report_from_persisted_trades(client):
 
 def test_latest_no_audit_for_fresh_user(client):
     from web.auth import get_current_user_id
-    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-fresh-user"
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "coach-fresh-user"
     try:
         r = client.get("/api/coach/latest").json()
         assert r["signed_in"] is True and r["has_audit"] is False
@@ -192,7 +232,7 @@ def test_pretrade_uses_signed_in_users_history(client, monkeypatch):
     import agenticwhales.decision_support as ds
     monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {"available": False, "symbol": "NVDA"})
     from web.auth import get_current_user_id
-    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-3"
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "coach-test-user-3"
     try:
         client.post("/api/coach/audit", json={"use_demo": True})  # persist their (demo) history
         # No demo flag, no transactions -> server should load THEIR history and catch the revenge trade.

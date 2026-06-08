@@ -120,12 +120,16 @@ def extract_transactions(
     model: str = "gpt-5.4-mini",
     base_url: Optional[str] = None,
     on_warn: Optional[Callable[[str], None]] = None,
+    on_progress: Optional[Callable[[int, int], None]] = None,
 ) -> List[Transaction]:
     """Extract a de-duplicated transaction list from raw document text.
 
     The LLM is injectable via ``llm`` (a LangChain chat model) so tests can
     pass a fake and never touch the network. When ``llm`` is None a client is
     built from ``provider``/``model`` via the standard factory.
+
+    ``on_progress(done, total)`` is called after each chunk so long documents can
+    report extraction progress to a UI.
 
     Unlike the TS original we extract chunks sequentially (no asyncio
     requirement); failures are retried per chunk and, as a last resort,
@@ -145,6 +149,8 @@ def extract_transactions(
             if on_warn:
                 on_warn(f"Could not parse section {i + 1} of {len(chunks)}: {e}")
             lists.append([])
+        if on_progress:
+            on_progress(i + 1, len(chunks))
 
     if failed > 0 and on_warn:
         on_warn(
