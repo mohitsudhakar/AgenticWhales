@@ -237,9 +237,29 @@ $('checkBtn').onclick = async () => {
       <span class="text-muted">Disciplined version:</span>
       <span class="font-medium">${v.disciplined.qty} sh · stop ${money(v.disciplined.stop)} · target ${money(v.disciplined.target)}</span>
       <span class="text-muted">(risk ${money(v.disciplined.risk_dollars)})</span>
-    </div>`;
+    </div>
+    ${renderSupport(v.decision_support)}`;
   lucide.createIcons();
 };
+
+function renderSupport(d){
+  if(!d || !d.available) return '';
+  const sigs = (d.signals||[]).map(s=>{
+    const c = s.direction>0?'emerald':s.direction<0?'crimson':'muted';
+    const arrow = s.direction>0?'↑':s.direction<0?'↓':'→';
+    return `<span class="pill border border-line rounded-full px-2 py-0.5 text-${c}">${s.name} ${arrow}</span>`;
+  }).join(' ');
+  return `<div class="mt-4 pt-4 border-t border-line">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="line-chart" class="w-4 h-4 text-muted"></i>
+      <span class="pill text-muted">Decision support · ${d.symbol} @ ${money(d.last_price)}</span>
+      <span class="pill border border-line rounded-full px-2 py-0.5 ml-auto">${d.rating}</span>
+    </div>
+    <div class="flex flex-wrap gap-1.5 mb-2">${sigs}</div>
+    ${d.ai_note?`<p class="text-sm text-muted italic">“${d.ai_note}”</p>`:''}
+    <p class="text-[11px] text-muted mt-2">Context only — not a recommendation. You decide.</p>
+  </div>`;
+}
 
 lucide.createIcons();
 loadDemo();

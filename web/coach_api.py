@@ -14,7 +14,7 @@ from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agenticwhales import coach, pretrade
+from agenticwhales import coach, decision_support, pretrade, prices
 from agenticwhales.transactions.models import Transaction
 from agenticwhales.transactions.parser import parse_transactions_csv
 
@@ -101,7 +101,7 @@ async def coach_upload(file: UploadFile = File(...)):
 
     if not txns:
         return JSONResponse({"error": "No transactions found in the file."}, status_code=400)
-    report = coach.audit_trades(txns)
+    report = coach.audit_trades(txns, price_fetcher=prices.fetch_ohlc)
     out = report.to_dict()
     out["warnings"] = warnings
     out["n_transactions"] = len(txns)
@@ -135,6 +135,7 @@ class PretradePayload(BaseModel):
     use_demo_history: bool = False
     transactions: Optional[List[TxnIn]] = None
     max_risk_pct: float = 0.02
+    include_ai: bool = True
 
 
 @router.post("/api/pretrade/check")
@@ -154,4 +155,9 @@ async def pretrade_check(p: PretradePayload):
         trade, equity=p.equity, recent_trades=recent,
         leak_profile=profile, max_risk_pct=p.max_risk_pct,
     )
-    return verdict.to_dict()
+    out = verdict.to_dict()
+    # Decision support: a fast technical read on the symbol (+ optional LLM note).
+    if p.trade.symbol:
+        out["decision_support"] = decision_support.analyze_symbol(
+            p.trade.symbol, llm_note=p.include_ai)
+    return out

@@ -278,6 +278,80 @@ def counterfactual_disciplined(trips: List[RoundTrip], *, stop_pct: float = 0.15
     return disc
 
 
+def price_based_leaks(trips: List[RoundTrip], fetch_ohlc, *,
+                      stop_pct: float = 0.15, lookahead_days: int = 20) -> List[Leak]:
+    """Two leaks that need real price paths (so they're precise, not modeled):
+
+      * No stop-loss — for each loser, did a `stop_pct` stop ever trigger between
+        entry and exit? If so, how much would exiting there have saved?
+      * Cutting winners early — for each winner, how far did it run in the
+        `lookahead_days` after you sold?
+
+    `fetch_ohlc(symbol, start, end)` returns a date-indexed OHLC frame (or None).
+    """
+    from collections import defaultdict
+    by_sym: Dict[str, List[RoundTrip]] = defaultdict(list)
+    for t in trips:
+        by_sym[t.symbol].append(t)
+
+    stop_saved = 0.0
+    left_on_table = 0.0
+    n_stop = n_left = 0
+    for sym, ts in by_sym.items():
+        eds = [_d(t.entry_date) for t in ts if _d(t.entry_date)]
+        xds = [_d(t.exit_date) for t in ts if _d(t.exit_date)]
+        if not eds or not xds:
+            continue
+        try:
+            df = fetch_ohlc(sym, min(eds).isoformat(),
+                            (max(xds) + _dt.timedelta(days=lookahead_days + 5)).isoformat())
+        except Exception:  # noqa: BLE001
+            df = None
+        if df is None or len(df) == 0:
+            continue
+        dates = df.index.date
+        for t in ts:
+            ed, xd = _d(t.entry_date), _d(t.exit_date)
+            if not ed or not xd:
+                continue
+            held = df[(dates > ed) & (dates <= xd)]
+            if not t.is_win and len(held):
+                stop_px = t.entry_px * (1 - stop_pct)            # long stop
+                if float(held["Low"].min()) <= stop_px:
+                    stopped_loss = t.qty * stop_pct * t.entry_px
+                    saved = abs(t.pnl) - stopped_loss
+                    if saved > 0:
+                        stop_saved += saved
+                        n_stop += 1
+            if t.is_win:
+                after = df[dates > xd].head(lookahead_days)
+                if len(after):
+                    hi = float(after["High"].max())
+                    if hi > t.exit_px:
+                        left_on_table += (hi - t.exit_px) * t.qty
+                        n_left += 1
+
+    gross = sum(abs(t.pnl) for t in trips) or 1.0
+    out: List[Leak] = []
+    if stop_saved > 0:
+        out.append(Leak(
+            "No stop-loss (measured on real prices)", _severity(stop_saved, gross),
+            round(stop_saved, 2),
+            f"On {n_stop} losing trades, a {stop_pct:.0%} stop would have exited earlier "
+            f"and saved you ${stop_saved:,.0f}.",
+            "Place the stop at entry and let it execute — never widen it to 'give it room'.",
+        ))
+    if left_on_table > 0.02 * gross:
+        out.append(Leak(
+            "Cutting winners early", _severity(left_on_table, gross),
+            round(left_on_table, 2),
+            f"On {n_left} winners, the stock ran a further ${left_on_table:,.0f} in the "
+            f"{lookahead_days} days after you sold.",
+            "Use a trailing stop to stay in winners instead of selling on the first pop.",
+        ))
+    return out
+
+
 def _discipline_score(trips: List[RoundTrip], leaks: List[Leak], total_pnl_abs: float) -> int:
     score = 85
     for l in leaks:
@@ -287,8 +361,11 @@ def _discipline_score(trips: List[RoundTrip], leaks: List[Leak], total_pnl_abs: 
 
 
 def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
-                 narrate: Optional[Callable[[CoachReport], str]] = None) -> CoachReport:
-    """Full behavioral audit of a trade history. Deterministic; `narrate` optional."""
+                 narrate: Optional[Callable[[CoachReport], str]] = None,
+                 price_fetcher=None) -> CoachReport:
+    """Full behavioral audit of a trade history. Deterministic; `narrate` and
+    `price_fetcher` optional. When `price_fetcher` is supplied, two precise
+    price-path leaks (real-stop savings, winners-left-on-table) are added."""
     trips = reconstruct_round_trips(txns)
     wins = [t for t in trips if t.is_win]
     losses = [t for t in trips if not t.is_win]
@@ -300,6 +377,12 @@ def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
     total_pnl = sum(t.pnl for t in trips)
 
     leaks = detect_leaks(trips, fees_paid=fees_paid)
+    if price_fetcher is not None and trips:
+        try:
+            leaks = leaks + price_based_leaks(trips, price_fetcher)
+            leaks.sort(key=lambda l: l.dollars, reverse=True)
+        except Exception:  # noqa: BLE001 — price data is a bonus, never fatal
+            pass
     disciplined = counterfactual_disciplined(trips)
     report = CoachReport(
         n_trades=len(trips), hit_rate=round(hit, 3),

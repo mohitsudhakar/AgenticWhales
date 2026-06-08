@@ -71,6 +71,33 @@ def test_narrate_uses_provided_numbers_only(monkeypatch):
     assert "expectancy" in human.lower()
 
 
+def test_price_based_leaks_with_fake_fetcher():
+    import pandas as pd
+    from agenticwhales.coach import RoundTrip, price_based_leaks
+
+    def fetch(sym, start, end):
+        idx = pd.bdate_range("2025-01-01", periods=60)
+        n = len(idx)
+        if sym == "LOSE":   # held-window low dips to 80 (below a 15% stop at 85)
+            return pd.DataFrame({"Open": [100]*n, "High": [101]*n, "Low": [80]*n, "Close": [90]*n}, index=idx)
+        return pd.DataFrame({"Open": [110]*n, "High": [130]*n, "Low": [109]*n, "Close": [115]*n}, index=idx)
+
+    trips = [
+        RoundTrip("LOSE", "2025-01-02", "2025-01-20", 10, 100, 70, -300, 18, -30.0),  # big loss, stop would've helped
+        RoundTrip("WIN", "2025-01-02", "2025-01-20", 10, 100, 110, 100, 18, 10.0),    # ran to 130 after exit
+    ]
+    leaks = price_based_leaks(trips, fetch)
+    names = " ".join(l.name for l in leaks).lower()
+    assert "stop-loss" in names and "cutting winners" in names
+    assert all(l.dollars > 0 for l in leaks)
+
+
+def test_price_based_leaks_graceful_when_no_data():
+    from agenticwhales.coach import RoundTrip, price_based_leaks
+    trips = [RoundTrip("X", "2025-01-02", "2025-01-20", 10, 100, 90, -100, 18, -10.0)]
+    assert price_based_leaks(trips, lambda *a, **k: None) == []
+
+
 def test_clean_trader_low_leak():
     # Symmetric, disciplined: similar win/loss size, no churn.
     txns = []

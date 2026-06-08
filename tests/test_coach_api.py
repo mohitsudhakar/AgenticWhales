@@ -86,9 +86,24 @@ def test_pdf_upload_routes_through_extractor(client, monkeypatch):
     assert r.json()["n_trades"] == 1
 
 
-def test_pretrade_endpoint_blocks_revenge(client):
+def test_pretrade_endpoint_blocks_revenge(client, monkeypatch):
+    import agenticwhales.decision_support as ds
+    monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {"available": False, "symbol": "NVDA"})
     r = client.post("/api/pretrade/check", json={
         "trade": {"symbol": "NVDA", "side": "long", "qty": 300, "entry_price": 120},
-        "equity": 200000, "use_demo_history": True})
+        "equity": 200000, "use_demo_history": True, "include_ai": False})
     assert r.status_code == 200
     assert r.json()["verdict"] == "BLOCK"
+
+
+def test_pretrade_includes_decision_support(client, monkeypatch):
+    import agenticwhales.decision_support as ds
+    monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {
+        "available": True, "symbol": "NVDA", "rating": "Buy", "score": 0.5,
+        "last_price": 120.0, "signals": [{"name": "trend", "direction": 1, "strength": 0.8, "notes": ""}],
+        "summary": "uptrend"})
+    r = client.post("/api/pretrade/check", json={
+        "trade": {"symbol": "NVDA", "qty": 10, "entry_price": 120, "stop_price": 115},
+        "equity": 100000, "include_ai": False})
+    ds_out = r.json()["decision_support"]
+    assert ds_out["available"] and ds_out["rating"] == "Buy"
