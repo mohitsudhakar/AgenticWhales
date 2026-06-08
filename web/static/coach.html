@@ -46,10 +46,10 @@
         <span class="font-logo text-xl">AgenticWhales</span>
         <span class="hidden sm:inline pill text-muted ml-2 border-l border-line pl-3">Discipline Coach</span>
       </div>
-      <div class="flex items-center gap-6 text-sm text-muted">
+      <div class="flex items-center gap-5 text-sm text-muted">
         <a href="#audit" class="hover:text-ink transition">Audit</a>
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
-        <a href="/fund" class="hover:text-ink transition">Fund →</a>
+        <span id="authUser" class="hidden text-ink font-medium"></span>
         <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
       </div>
     </div>
@@ -86,8 +86,8 @@
         <button id="loadDemo" class="border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
           <i data-lucide="sparkles" class="w-4 h-4"></i> Load sample trader</button>
         <label class="bg-ink text-cream px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition flex items-center gap-2">
-          <i data-lucide="upload" class="w-4 h-4"></i> <span id="uploadLabel">Upload CSV / PDF</span>
-          <input id="csvFile" type="file" accept=".csv,.pdf" class="hidden">
+          <i data-lucide="upload" class="w-4 h-4"></i> <span id="uploadLabel">Upload CSV / PDF / image</span>
+          <input id="csvFile" type="file" accept=".csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff" class="hidden">
         </label>
       </div>
     </div>
@@ -215,7 +215,7 @@ $('loadDemo').onclick = loadDemo;
 $('csvFile').onchange = async (e) => {
   const f = e.target.files[0]; if(!f) return;
   const lbl = $('uploadLabel'); const prev = lbl.textContent;
-  lbl.textContent = f.name.toLowerCase().endsWith('.pdf') ? 'Reading PDF…' : 'Analyzing…';
+  lbl.textContent = /\.(pdf|png|jpe?g|webp|bmp|tiff?)$/i.test(f.name) ? 'Reading…' : 'Analyzing…';
   try {
     const fd = new FormData(); fd.append('file', f);
     const r = await (await fetch('/api/coach/upload', {method:'POST', body: fd})).json();
@@ -286,11 +286,14 @@ function renderSupport(d){
 
 // ---- Auth + discipline-over-time ----
 function updateAuthUI(user){
-  const b = $('authBtn'); b.classList.remove('hidden');
-  if(user && !user.isGuest && user.email){
+  const b = $('authBtn'), u = $('authUser'); b.classList.remove('hidden');
+  if(user && !user.isGuest && (user.email || user.displayName)){
+    const label = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
+    u.textContent = label; u.classList.remove('hidden');
     b.textContent = 'Sign out';
     b.onclick = () => window.AgenticWhalesAuth.signOut();
   } else {
+    u.classList.add('hidden'); u.textContent = '';
     b.textContent = 'Sign in';
     b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
   }

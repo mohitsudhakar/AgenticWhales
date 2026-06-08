@@ -86,6 +86,54 @@ def test_pdf_upload_routes_through_extractor(client, monkeypatch):
     assert r.json()["n_trades"] == 1
 
 
+def _png_bytes() -> bytes:
+    from PIL import Image
+    import io
+    buf = io.BytesIO()
+    Image.new("RGB", (20, 20), (255, 255, 255)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _fake_txns():
+    from agenticwhales.transactions.models import Transaction
+    return [
+        Transaction(date="2025-01-06", type="Buy", symbol="AAPL", quantity=50, price=180, amount=-9000),
+        Transaction(date="2025-01-08", type="Sell", symbol="AAPL", quantity=50, price=184, amount=9200),
+    ]
+
+
+def test_image_to_pdf():
+    assert coach_api._image_to_pdf(_png_bytes())[:4] == b"%PDF"
+
+
+def test_image_upload_routes_through_ocr(client, monkeypatch):
+    monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", lambda b: "Buy 50 AAPL @180; Sell 50 AAPL @184")
+    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn: _fake_txns())
+    r = client.post("/api/coach/upload", files={"file": ("scan.png", _png_bytes(), "image/png")})
+    assert r.status_code == 200 and r.json()["n_trades"] == 1
+
+
+def test_scanned_pdf_falls_back_to_ocr(client, monkeypatch):
+    called = {}
+
+    def ocr(b):
+        called["ocr"] = True
+        return "AAPL buy/sell text"
+    monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", ocr)
+    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn: _fake_txns())
+    pdf = _minimal_pdf("")  # no extractable text -> OCR fallback
+    r = client.post("/api/coach/upload", files={"file": ("scan.pdf", pdf, "application/pdf")})
+    assert r.status_code == 200 and called.get("ocr") and r.json()["n_trades"] == 1
+
+
+def test_ocr_unavailable_returns_503(client, monkeypatch):
+    def boom(b):
+        raise coach_api.OcrUnavailable("connection refused")
+    monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", boom)
+    r = client.post("/api/coach/upload", files={"file": ("scan.png", _png_bytes(), "image/png")})
+    assert r.status_code == 503
+
+
 def test_pretrade_endpoint_blocks_revenge(client, monkeypatch):
     import agenticwhales.decision_support as ds
     monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {"available": False, "symbol": "NVDA"})

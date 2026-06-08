@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import time
 import uuid
 from typing import Dict, List, Optional
@@ -24,6 +25,43 @@ from web.auth import get_current_user_id
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif")
+# stride-gpu/ocr-mlx — DeepSeek-OCR-2 server (GET /status, POST /ocr, PDF-only).
+_OCR_URL = os.getenv("AGENTICWHALES_OCR_URL", os.getenv("GPU_OCR_URL", "http://localhost:8000"))
+
+
+class OcrUnavailable(RuntimeError):
+    """The OCR service couldn't be reached / failed — surfaced as a clear 503."""
+
+
+def _image_to_pdf(data: bytes) -> bytes:
+    from PIL import Image
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="PDF")
+    return buf.getvalue()
+
+
+def _ocr_pdf_to_markdown(pdf_bytes: bytes) -> str:
+    """OCR a (scanned) PDF via the stride-gpu/ocr-mlx endpoint -> markdown text."""
+    import requests
+    url = _OCR_URL.rstrip("/") + "/ocr"
+    try:
+        resp = requests.post(
+            url, files={"file": ("document.pdf", pdf_bytes, "application/pdf")},
+            timeout=600,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        raise OcrUnavailable(str(exc)) from exc
+    if isinstance(data, dict) and data.get("status") not in (None, "success", "ready"):
+        raise OcrUnavailable(f"OCR returned status {data.get('status')}")
+    content = data.get("content") if isinstance(data, dict) else data
+    if isinstance(content, dict):
+        content = content.get("body", "")
+    return str(content or "")
 
 
 def _persist_audit(user_id: str, report_dict: Dict) -> None:
@@ -102,29 +140,42 @@ async def coach_upload(file: UploadFile = File(...),
     data = await file.read()
     name = (file.filename or "").lower()
     ctype = (file.content_type or "").lower()
+    is_image = name.endswith(_IMAGE_EXTS) or ctype.startswith("image/")
+    is_pdf = name.endswith(".pdf") or "pdf" in ctype
     warnings: List[str] = []
     txns: List[Transaction] = []
+    text = ""
 
-    if name.endswith(".pdf") or "pdf" in ctype:
-        try:
+    try:
+        if is_image:
+            # Server is PDF-only; wrap the image in a one-page PDF, then OCR.
+            text = _ocr_pdf_to_markdown(_image_to_pdf(data))
+        elif is_pdf:
             text = _pdf_to_text(data)
-        except Exception as exc:  # noqa: BLE001
-            return JSONResponse({"error": f"Could not read the PDF: {exc}"}, status_code=400)
+            if len(text.strip()) < 40:  # scanned / image-only PDF -> OCR fallback
+                warnings.append("PDF had little extractable text — used OCR.")
+                text = _ocr_pdf_to_markdown(data)
+        else:
+            txns = parse_transactions_csv(data.decode("utf-8", errors="replace"))
+    except OcrUnavailable as exc:
+        log.warning("OCR unavailable: %s", exc)
+        return JSONResponse(
+            {"error": "This looks like a scanned document. The OCR service "
+                      "(stride-gpu/ocr-mlx) isn't reachable — start it, set "
+                      "AGENTICWHALES_OCR_URL, or upload a text-based CSV/PDF."},
+            status_code=503)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": f"Could not read the file: {exc}"}, status_code=400)
+
+    if (is_image or is_pdf) and not txns:
         if not text.strip():
             return JSONResponse(
-                {"error": "No text found in the PDF — it may be a scanned image (OCR not supported yet)."},
-                status_code=400)
+                {"error": "No readable text found in the document."}, status_code=400)
         try:
             txns = coach_extract_pdf(text, warnings.append)
         except Exception as exc:  # noqa: BLE001
-            log.warning("pdf extraction failed: %s", exc)
-            return JSONResponse({"error": f"PDF extraction failed: {exc}"}, status_code=400)
-    else:
-        text = data.decode("utf-8", errors="replace")
-        try:
-            txns = parse_transactions_csv(text)
-        except Exception as exc:  # noqa: BLE001
-            return JSONResponse({"error": f"Could not parse the CSV: {exc}"}, status_code=400)
+            log.warning("extraction failed: %s", exc)
+            return JSONResponse({"error": f"Extraction failed: {exc}"}, status_code=400)
 
     if not txns:
         return JSONResponse({"error": "No transactions found in the file."}, status_code=400)
