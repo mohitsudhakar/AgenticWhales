@@ -227,19 +227,28 @@ async function loadDemo(){
 }
 
 $('loadDemo').onclick = loadDemo;
+// Render the progress card ONCE, then update text/width in place so the spinner
+// and structure don't flicker on every event.
 function showProgress(pct, msg){
   pct = Math.max(2, Math.min(100, pct||0));
-  $('scorecard').innerHTML = `<div class="card p-10 lg:col-span-3 fade-in">
-    <div class="flex items-center gap-3 mb-4">
-      <div class="w-5 h-5 border-2 border-line border-t-emerald rounded-full animate-spin"></div>
-      <span class="font-display text-2xl">Analyzing your history…</span></div>
-    <p class="text-muted mb-4">${msg||'Working…'}</p>
-    <div class="h-2 bg-line rounded-full overflow-hidden"><div class="h-full bg-emerald" style="width:${pct}%;transition:width .4s ease"></div></div>
-    <p class="text-xs text-muted mt-2">${Math.round(pct)}%</p>
-    <p class="text-xs text-muted mt-1">Large or scanned files can take a minute or two — you can keep this tab open.</p></div>`;
-  $('leaks').innerHTML = '';
+  if(!document.getElementById('progressBox')){
+    $('scorecard').innerHTML = `<div id="progressBox" class="card p-10 lg:col-span-3 fade-in">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-5 h-5 border-2 border-line border-t-emerald rounded-full animate-spin"></div>
+        <span class="font-display text-2xl">Analyzing your history…</span></div>
+      <p id="progressMsg" class="text-muted mb-4"></p>
+      <div class="h-2 bg-line rounded-full overflow-hidden"><div id="progressBar" class="h-full bg-emerald" style="width:2%;transition:width .4s ease"></div></div>
+      <p id="progressPct" class="text-xs text-muted mt-2"></p>
+      <p class="text-xs text-muted mt-1">Large or scanned files can take a minute or two — you can keep this tab open.</p></div>`;
+    $('insights').innerHTML=''; $('insightHeadline').innerHTML='';
+    $('leaksTitle').classList.add('hidden'); $('leaks').innerHTML='';
+  }
+  $('progressMsg').textContent = msg || 'Working…';
+  $('progressBar').style.width = pct + '%';
+  $('progressPct').textContent = Math.round(pct) + '%';
 }
 function showProgressError(msg){
+  PROCESSING = false;
   $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${msg||'Something went wrong.'}</p></div>`;
   $('leaks').innerHTML = ''; lucide.createIcons();
 }
@@ -247,6 +256,7 @@ function showProgressError(msg){
 $('csvFile').onchange = async (e) => {
   const f = e.target.files[0]; if(!f) return;
   e.target.value = '';
+  PROCESSING = true;
   window.location.hash = '#audit';
   showProgress(2, 'Uploading your file…');
   let jid;
@@ -262,7 +272,7 @@ $('csvFile').onchange = async (e) => {
     if(d.status === 'error'){ es.close(); showProgressError(d.error); return; }
     showProgress(d.pct, d.message);
     if(d.status === 'done'){
-      es.close();
+      es.close(); PROCESSING = false;
       const r = d.report || {};
       renderAudit(r);
       if(r.warnings && r.warnings.length) console.warn('warnings:', r.warnings);
@@ -330,6 +340,7 @@ function renderSupport(d){
 
 // ---- Auth + journey (guest / new / returning) ----
 let CURRENT = null;
+let PROCESSING = false;  // true while an upload/sync is in flight — blocks journey re-renders
 const BTN_DARK = 'bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2';
 const BTN_LINE = 'border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition flex items-center gap-2';
 const firstName = (u) => (u?.displayName && u.displayName !== 'trader') ? u.displayName.split(' ')[0]
@@ -406,6 +417,7 @@ function setPretradeMode(signedIn){
 }
 
 async function applyJourney(user){
+  if(PROCESSING) return;  // don't clobber an in-progress upload on auth/visibility events
   const signedIn = isSignedIn(user);
   setPretradeMode(signedIn);
   if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false}); return; }
@@ -497,11 +509,13 @@ $('connectBroker').onclick = async () => {
   if(!isSignedIn(CURRENT)){ window.AgenticWhalesAuth?.signInWithGoogle?.(); return; }
   const b = $('connectBroker');
   if(b.dataset.mode === 'sync'){
+    PROCESSING = true;
     window.location.hash = '#audit';
     showProgress(20, 'Reading your brokerage activity…');
     try {
       const r = await (await fetch('/api/snaptrade/sync', {method:'POST'})).json();
       if(r.error){ showProgressError(r.error); return; }
+      PROCESSING = false;
       renderAudit(r); renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly);
     } catch(err){ showProgressError('Sync failed: ' + err); }
   } else {

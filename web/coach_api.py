@@ -404,6 +404,7 @@ async def coach_job_stream(job_id: str):
     job_id is the capability (persistence already happened under the uploader)."""
     async def gen():
         last = None
+        quiet = 0
         for _ in range(3200):  # ~21 min ceiling at 0.4s
             with _JOBS_LOCK:
                 j = _JOBS.get(job_id)
@@ -417,6 +418,12 @@ async def coach_job_stream(job_id: str):
             if snap != last:
                 yield "data: " + json.dumps(snap) + "\n\n"
                 last = snap
+                quiet = 0
+            else:
+                quiet += 1
+                if quiet >= 12:  # ~5s of silence (e.g. a slow OCR page) -> heartbeat
+                    yield ": keepalive\n\n"
+                    quiet = 0
             if snap["status"] in ("done", "error"):
                 return
             await asyncio.sleep(0.4)
