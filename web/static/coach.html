@@ -85,6 +85,8 @@
       <div class="flex items-center gap-3 text-sm">
         <button id="loadDemo" class="border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
           <i data-lucide="sparkles" class="w-4 h-4"></i> Load sample trader</button>
+        <button id="connectBroker" class="hidden border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
+          <i data-lucide="link" class="w-4 h-4"></i> Connect brokerage</button>
         <label class="bg-ink text-cream px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition flex items-center gap-2">
           <i data-lucide="upload" class="w-4 h-4"></i> <span id="uploadLabel">Upload CSV / PDF / image</span>
           <input id="csvFile" type="file" accept=".csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff" class="hidden">
@@ -376,6 +378,7 @@ async function applyJourney(user){
   const signedIn = isSignedIn(user);
   setPretradeMode(signedIn);
   if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false}); return; }
+  refreshBrokerStatus();
   const name = firstName(user);
   let latest = null;
   try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
@@ -390,6 +393,42 @@ async function loadHistory(){
   try { const r = await (await fetch('/api/coach/history')).json(); renderTrend(r); }
   catch(e){ /* ignore */ }
 }
+
+// ---- SnapTrade brokerage connect ----
+async function refreshBrokerStatus(){
+  const b = $('connectBroker'); if(!b) return;
+  try {
+    const s = await (await fetch('/api/snaptrade/status')).json();
+    if(!s.configured){ b.classList.add('hidden'); return; }
+    b.classList.remove('hidden');
+    b.dataset.mode = s.connected ? 'sync' : 'connect';
+    b.innerHTML = s.connected
+      ? '<i data-lucide="refresh-cw" class="w-4 h-4"></i> Sync brokerage'
+      : '<i data-lucide="link" class="w-4 h-4"></i> Connect brokerage';
+    lucide.createIcons();
+  } catch(e){ b.classList.add('hidden'); }
+}
+
+$('connectBroker').onclick = async () => {
+  if(!isSignedIn(CURRENT)){ window.AgenticWhalesAuth?.signInWithGoogle?.(); return; }
+  const b = $('connectBroker');
+  if(b.dataset.mode === 'sync'){
+    window.location.hash = '#audit';
+    showProgress(20, 'Reading your brokerage activity…');
+    try {
+      const r = await (await fetch('/api/snaptrade/sync', {method:'POST'})).json();
+      if(r.error){ showProgressError(r.error); return; }
+      renderAudit(r); renderHero('returning', firstName(CURRENT)); loadHistory();
+    } catch(err){ showProgressError('Sync failed: ' + err); }
+  } else {
+    try {
+      const r = await (await fetch('/api/snaptrade/connect', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({redirect: location.href})})).json();
+      if(r.url){ window.location.href = r.url; }
+      else { alert(r.error || 'Could not start the brokerage connection.'); }
+    } catch(err){ alert('Connect failed: ' + err); }
+  }
+};
 
 function renderTrend(r){
   const el = $('trendBody');

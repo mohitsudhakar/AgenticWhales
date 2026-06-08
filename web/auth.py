@@ -740,6 +740,24 @@ def get_latest_coach_audit(user_id: str) -> Optional[Dict[str, Any]]:
     return mine[0] if mine else None
 
 
+def upsert_snaptrade_user(user_id: str, st_user_id: str, st_user_secret: str) -> None:
+    """Store a user's SnapTrade userSecret (the long-lived read credential)."""
+    row = {"user_id": user_id, "st_user_id": st_user_id,
+           "st_user_secret": st_user_secret, "updated_at": _ts_iso(time.time())}
+    _memstore[("snaptrade_users", user_id)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("snaptrade_users", row, on_conflict="user_id")
+
+
+def get_snaptrade_user(user_id: str) -> Optional[Dict[str, Any]]:
+    if _db_writable():
+        rows = _select_columns("snaptrade_users", filters={"user_id": user_id}, limit=1)
+        if rows:
+            return rows[0]
+    return _memstore.get(("snaptrade_users", user_id))
+
+
 def _delete_where(table: str, filters: Dict[str, Any]) -> bool:
     if not _db_writable():
         return True

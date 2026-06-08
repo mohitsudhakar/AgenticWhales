@@ -134,8 +134,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Behavioral coach + pre-trade decision-support API (deterministic, read-only).
 from web.coach_api import router as coach_router  # noqa: E402
+from web.snaptrade_api import router as snaptrade_router  # noqa: E402
 
 app.include_router(coach_router)
+app.include_router(snaptrade_router)
 
 
 def _supabase_runtime_config_tag() -> str:

@@ -1129,3 +1129,16 @@ drop policy if exists "coach_audits: insert own" on public.coach_audits;
 create policy "coach_audits: insert own"
   on public.coach_audits for insert
   with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- snaptrade_users — per-user SnapTrade connection (read-only brokerage link)
+-- ---------------------------------------------------------------------------
+create table if not exists public.snaptrade_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  st_user_id text not null,
+  st_user_secret text not null,   -- treat as a secret; encrypt at rest in prod
+  updated_at timestamptz not null default now()
+);
+
+alter table public.snaptrade_users enable row level security;
+-- No anon policies: only the service role (server) reads/writes this table.
