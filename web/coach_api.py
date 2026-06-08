@@ -345,11 +345,14 @@ def _run_upload_job(jid: str, data: bytes, name: str, ctype: str, user_id: str) 
     text = ""
     try:
         _job_set(jid, status="running", stage="reading", pct=5, message="Reading the file…")
+        ocr_used = False
         if is_image:
+            ocr_used = True
             text = _ocr_with_progress(jid, _image_to_pdf(data))
         elif is_pdf:
             text = _pdf_to_text(data)
             if len(text.strip()) < 40:
+                ocr_used = True
                 warnings.append("Scanned PDF — used OCR.")
                 text = _ocr_with_progress(jid, data)
         else:
@@ -358,11 +361,14 @@ def _run_upload_job(jid: str, data: bytes, name: str, ctype: str, user_id: str) 
         if (is_image or is_pdf) and not txns:
             if not text.strip():
                 raise ValueError("No readable text found in the document.")
-            _job_set(jid, stage="extract", pct=55, message="Extracting transactions…")
+            # No OCR phase (text PDF) -> extraction owns the whole bar (10-92%);
+            # with OCR (8-54%) it picks up from 55%. Avoids an unearned jump.
+            base, span = (55, 37) if ocr_used else (10, 82)
+            _job_set(jid, stage="extract", pct=base, message="Extracting transactions…")
             txns = coach_extract_pdf(
                 text, warnings.append,
                 on_progress=lambda i, n: _job_set(
-                    jid, stage="extract", pct=55 + int(37 * i / max(n, 1)),
+                    jid, stage="extract", pct=base + int(span * i / max(n, 1)),
                     message=f"Extracting transactions ({i} of {n})…"))
 
         if not txns:
