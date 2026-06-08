@@ -81,6 +81,36 @@ async def snaptrade_connect(p: ConnectPayload, user_id: str = Depends(get_curren
                             status_code=502)
 
 
+def _sync_core(user_id: str, client, rec, *, lookback_days: int = 365 * 3):
+    """Pull activities -> normalize -> merge into the timeline -> audit -> persist.
+    Returns the report dict, or None if the connected accounts have no trades yet."""
+    start = (_dt.date.today() - _dt.timedelta(days=lookback_days)).isoformat()
+    activities = client.get_activities(rec["st_user_id"], rec["st_user_secret"], start=start)
+    txns = snaptrade_normalize.normalize_activities(activities)
+    if not txns:
+        return None
+    audit_txns = _merge_user_trades(user_id, txns)  # accumulate the timeline
+    report = coach.audit_trades(audit_txns, price_fetcher=prices.fetch_ohlc)
+    out = report.to_dict()
+    out["n_transactions"] = len(audit_txns)
+    out["new_transactions"] = len(txns)
+    out["source"] = "snaptrade"
+    _persist_audit(user_id, out, audit_txns)
+    return out
+
+
+def sync_user(user_id: str):
+    """Server-side sync for one connected user (used by the nightly cron).
+    Returns the report dict, or None if not configured / not connected / no trades."""
+    client = snaptrade_client.from_env()
+    if client is None:
+        return None
+    rec = auth.get_snaptrade_user(user_id)
+    if not rec:
+        return None
+    return _sync_core(user_id, client, rec)
+
+
 @router.post("/api/snaptrade/sync")
 async def snaptrade_sync(user_id: str = Depends(get_current_user_id)):
     guard = _require_user(user_id)
@@ -94,21 +124,12 @@ async def snaptrade_sync(user_id: str = Depends(get_current_user_id)):
     if not rec:
         return JSONResponse({"error": "Connect a brokerage first."}, status_code=400)
     try:
-        start = (_dt.date.today() - _dt.timedelta(days=365 * 3)).isoformat()
-        activities = client.get_activities(rec["st_user_id"], rec["st_user_secret"], start=start)
-        txns = snaptrade_normalize.normalize_activities(activities)
+        out = _sync_core(user_id, client, rec)
     except Exception as exc:  # noqa: BLE001
         log.warning("snaptrade sync failed: %s", exc)
         return JSONResponse({"error": f"Could not read your brokerage activity: {exc}"},
                             status_code=502)
-    if not txns:
+    if out is None:
         return JSONResponse(
             {"error": "No trades found in your connected accounts yet."}, status_code=404)
-    audit_txns = _merge_user_trades(user_id, txns)  # accumulate the timeline
-    report = coach.audit_trades(audit_txns, price_fetcher=prices.fetch_ohlc)
-    out = report.to_dict()
-    out["n_transactions"] = len(audit_txns)
-    out["new_transactions"] = len(txns)
-    out["source"] = "snaptrade"
-    _persist_audit(user_id, out, audit_txns)
     return out

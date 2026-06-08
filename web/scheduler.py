@@ -210,6 +210,18 @@ class RecipeScheduler:
             misfire_grace_time=3600,
             max_instances=1,
         )
+        # Nightly SnapTrade auto-sync — pulls each connected user's latest
+        # activities and merges them into their discipline timeline, so the
+        # coach stays current without anyone re-uploading. No-op unless SnapTrade
+        # is configured (SNAPTRADE_CLIENT_ID / SNAPTRADE_CONSUMER_KEY).
+        self._scheduler.add_job(
+            self._run_snaptrade_sync,
+            CronTrigger.from_crontab("30 5 * * *", timezone="UTC"),
+            id="snaptrade_sync_nightly",
+            replace_existing=True,
+            misfire_grace_time=21_600,
+            max_instances=1,
+        )
 
     # PR-3: stuck-run reaper. Tunable via env so ops can dial it on a hot
     # incident without a redeploy.
@@ -340,6 +352,29 @@ class RecipeScheduler:
                 log.warning("outcome_resolver cron failure for %s: %s", uid, exc)
         log.info("outcome_resolver cron complete",
                  users=len(user_ids), resolved=total_resolved)
+
+    def _run_snaptrade_sync(self) -> None:
+        """Re-sync every connected brokerage and fold new trades into the user's
+        timeline. Leader-only; no-op when SnapTrade isn't configured."""
+        if not self._is_leader:
+            return
+        from agenticwhales.dataflows import snaptrade_client
+        if snaptrade_client.from_env() is None:
+            return  # not configured — nothing to do
+        from web import auth as _auth
+        from web.snaptrade_api import sync_user
+        rows = _auth.list_all_snaptrade_users()
+        synced = 0
+        for r in rows:
+            uid = r.get("user_id")
+            if not uid:
+                continue
+            try:
+                if sync_user(uid):
+                    synced += 1
+            except Exception as exc:  # noqa: BLE001
+                log.warning("snaptrade_sync cron failure for %s: %s", uid, exc)
+        log.info("snaptrade_sync cron complete", users=len(rows), synced=synced)
 
     def _run_prompt_evals(self) -> None:
         """Walk every user with enough resolved outcomes and run a baseline

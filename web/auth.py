@@ -789,6 +789,14 @@ def get_snaptrade_user(user_id: str) -> Optional[Dict[str, Any]]:
     return _memstore.get(("snaptrade_users", user_id))
 
 
+def list_all_snaptrade_users() -> list:
+    """Every connected user's id — drives the nightly auto-sync (service-role only)."""
+    if _db_writable():
+        return _select_columns("snaptrade_users", filters={}, select="user_id", limit=10_000)
+    return [{"user_id": r.get("user_id")}
+            for (t, _), r in _memstore.items() if t == "snaptrade_users"]
+
+
 def _delete_where(table: str, filters: Dict[str, Any]) -> bool:
     if not _db_writable():
         return True

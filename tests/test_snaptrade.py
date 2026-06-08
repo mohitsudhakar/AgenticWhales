@@ -102,3 +102,56 @@ def test_sync_normalizes_and_audits(client, monkeypatch):
         assert r["n_trades"] == 1 and r["source"] == "snaptrade"
     finally:
         server.app.dependency_overrides.clear()
+
+
+def test_list_all_snaptrade_users_memstore():
+    auth.upsert_snaptrade_user("cron-u1", "cron-u1", "s1")
+    ids = {r["user_id"] for r in auth.list_all_snaptrade_users()}
+    assert "cron-u1" in ids
+
+
+def test_sync_user_core_audits_and_persists(monkeypatch):
+    import agenticwhales.prices as prices
+
+    class FakeClient:
+        def get_activities(self, uid, secret, start=None, end=None):
+            return [
+                {"type": "BUY", "units": 50, "price": 180, "amount": -9000,
+                 "trade_date": "2025-01-06", "symbol": {"raw_symbol": "AAPL"}},
+                {"type": "SELL", "units": 50, "price": 184, "amount": 9200,
+                 "trade_date": "2025-01-08", "symbol": {"raw_symbol": "AAPL"}},
+            ]
+
+    monkeypatch.setattr(snaptrade_client, "from_env", lambda: FakeClient())
+    monkeypatch.setattr(prices, "fetch_ohlc", lambda *a, **k: None)
+    auth.upsert_snaptrade_user("cron-u2", "cron-u2", "secret")
+    out = snaptrade_api.sync_user("cron-u2")
+    assert out and out["n_trades"] == 1 and out["source"] == "snaptrade"
+
+
+def test_sync_user_none_when_unconfigured(monkeypatch):
+    monkeypatch.setattr(snaptrade_client, "from_env", lambda: None)
+    assert snaptrade_api.sync_user("whoever") is None
+
+
+def test_cron_syncs_connected_users(monkeypatch):
+    from web.scheduler import RecipeScheduler
+    sched = RecipeScheduler()
+    sched._is_leader = True
+    monkeypatch.setattr(snaptrade_client, "from_env", lambda: object())  # "configured"
+    monkeypatch.setattr(auth, "list_all_snaptrade_users",
+                        lambda: [{"user_id": "a"}, {"user_id": "b"}])
+    called = []
+    monkeypatch.setattr(snaptrade_api, "sync_user", lambda uid: called.append(uid) or {"ok": 1})
+    sched._run_snaptrade_sync()
+    assert set(called) == {"a", "b"}
+
+
+def test_cron_skips_when_not_leader(monkeypatch):
+    from web.scheduler import RecipeScheduler
+    sched = RecipeScheduler()
+    sched._is_leader = False
+    called = []
+    monkeypatch.setattr(snaptrade_api, "sync_user", lambda uid: called.append(uid))
+    sched._run_snaptrade_sync()
+    assert called == []
