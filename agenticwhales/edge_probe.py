@@ -301,7 +301,7 @@ def default_invokers(
     structured = llm.with_structured_output(PortfolioDecision)
 
     def invoke_text(msgs: List[Tuple[str, str]]) -> str:
-        return normalize_content(llm.invoke(msgs))
+        return str(normalize_content(llm.invoke(msgs)).content)
 
     def invoke_structured(msgs: List[Tuple[str, str]]) -> PortfolioDecision:
         return structured.invoke(msgs)
