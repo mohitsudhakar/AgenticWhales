@@ -96,6 +96,26 @@ def test_pretrade_endpoint_blocks_revenge(client, monkeypatch):
     assert r.json()["verdict"] == "BLOCK"
 
 
+def test_history_guest_is_empty(client):
+    h = client.get("/api/coach/history").json()
+    assert h["signed_in"] is False and h["audits"] == []
+
+
+def test_audit_persists_and_history_returns_it(client):
+    from web.auth import get_current_user_id
+    server.app.dependency_overrides[get_current_user_id] = lambda: "coach-test-user-1"
+    try:
+        r = client.post("/api/coach/audit", json={"use_demo": True})
+        assert r.status_code == 200
+        h = client.get("/api/coach/history").json()
+        assert h["signed_in"] is True
+        mine = [a for a in h["audits"] if a["user_id"] == "coach-test-user-1"]
+        assert len(mine) >= 1
+        assert "discipline_score" in mine[0] and "leak_summary" in mine[0]
+    finally:
+        server.app.dependency_overrides.clear()
+
+
 def test_pretrade_includes_decision_support(client, monkeypatch):
     import agenticwhales.decision_support as ds
     monkeypatch.setattr(ds, "analyze_symbol", lambda *a, **k: {

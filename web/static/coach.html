@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script type="module" src="/static/supabase-client.js"></script>
   <script>
     tailwind.config = {
       theme: { extend: {
@@ -48,6 +49,7 @@
         <a href="#audit" class="hover:text-ink transition">Audit</a>
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
         <a href="/fund" class="hover:text-ink transition">Fund →</a>
+        <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
       </div>
     </div>
   </nav>
@@ -97,6 +99,13 @@
     <div id="leaks" class="grid md:grid-cols-2 gap-5 mt-5"></div>
   </section>
 
+  <!-- Discipline over time -->
+  <section id="trend" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Progress</div>
+    <h2 class="font-display text-4xl mb-6">Discipline over time</h2>
+    <div id="trendBody" class="card p-8"></div>
+  </section>
+
   <!-- Pre-trade check -->
   <section id="check" class="max-w-6xl mx-auto px-6 py-14">
     <div class="pill text-muted mb-2">Decision support</div>
@@ -138,6 +147,18 @@
   </footer>
 
 <script>
+// Auto-attach the Supabase bearer token to every /api/* call (mirrors fund.js).
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function(input, init){
+  const url = typeof input === 'string' ? input : (input?.url || '');
+  if (url.startsWith('/api/')) {
+    const token = window.AgenticWhalesAuth?.getAccessToken?.();
+    if (token) { init = init ? {...init} : {}; const h = new Headers(init.headers || (typeof input!=='string'?input.headers:undefined));
+      if(!h.has('Authorization')) h.set('Authorization', `Bearer ${token}`); init.headers = h; }
+  }
+  return _origFetch(input, init);
+};
+
 const $ = (id) => document.getElementById(id);
 const money = (n) => (n<0?'-':'') + '$' + Math.abs(Math.round(n)).toLocaleString();
 const sevColor = { high:'crimson', medium:'amber', low:'muted' };
@@ -200,6 +221,7 @@ $('csvFile').onchange = async (e) => {
     if(r.error){ alert(r.error); return; }
     renderAudit(r);
     if(r.warnings && r.warnings.length) console.warn('extraction warnings:', r.warnings);
+    loadHistory();
     window.location.hash='#audit';
   } catch(err){ alert('Upload failed: '+err); }
   finally { lbl.textContent = prev; e.target.value=''; }
@@ -260,6 +282,62 @@ function renderSupport(d){
     <p class="text-[11px] text-muted mt-2">Context only — not a recommendation. You decide.</p>
   </div>`;
 }
+
+// ---- Auth + discipline-over-time ----
+function updateAuthUI(user){
+  const b = $('authBtn'); b.classList.remove('hidden');
+  if(user && !user.isGuest && user.email){
+    b.textContent = 'Sign out';
+    b.onclick = () => window.AgenticWhalesAuth.signOut();
+  } else {
+    b.textContent = 'Sign in';
+    b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
+  }
+  loadHistory();
+}
+
+async function loadHistory(){
+  try { const r = await (await fetch('/api/coach/history')).json(); renderTrend(r); }
+  catch(e){ /* ignore */ }
+}
+
+function renderTrend(r){
+  const el = $('trendBody');
+  if(!r.signed_in){
+    el.innerHTML = `<div class="text-center py-6">
+      <p class="font-display text-2xl mb-2">Track your discipline as it improves.</p>
+      <p class="text-muted mb-5 max-w-lg mx-auto">Sign in and every audit is saved, so you can watch your discipline score climb as your habits get tighter.</p>
+      <button onclick="window.AgenticWhalesAuth?.signInWithGoogle?.()" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Sign in with Google</button></div>`;
+    return;
+  }
+  const a = (r.audits||[]).slice().reverse(); // oldest -> newest
+  if(a.length === 0){ el.innerHTML = `<p class="text-muted text-center py-6">No audits yet — upload a history above and your discipline score will start tracking here.</p>`; return; }
+  const W=680, H=160, pad=24;
+  const xs = (i)=> a.length<2 ? W/2 : pad + i*(W-2*pad)/(a.length-1);
+  const ys = (s)=> H-pad - (s/100)*(H-2*pad);
+  const pts = a.map((x,i)=>`${xs(i).toFixed(1)},${ys(x.discipline_score).toFixed(1)}`).join(' ');
+  const dots = a.map((x,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(x.discipline_score).toFixed(1)}" r="3.5" fill="#1F6F54"/>`).join('');
+  const last = a[a.length-1], first = a[0];
+  const delta = (last.discipline_score - first.discipline_score);
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+      <div><span class="font-display text-4xl text-emerald">${Math.round(last.discipline_score)}</span>
+      <span class="text-muted text-sm">current discipline score</span></div>
+      <div class="text-sm ${delta>=0?'text-emerald':'text-crimson'}">${delta>=0?'▲':'▼'} ${Math.abs(Math.round(delta))} since first audit · ${a.length} audits</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:180px">
+      <line x1="${pad}" y1="${ys(50)}" x2="${W-pad}" y2="${ys(50)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
+      <polyline points="${pts}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}
+    </svg>`;
+}
+
+function whenAuthReady(cb, n=0){
+  if(window.AgenticWhalesAuth){ cb(); }
+  else if(n<40){ setTimeout(()=>whenAuthReady(cb, n+1), 150); }
+  else { renderTrend({signed_in:false}); } // Supabase unconfigured -> guest CTA
+}
+whenAuthReady(()=>{ window.AgenticWhalesAuth.onChange(updateAuthUI); });
 
 lucide.createIcons();
 loadDemo();

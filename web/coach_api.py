@@ -8,18 +8,42 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import List, Optional
+import time
+import uuid
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agenticwhales import coach, decision_support, pretrade, prices
 from agenticwhales.transactions.models import Transaction
 from agenticwhales.transactions.parser import parse_transactions_csv
+from web import auth
+from web.auth import get_current_user_id
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+
+def _persist_audit(user_id: str, report_dict: Dict) -> None:
+    """Save an audit summary for signed-in users (no-op for guests)."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return
+    try:
+        auth.insert_coach_audit({
+            "id": uuid.uuid4().hex,
+            "user_id": user_id,
+            "created_at": auth._ts_iso(time.time()),
+            "discipline_score": float(report_dict.get("discipline_score", 0)),
+            "total_pnl": float(report_dict.get("total_pnl", 0)),
+            "disciplined_pnl": float(report_dict.get("disciplined_pnl", 0)),
+            "n_trades": int(report_dict.get("n_trades", 0)),
+            "leak_summary": [{"name": l["name"], "dollars": l["dollars"]}
+                             for l in report_dict.get("leaks", [])],
+        })
+    except Exception as exc:  # noqa: BLE001 — persistence must never break the audit
+        log.warning("coach audit persist failed: %s", exc)
 
 # Provider used to extract transactions from PDF statements (DeepSeek key is in .env).
 _EXTRACT_PROVIDER = "deepseek"
@@ -59,17 +83,20 @@ def _txns_from(p) -> List[Transaction]:
 
 
 @router.post("/api/coach/audit")
-async def coach_audit(p: AuditPayload):
+async def coach_audit(p: AuditPayload, user_id: str = Depends(get_current_user_id)):
     txns = _txns_from(p)
     if not txns:
         return JSONResponse({"error": "provide transactions, csv_text, or use_demo"},
                             status_code=400)
     report = coach.audit_trades(txns, fees_paid=p.fees_paid)
-    return report.to_dict()
+    out = report.to_dict()
+    _persist_audit(user_id, out)
+    return out
 
 
 @router.post("/api/coach/upload")
-async def coach_upload(file: UploadFile = File(...)):
+async def coach_upload(file: UploadFile = File(...),
+                       user_id: str = Depends(get_current_user_id)):
     """Accept a brokerage history as CSV or PDF. CSV is parsed deterministically;
     PDF text is extracted and passed through the LLM transaction extractor."""
     data = await file.read()
@@ -105,7 +132,16 @@ async def coach_upload(file: UploadFile = File(...)):
     out = report.to_dict()
     out["warnings"] = warnings
     out["n_transactions"] = len(txns)
+    _persist_audit(user_id, out)
     return out
+
+
+@router.get("/api/coach/history")
+async def coach_history(user_id: str = Depends(get_current_user_id)):
+    """A signed-in user's past audits, newest first — powers the score-over-time chart."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return {"signed_in": False, "audits": []}
+    return {"signed_in": True, "audits": auth.list_coach_audits(user_id)}
 
 
 def coach_extract_pdf(text: str, on_warn) -> List[Transaction]:

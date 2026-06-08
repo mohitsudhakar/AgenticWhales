@@ -694,6 +694,31 @@ def _select_columns(
         return []
 
 
+def insert_coach_audit(row: Dict[str, Any]) -> None:
+    """Persist a behavioral-coach audit summary for the current user.
+    Dual-path: memstore first, then Supabase (columnar)."""
+    pk = row.get("id") or f"{row.get('user_id')}|{row.get('created_at')}"
+    _memstore[("coach_audits", pk)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("coach_audits", row, on_conflict="id")
+
+
+def list_coach_audits(user_id: str, *, limit: int = 60) -> list:
+    """Return a user's coach audits, newest first (for the discipline-over-time chart)."""
+    if _db_writable():
+        return _select_columns(
+            "coach_audits", filters={"user_id": user_id},
+            order="created_at.desc", limit=limit,
+        )
+    out = [
+        r for (t, _), r in _memstore.items()
+        if t == "coach_audits" and r.get("user_id") == user_id
+    ]
+    out.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return out[:limit]
+
+
 def _delete_where(table: str, filters: Dict[str, Any]) -> bool:
     if not _db_writable():
         return True

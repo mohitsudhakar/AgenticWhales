@@ -1096,3 +1096,31 @@ drop policy if exists "transactions: delete own" on public.transactions;
 create policy "transactions: delete own"
   on public.transactions for delete
   using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- coach_audits — behavioral-coach audit summaries (discipline over time)
+-- ---------------------------------------------------------------------------
+create table if not exists public.coach_audits (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  discipline_score numeric(8,2) not null default 0,
+  total_pnl numeric(20,8) not null default 0,
+  disciplined_pnl numeric(20,8) not null default 0,
+  n_trades integer not null default 0,
+  leak_summary jsonb
+);
+
+create index if not exists coach_audits_user_idx
+  on public.coach_audits (user_id, created_at desc);
+
+alter table public.coach_audits enable row level security;
+
+drop policy if exists "coach_audits: read own" on public.coach_audits;
+create policy "coach_audits: read own"
+  on public.coach_audits for select
+  using (auth.uid() = user_id);
+drop policy if exists "coach_audits: insert own" on public.coach_audits;
+create policy "coach_audits: insert own"
+  on public.coach_audits for insert
+  with check (auth.uid() = user_id);
