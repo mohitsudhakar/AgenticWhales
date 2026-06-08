@@ -218,6 +218,36 @@ def test_latest_recomputes_full_report_from_persisted_trades(client):
         server.app.dependency_overrides.clear()
 
 
+def test_uploads_merge_and_dashboard_has_insights(client):
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "merge-user-1"
+    try:
+        client.post("/api/coach/audit", json={"use_demo": True})
+        client.post("/api/coach/audit", json={"use_demo": True})  # same data -> deduped
+        rep = client.get("/api/coach/latest").json()["report"]
+        assert rep["n_trades"] == 12  # accumulated + deduped, not doubled
+        assert rep["insights"]["n_trades"] == 12 and rep["insights"]["headline"]
+        assert len(rep["monthly"]) >= 1
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_delete_data_clears_everything(client):
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "del-user-1"
+    try:
+        client.post("/api/coach/audit", json={"use_demo": True})
+        assert client.get("/api/coach/latest").json()["has_audit"] is True
+        d = client.post("/api/coach/data/delete").json()
+        assert d["ok"] and d["trades"] > 0
+        assert client.get("/api/coach/latest").json()["has_audit"] is False
+        assert client.get("/api/coach/history").json()["audits"] == []
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+def test_delete_requires_signin(client):
+    assert client.post("/api/coach/data/delete").status_code == 401
+
+
 def test_latest_no_audit_for_fresh_user(client):
     from web.auth import get_current_user_id
     server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "coach-fresh-user"

@@ -24,7 +24,7 @@ from agenticwhales import coach, prices
 from agenticwhales.dataflows import snaptrade_client, snaptrade_normalize
 from web import auth
 from web.auth import get_current_user_id
-from web.coach_api import _persist_audit, optional_user_id
+from web.coach_api import _merge_user_trades, _persist_audit, optional_user_id
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -104,9 +104,11 @@ async def snaptrade_sync(user_id: str = Depends(get_current_user_id)):
     if not txns:
         return JSONResponse(
             {"error": "No trades found in your connected accounts yet."}, status_code=404)
-    report = coach.audit_trades(txns, price_fetcher=prices.fetch_ohlc)
+    audit_txns = _merge_user_trades(user_id, txns)  # accumulate the timeline
+    report = coach.audit_trades(audit_txns, price_fetcher=prices.fetch_ohlc)
     out = report.to_dict()
-    out["n_transactions"] = len(txns)
+    out["n_transactions"] = len(audit_txns)
+    out["new_transactions"] = len(txns)
     out["source"] = "snaptrade"
-    _persist_audit(user_id, out, txns)
+    _persist_audit(user_id, out, audit_txns)
     return out

@@ -57,6 +57,13 @@ UI "Sync brokerage"     ─▶ POST /api/snaptrade/sync ────▶ /activit
 - **Normalization gaps.** FIFO round-trips are long-equity-only, so options legs are
   skipped (same limitation as CSV/PDF). Extend `reconstruct_round_trips` +
   `snaptrade_normalize` together when adding options.
+- **Hands-free timeline updates (the point of connecting).** Uploads and syncs both
+  merge into `coach_trades` (deduped) and the dashboard charts month-by-month
+  discipline from that union — so the user never re-uploads old data. To make it
+  truly passive, add a **scheduled resync** (reuse `web/scheduler.py`): nightly/weekly,
+  for each row in `snaptrade_users`, call `/api/snaptrade/sync` server-side so the
+  trend advances on its own. (Webhooks from SnapTrade can trigger it too.) Not yet
+  wired — it's the next step once credentials exist.
 - **Sync is synchronous** today (activities pull + audit). If large accounts make it
   slow, move it onto the same async job + SSE progress used by uploads.
 - Verify Robinhood specifically in SnapTrade's supported-brokerage list for your

@@ -1142,3 +1142,18 @@ create table if not exists public.snaptrade_users (
 
 alter table public.snaptrade_users enable row level security;
 -- No anon policies: only the service role (server) reads/writes this table.
+
+-- ---------------------------------------------------------------------------
+-- coach_trades — the user's full deduped trade history (continuous timeline)
+-- ---------------------------------------------------------------------------
+create table if not exists public.coach_trades (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  transactions jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.coach_trades enable row level security;
+drop policy if exists "coach_trades: read own" on public.coach_trades;
+create policy "coach_trades: read own" on public.coach_trades for select using (auth.uid() = user_id);
+drop policy if exists "coach_trades: write own" on public.coach_trades;
+create policy "coach_trades: write own" on public.coach_trades for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);

@@ -98,18 +98,24 @@ def _persist_audit(user_id: str, report_dict: Dict, txns: List[Transaction]) -> 
 
 
 def _latest_user_trades(user_id: str) -> List[Transaction]:
-    """The signed-in user's most recently-uploaded trades (empty for guests)."""
+    """The signed-in user's full merged trade history (empty for guests)."""
     if not user_id or user_id == auth.ANONYMOUS_USER_ID:
         return []
-    row = auth.get_latest_coach_audit(user_id)
-    raw = (row or {}).get("transactions") or []
     out = []
-    for t in raw:
+    for t in auth.get_coach_trades(user_id):
         try:
             out.append(Transaction(**t))
         except Exception:  # noqa: BLE001
             continue
     return out
+
+
+def _merge_user_trades(user_id: str, new_txns: List[Transaction]) -> List[Transaction]:
+    """Union the new upload into the user's stored history (deduped) and persist it,
+    so the timeline accumulates across uploads/syncs without re-uploading old data."""
+    merged = coach.dedupe_transactions(_latest_user_trades(user_id) + list(new_txns))
+    auth.save_coach_trades(user_id, [t.model_dump() for t in merged])
+    return merged
 
 # Provider used to extract transactions from PDF statements (DeepSeek key is in .env).
 _EXTRACT_PROVIDER = "deepseek"
@@ -154,9 +160,14 @@ async def coach_audit(p: AuditPayload, user_id: str = Depends(optional_user_id))
     if not txns:
         return JSONResponse({"error": "provide transactions, csv_text, or use_demo"},
                             status_code=400)
-    report = coach.audit_trades(txns, fees_paid=p.fees_paid)
+    audit_txns = txns
+    if user_id and user_id != auth.ANONYMOUS_USER_ID:
+        audit_txns = _merge_user_trades(user_id, txns)
+    report = coach.audit_trades(audit_txns, fees_paid=p.fees_paid)
     out = report.to_dict()
-    _persist_audit(user_id, out, txns)
+    out["n_transactions"] = len(audit_txns)
+    out["new_transactions"] = len(txns)
+    _persist_audit(user_id, out, audit_txns)
     return out
 
 
@@ -221,6 +232,15 @@ async def coach_history(user_id: str = Depends(optional_user_id)):
     if not user_id or user_id == auth.ANONYMOUS_USER_ID:
         return {"signed_in": False, "audits": []}
     return {"signed_in": True, "audits": auth.list_coach_audits(user_id)}
+
+
+@router.post("/api/coach/data/delete")
+async def coach_data_delete(user_id: str = Depends(optional_user_id)):
+    """Delete all of the signed-in user's uploaded data (trades + audit history)."""
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return JSONResponse({"error": "Sign in required."}, status_code=401)
+    res = auth.delete_coach_data(user_id)
+    return {"ok": True, **res}
 
 
 @router.get("/api/coach/latest")
@@ -344,11 +364,15 @@ def _run_upload_job(jid: str, data: bytes, name: str, ctype: str, user_id: str) 
         if not txns:
             raise ValueError("No transactions found in the file.")
         _job_set(jid, stage="audit", pct=92, message="Analyzing your habits…")
-        report = coach.audit_trades(txns, price_fetcher=prices.fetch_ohlc)
+        audit_txns = txns
+        if user_id and user_id != auth.ANONYMOUS_USER_ID:
+            audit_txns = _merge_user_trades(user_id, txns)  # accumulate the timeline
+        report = coach.audit_trades(audit_txns, price_fetcher=prices.fetch_ohlc)
         out = report.to_dict()
         out["warnings"] = warnings
-        out["n_transactions"] = len(txns)
-        _persist_audit(user_id, out, txns)
+        out["n_transactions"] = len(audit_txns)
+        out["new_transactions"] = len(txns)
+        _persist_audit(user_id, out, audit_txns)
         _job_set(jid, status="done", stage="done", pct=100, message="Done.", report=out)
     except OcrUnavailable:
         _job_set(jid, status="error", stage="error",

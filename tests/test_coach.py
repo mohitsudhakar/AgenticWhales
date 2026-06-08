@@ -98,6 +98,40 @@ def test_price_based_leaks_graceful_when_no_data():
     assert price_based_leaks(trips, lambda *a, **k: None) == []
 
 
+def test_dedupe_transactions():
+    from agenticwhales.coach import dedupe_transactions
+    t = lambda d, ty, s, q, p: Transaction(date=d, type=ty, symbol=s, quantity=q, price=p, amount=0)
+    txns = [t("2025-01-01", "Buy", "AAPL", 10, 100), t("2025-01-01", "Buy", "AAPL", 10, 100),  # dup
+            t("2025-01-02", "Sell", "AAPL", 10, 110)]
+    assert len(dedupe_transactions(txns)) == 2
+
+
+def test_behavioral_insights_and_monthly():
+    txns = []
+    # quick small winners (held 1d) in Jan; big slow losers (held ~60d) Jan->Mar
+    for i in range(4):
+        txns += [_t(f"2025-01-0{i+1}", "Buy", f"W{i}", 10, 100),
+                 _t(f"2025-01-0{i+2}", "Sell", f"W{i}", 10, 103)]
+    for i in range(2):
+        txns += [_t(f"2025-01-1{i}", "Buy", f"L{i}", 10, 100),
+                 _t(f"2025-03-1{i}", "Sell", f"L{i}", 10, 70)]
+    rep = coach.audit_trades(txns)
+    ins = rep.insights
+    assert ins["n_trades"] == 6 and ins["period"]["label"] in ("this quarter", "this year")
+    assert ins["hold_losers_days"] > ins["hold_winners_days"]
+    assert ins["top_fix"] is not None and "headline" in ins
+    assert ins["best_trade"]["pnl"] > 0 and ins["worst_trade"]["pnl"] < 0
+    # monthly buckets present (Jan + Mar)
+    months = {m["month"] for m in rep.monthly}
+    assert "2025-01" in months and "2025-03" in months
+
+
+def test_insights_period_label_adapts():
+    txns = [_t("2025-01-06", "Buy", "AAPL", 10, 100), _t("2025-01-06", "Sell", "AAPL", 10, 102)]
+    rep = coach.audit_trades(txns)
+    assert rep.insights["period"]["label"] == "this day"
+
+
 def test_clean_trader_low_leak():
     # Symmetric, disciplined: similar win/loss size, no churn.
     txns = []

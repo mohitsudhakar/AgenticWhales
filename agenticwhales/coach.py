@@ -125,6 +125,98 @@ class Leak:
     fix: str                 # the concrete rule that addresses it
 
 
+def dedupe_transactions(txns: Sequence[Transaction]) -> List[Transaction]:
+    """Union helper for continuous history: drop exact-duplicate rows so the same
+    trade uploaded in overlapping statements isn't double-counted."""
+    seen = set()
+    out: List[Transaction] = []
+    for t in txns:
+        key = (t.date[:10], t.type.lower(), t.symbol.upper(),
+               round(float(t.quantity), 4), round(float(t.price), 4))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+    return out
+
+
+def _period_label(days: int) -> str:
+    if days <= 1:
+        return "this day"
+    if days <= 9:
+        return "this week"
+    if days <= 45:
+        return "this month"
+    if days <= 150:
+        return "this quarter"
+    if days <= 420:
+        return "this year"
+    return "this period"
+
+
+def behavioral_insights(trips: List[RoundTrip], leaks: List[Leak]) -> Dict:
+    """Period-aware, behaviour-changing cards computed from the round-trips.
+    Adapts to whatever was uploaded (a day, a month, a year)."""
+    if not trips:
+        return {}
+    dates = sorted(d for d in (_d(t.exit_date) for t in trips) if d)
+    edates = sorted(d for d in (_d(t.entry_date) for t in trips) if d)
+    start = (min(edates) if edates else dates[0]).isoformat()
+    end = dates[-1].isoformat() if dates else start
+    span_days = ((dates[-1] - (edates[0] if edates else dates[0])).days + 1) if dates else 1
+    label = _period_label(span_days)
+
+    wins = [t for t in trips if t.is_win]
+    losses = [t for t in trips if not t.is_win]
+    hw = statistics.mean([t.hold_days for t in wins]) if wins else 0.0
+    hl = statistics.mean([t.hold_days for t in losses]) if losses else 0.0
+    best = max(trips, key=lambda t: t.pnl)
+    worst = min(trips, key=lambda t: t.pnl)
+    top = leaks[0] if leaks else None
+
+    if top:
+        headline = f"Over {label}, {top.name.split('(')[0].strip().lower()} cost you about ${top.dollars:,.0f}."
+    else:
+        headline = f"Over {label} your trading was disciplined — keep doing what works."
+
+    return {
+        "headline": headline,
+        "period": {"start": start, "end": end, "days": span_days, "label": label},
+        "n_trades": len(trips),
+        "win_rate": round(len(wins) / len(trips), 3) if trips else 0.0,
+        "hold_winners_days": round(hw, 1),
+        "hold_losers_days": round(hl, 1),
+        "hold_ratio": round(hl / hw, 1) if hw > 0 else 0.0,
+        "best_trade": {"symbol": best.symbol, "pnl": round(best.pnl, 2),
+                       "return_pct": round(best.return_pct, 1)},
+        "worst_trade": {"symbol": worst.symbol, "pnl": round(worst.pnl, 2),
+                        "return_pct": round(worst.return_pct, 1)},
+        "top_fix": ({"name": top.name, "dollars": top.dollars, "fix": top.fix} if top else None),
+    }
+
+
+def monthly_discipline(trips: List[RoundTrip]) -> List[Dict]:
+    """Discipline score per calendar month (by exit date) — the behaviour-over-time
+    series that accumulates across uploads/syncs without re-uploading old data."""
+    from collections import defaultdict
+    buckets: Dict[str, List[RoundTrip]] = defaultdict(list)
+    for t in trips:
+        d = _d(t.exit_date)
+        if d:
+            buckets[f"{d.year}-{d.month:02d}"].append(t)
+    out = []
+    for month in sorted(buckets):
+        bt = buckets[month]
+        leaks = detect_leaks(bt)
+        out.append({
+            "month": month,
+            "n_trades": len(bt),
+            "pnl": round(sum(t.pnl for t in bt), 2),
+            "score": _discipline_score(bt, leaks, sum(abs(t.pnl) for t in bt)),
+        })
+    return out
+
+
 @dataclass
 class CoachReport:
     n_trades: int
@@ -135,6 +227,8 @@ class CoachReport:
     expectancy_per_trade: float
     total_pnl: float
     leaks: List[Leak] = field(default_factory=list)
+    insights: Dict = field(default_factory=dict)
+    monthly: List[Dict] = field(default_factory=list)
     # Single coherent counterfactual: P&L under disciplined rules (size cap + stop),
     # and the swing vs. actual. This is the defensible headline number — NOT the sum
     # of the per-leak estimates, which overlap.
@@ -393,6 +487,8 @@ def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
         total_quantified_leak=round(disciplined - total_pnl, 2),
     )
     report.discipline_score = _discipline_score(trips, leaks, abs(total_pnl))
+    report.insights = behavioral_insights(trips, leaks)
+    report.monthly = monthly_discipline(trips)
     if narrate:
         try:
             report.narrative = narrate(report)
