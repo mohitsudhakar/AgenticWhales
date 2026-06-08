@@ -24,45 +24,7 @@ from agenticwhales.transactions.models import Transaction
 
 
 def demo_history():
-    """A believable retail trader: cuts winners fast, holds losers, oversizes
-    after losses, overtrades. Designed to surface the leaks the coach detects."""
-    t = []
-
-    def trade(sym, qty, buy_px, sell_px, buy_date, sell_date):
-        t.append(Transaction(date=buy_date, type="Buy", symbol=sym, quantity=qty,
-                             price=buy_px, amount=-qty * buy_px))
-        t.append(Transaction(date=sell_date, type="Sell", symbol=sym, quantity=qty,
-                             price=sell_px, amount=qty * sell_px))
-
-    # Many quick small winners (cutting winners early).
-    quick_wins = [
-        ("AAPL", 50, 180, 184, "2025-01-06", "2025-01-08"),
-        ("MSFT", 30, 410, 418, "2025-01-09", "2025-01-10"),
-        ("NVDA", 40, 130, 134, "2025-01-13", "2025-01-15"),
-        ("AMD", 60, 120, 123, "2025-01-16", "2025-01-17"),
-        ("TSLA", 20, 240, 248, "2025-01-21", "2025-01-23"),
-        ("META", 25, 600, 612, "2025-01-27", "2025-01-28"),
-        ("GOOG", 30, 195, 199, "2025-02-03", "2025-02-04"),
-    ]
-    for a in quick_wins:
-        trade(*a)
-
-    # Big slow losers (holding losers, hoping for a bounce).
-    slow_losses = [
-        ("PLTR", 200, 85, 68, "2025-01-10", "2025-03-20"),   # held 2+ months, -17/sh
-        ("COIN", 60, 280, 210, "2025-01-14", "2025-03-10"),
-        ("SOFI", 400, 18, 13, "2025-01-22", "2025-04-01"),
-    ]
-    for a in slow_losses:
-        trade(*a)
-
-    # Oversized revenge trade right after a loss (the COIN loss exits 03-10).
-    trade("NVDA", 300, 120, 101, "2025-03-11", "2025-03-25")   # huge, -19/sh
-
-    # One catastrophic oversized loss (tail risk / no stop).
-    trade("MSTR", 100, 1800, 1250, "2025-02-01", "2025-04-15")  # -55,000
-
-    return t
+    return coach.sample_history()
 
 
 def fmt(report: coach.CoachReport) -> str:

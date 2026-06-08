@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — Trading Discipline Coach</title>
+  <meta name="description" content="Know what your habits cost you. A behavioral coach + pre-trade check that turns your own trading history into discipline — quantified in dollars." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657',
+                  line: '#E7E0D2', emerald: '#1F6F54', amber: '#B45309', crimson: '#B3261E' },
+        fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+      }}
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .glass { background: rgba(255,255,255,0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+             border: 1px solid rgba(231,224,210,0.9); }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px;
+            box-shadow: 0 1px 2px rgba(26,26,23,0.03), 0 8px 30px rgba(26,26,23,0.04); }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+    .animate-float { animation: float 4s ease-in-out infinite; }
+    .grain { background-image: radial-gradient(rgba(26,26,23,0.025) 1px, transparent 1px); background-size: 4px 4px; }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    .fade-in { animation: fade .5s ease both; } @keyframes fade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+  </style>
+</head>
+<body class="grain">
+
+  <!-- Nav -->
+  <nav class="sticky top-0 z-40 glass">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="text-xl">🐋</span>
+        <span class="font-display text-xl">AgenticWhales</span>
+        <span class="hidden sm:inline pill text-muted ml-2 border-l border-line pl-3">Discipline Coach</span>
+      </div>
+      <div class="flex items-center gap-6 text-sm text-muted">
+        <a href="#audit" class="hover:text-ink transition">Audit</a>
+        <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
+        <a href="/fund" class="hover:text-ink transition">Fund →</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header class="max-w-6xl mx-auto px-6 pt-20 pb-16">
+    <div class="max-w-3xl">
+      <div class="pill text-emerald mb-5">Behavioral edge, not market prediction</div>
+      <h1 class="font-display text-5xl sm:text-6xl leading-[1.05] mb-6">
+        Know what your <span class="italic">habits</span> cost you —<br>then stop repeating them.
+      </h1>
+      <p class="text-lg text-muted leading-relaxed mb-8 max-w-2xl">
+        We don't sell predictions. We turn your own trading history into discipline:
+        a dollar-quantified audit of your behavioral leaks, and a pre-trade check that
+        catches the mistake <span class="text-ink font-medium">before</span> you click buy.
+      </p>
+      <div class="flex flex-wrap gap-3">
+        <a href="#audit" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2">
+          See a live audit <i data-lucide="arrow-down" class="w-4 h-4"></i></a>
+        <a href="#check" class="border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition">Try the pre-trade check</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Audit -->
+  <section id="audit" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="flex items-end justify-between mb-8 flex-wrap gap-4">
+      <div>
+        <div class="pill text-muted mb-2">The audit</div>
+        <h2 class="font-display text-4xl">Your discipline scorecard</h2>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <button id="loadDemo" class="border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> Load sample trader</button>
+        <label class="bg-ink text-cream px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition flex items-center gap-2">
+          <i data-lucide="upload" class="w-4 h-4"></i> Upload your CSV
+          <input id="csvFile" type="file" accept=".csv" class="hidden">
+        </label>
+      </div>
+    </div>
+
+    <div id="scorecard" class="grid lg:grid-cols-3 gap-5">
+      <!-- filled by JS -->
+      <div class="card p-8 lg:col-span-3 text-center text-muted">Loading a sample audit…</div>
+    </div>
+
+    <div id="leaks" class="grid md:grid-cols-2 gap-5 mt-5"></div>
+  </section>
+
+  <!-- Pre-trade check -->
+  <section id="check" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Decision support</div>
+    <h2 class="font-display text-4xl mb-2">Pre-trade check</h2>
+    <p class="text-muted mb-8 max-w-2xl">Run a trade past your risk rules and your own behavioral history before you place it. Toggle “use sample history” to see it catch a revenge trade.</p>
+
+    <div class="grid lg:grid-cols-2 gap-6 items-start">
+      <div class="card p-7">
+        <div class="grid grid-cols-2 gap-4 text-sm">
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Symbol</span>
+            <input id="t_symbol" value="NVDA" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Side</span>
+            <select id="t_side" class="border border-line rounded-lg px-3 py-2 bg-cream/40"><option value="long">long</option><option value="short">short</option></select></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Shares</span>
+            <input id="t_qty" type="number" value="300" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Entry price</span>
+            <input id="t_entry" type="number" value="120" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Stop (optional)</span>
+            <input id="t_stop" type="number" placeholder="—" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Target (optional)</span>
+            <input id="t_target" type="number" placeholder="—" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Account equity</span>
+            <input id="t_equity" type="number" value="200000" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex items-center gap-2 mt-6 text-muted">
+            <input id="t_demo" type="checkbox" checked class="accent-emerald w-4 h-4"> use sample history</label>
+        </div>
+        <button id="checkBtn" class="mt-6 w-full bg-ink text-cream py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center justify-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4"></i> Check this trade</button>
+      </div>
+      <div id="verdict" class="card p-7 min-h-[200px] flex items-center justify-center text-muted">
+        Fill the form and run a check.
+      </div>
+    </div>
+  </section>
+
+  <footer class="max-w-6xl mx-auto px-6 py-12 mt-8 border-t border-line text-sm text-muted">
+    <p class="max-w-3xl">Paper / analysis only — AgenticWhales never places orders. The dollar figures are
+    deterministic counterfactuals computed from your history, not predictions or advice. Educational use.</p>
+  </footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (n) => (n<0?'-':'') + '$' + Math.abs(Math.round(n)).toLocaleString();
+const sevColor = { high:'crimson', medium:'amber', low:'muted' };
+
+function scoreColor(s){ return s>=70?'emerald':s>=40?'amber':'crimson'; }
+
+function renderAudit(r){
+  const c = scoreColor(r.discipline_score);
+  const swing = r.total_quantified_leak;
+  $('scorecard').innerHTML = `
+    <div class="card p-8 flex flex-col items-center justify-center fade-in">
+      <div class="pill text-muted mb-3">Discipline score</div>
+      <div class="relative w-32 h-32 mb-2">
+        <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
+          <circle cx="50" cy="50" r="42" fill="none" stroke="#E7E0D2" stroke-width="8"/>
+          <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"
+            class="text-${c}" stroke-dasharray="${2*Math.PI*42}" stroke-dashoffset="${2*Math.PI*42*(1-r.discipline_score/100)}"/>
+        </svg>
+        <div class="absolute inset-0 flex items-center justify-center font-display text-4xl text-${c}">${r.discipline_score}</div>
+      </div>
+      <div class="text-sm text-muted">${r.n_trades} round-trips · ${(r.hit_rate*100).toFixed(0)}% win-rate · payoff ${r.payoff_ratio}</div>
+    </div>
+    <div class="card p-8 lg:col-span-2 fade-in flex flex-col justify-center">
+      <div class="pill text-muted mb-2">What your behavior — not the market — cost you</div>
+      <div class="font-display text-2xl leading-snug mb-4">
+        Disciplined rules would have moved your P&amp;L from
+        <span class="text-crimson">${money(r.total_pnl)}</span> to
+        <span class="text-emerald">${money(r.disciplined_pnl)}</span>.
+      </div>
+      <div class="flex items-baseline gap-3">
+        <span class="font-display text-5xl text-emerald">${money(swing)}</span>
+        <span class="text-muted text-sm">recoverable swing from a size cap + a 15% stop alone</span>
+      </div>
+    </div>`;
+  $('leaks').innerHTML = (r.leaks||[]).map((l,i)=>`
+    <div class="card p-6 fade-in" style="animation-delay:${i*60}ms">
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div class="font-medium text-lg leading-snug">${l.name}</div>
+        <span class="pill text-${sevColor[l.severity]} border border-line rounded-full px-2.5 py-1 whitespace-nowrap">~${money(l.dollars)}</span>
+      </div>
+      <p class="text-sm text-muted mb-3">${l.evidence}</p>
+      <div class="text-sm flex items-start gap-2 text-ink"><i data-lucide="check-circle-2" class="w-4 h-4 mt-0.5 text-emerald shrink-0"></i><span>${l.fix}</span></div>
+    </div>`).join('') || '<div class="card p-6 text-muted">No major leaks detected — disciplined trader. 👏</div>';
+  lucide.createIcons();
+}
+
+async function loadDemo(){
+  try { const r = await (await fetch('/api/coach/demo')).json(); renderAudit(r); }
+  catch(e){ $('scorecard').innerHTML = '<div class="card p-8 text-crimson">Could not load demo.</div>'; }
+}
+
+$('loadDemo').onclick = loadDemo;
+$('csvFile').onchange = async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  const text = await f.text();
+  const r = await (await fetch('/api/coach/audit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({csv_text:text})})).json();
+  if(r.error){ alert(r.error); return; }
+  renderAudit(r); window.location.hash='#audit';
+};
+
+const vColor = { GO:'emerald', CAUTION:'amber', BLOCK:'crimson' };
+const vIcon  = { GO:'check-circle-2', CAUTION:'alert-triangle', BLOCK:'octagon-x' };
+const ckIcon = { pass:'check', warn:'alert-triangle', fail:'x' };
+
+$('checkBtn').onclick = async () => {
+  const num = (id)=>{ const v=$(id).value; return v===''?null:parseFloat(v); };
+  const body = {
+    trade: { symbol:$('t_symbol').value, side:$('t_side').value, qty:num('t_qty'),
+             entry_price:num('t_entry'), stop_price:num('t_stop'), target_price:num('t_target') },
+    equity: num('t_equity'), use_demo_history: $('t_demo').checked,
+  };
+  $('verdict').innerHTML = '<span class="text-muted">Checking…</span>';
+  const v = await (await fetch('/api/pretrade/check',{method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)})).json();
+  const c = vColor[v.verdict];
+  $('verdict').className = 'card p-7 fade-in';
+  $('verdict').innerHTML = `
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-11 h-11 rounded-full bg-${c}/10 flex items-center justify-center text-${c}"><i data-lucide="${vIcon[v.verdict]}" class="w-6 h-6"></i></div>
+      <div><div class="font-display text-3xl text-${c}">${v.verdict}</div>
+      <div class="text-xs text-muted">risk ${money(v.risk_dollars)} · ${(v.risk_pct_equity*100).toFixed(1)}% of equity${v.payoff_ratio?' · payoff '+v.payoff_ratio:''}</div></div>
+    </div>
+    <div class="space-y-3">${v.checks.map(ck=>`
+      <div class="flex items-start gap-2.5 text-sm">
+        <i data-lucide="${ckIcon[ck.status]}" class="w-4 h-4 mt-0.5 shrink-0 text-${ck.status==='pass'?'emerald':ck.status==='warn'?'amber':'crimson'}"></i>
+        <div><span class="font-medium">${ck.name}.</span> <span class="text-muted">${ck.message}</span>
+        ${ck.suggestion?`<div class="text-ink mt-0.5">→ ${ck.suggestion}</div>`:''}</div>
+      </div>`).join('')}</div>
+    <div class="mt-5 pt-4 border-t border-line text-sm">
+      <span class="text-muted">Disciplined version:</span>
+      <span class="font-medium">${v.disciplined.qty} sh · stop ${money(v.disciplined.stop)} · target ${money(v.disciplined.target)}</span>
+      <span class="text-muted">(risk ${money(v.disciplined.risk_dollars)})</span>
+    </div>`;
+  lucide.createIcons();
+};
+
+lucide.createIcons();
+loadDemo();
+</script>
+</body>
+</html>
