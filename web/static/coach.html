@@ -567,7 +567,20 @@ function whenAuthReady(cb, n=0){
 
 lucide.createIcons();
 applyJourney(null); // optimistic guest render so the page isn't blank during auth load
-whenAuthReady(() => window.AgenticWhalesAuth.onChange(updateAuthUI));
+whenAuthReady(() => {
+  window.AgenticWhalesAuth.onChange(updateAuthUI);
+  // OAuth-redirect race: after Google sends the user back, Supabase establishes
+  // the session asynchronously and its SIGNED_IN event can fire before this
+  // listener is attached (so the page would otherwise look logged-out until a
+  // manual refresh). Poll getUser() briefly and re-render the instant a
+  // signed-in user appears.
+  let tries = 0;
+  const settle = setInterval(() => {
+    const u = window.AgenticWhalesAuth.getUser && window.AgenticWhalesAuth.getUser();
+    if (isSignedIn(u) && !isSignedIn(CURRENT)) updateAuthUI(u);
+    if (isSignedIn(u) || ++tries > 15) clearInterval(settle); // ~6s window
+  }, 400);
+});
 </script>
 </body>
 </html>
