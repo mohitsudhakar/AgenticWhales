@@ -38,9 +38,53 @@ uncorrelated 9-ETF basket (SPY QQQ EFA TLT IEF GLD DBC UUP VNQ), vs buy-and-hold
   (ORATS/CBOE). Both trend and buy&hold struggle in pure chop; harvesting sideways markets
   is the vol-selling premium, which carries the tail risk and is the next thing to test.
 
-## Next steps
-1. **Walk-forward** the blend across 2007–2026 (multiple regimes incl. the trend drought) to
-   confirm it isn't period-luck.
-2. **Vol-selling sideways sleeve** once options data is sourced — defined-risk only.
-3. **Risk-managed leverage**: the blend's 12% drawdown + Sharpe 1.01 can be levered ~1.5×
-   toward SPY-like return while keeping the crash protection — the right way to add leverage.
+## Walk-forward 2006–2026 (`tools/run_walkforward.py`) — NOT period-luck
+
+7-ETF basket (SPY QQQ EFA TLT IEF GLD VNQ), through the **2008 GFC**, the **2010s trend
+drought**, 2020, and 2022.
+
+**Full 20 years (Sharpe / return% / maxDD%):**
+
+| | Sharpe | return | maxDD |
+|---|---|---|---|
+| Buy&Hold SPY | 0.64 | **+746%** | **55%** |
+| Buy&Hold basket | 0.82 | +564% | 30% |
+| Trend long/flat | 0.91 | +248% | **12%** |
+| **50/50 blend** | **0.91** | +390% | 20% |
+
+- **Worst year: blend −17% (2022) vs SPY −36% (2008)** — half. In 2008 the blend lost 8% (17%
+  DD) while SPY lost 36% (47% DD).
+- **The 2010s drought is visible and honest:** SPY won most years 2012–2019 (steady bull, trend
+  adds little) — the blend trailed on *return* but never had a deep drawdown.
+- **Parameter-robust** (not knife-edge): blend Sharpe across 6/9/12/15-month lookbacks =
+  0.89–0.94, maxDD 18.5–20.8%.
+
+**Risk-managed leverage (3% financing):**
+
+| | Sharpe | return | maxDD |
+|---|---|---|---|
+| SPY B&H | 0.64 | +746% | 55% |
+| blend 1.0× | 0.91 | +388% | 20% |
+| **blend 1.5×** | 0.80 | **+647%** | **29%** |
+| blend 2.0× | 0.74 | +996% | 38% |
+
+→ **A 1.5× blend matches SPY's 20-year return at ~half the drawdown and a higher Sharpe.** 2×
+beats SPY's return with still-lower drawdown. Leverage doesn't raise Sharpe (financing drags
+it), but it lets you dial return up while staying risk-superior to buy&hold. That's the right
+way to lever — a low-drawdown, higher-Sharpe book — not buy&hold.
+
+**Verdict:** the non-predictive trend core is **robust across 20 years and 4 regimes**, not a
+period artifact. Trade-off remains: lower total return than a pure bull-era buy&hold, bought
+with a third of the drawdown and a far better worst-case.
+
+## Data for the sideways / vol-selling sleeve (researched)
+Both providers carry historical **options + implied vol** (the missing piece):
+- **Massive.com** — full US options (trades/quotes/candles/**Greeks + IV**), real-time +
+  historical + **flat-file bulk downloads**, Python lib, even an MCP server, free tier. Best fit
+  for systematic options backtesting (bulk history).
+- **Finnhub.io** — US equity options incl. **IV**, archives expired contracts, cheap
+  ($12–100/mo), 60 req/min free (stocks). Good cheaper alternative + live quotes/fundamentals.
+
+Next: a `dataflows/` options adapter (Massive flat files), then a **defined-risk** premium-sell
+backtest (e.g. monthly ~1-SD short strangle / put-write on SPY, small size) measured for VRP
+capture AND tail behaviour across 2008/2020/2022 — the regime where naive vol-sellers blow up.
