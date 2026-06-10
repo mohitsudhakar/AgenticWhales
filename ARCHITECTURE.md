@@ -138,6 +138,35 @@ heartbeat in the process.
 
 ---
 
+### Fund lab vs. coach product
+
+The 2026-06 pivot split the package into two tiers (decisions J1/D3 in
+[docs/reviews/2026-06-08-executive-critique.md](docs/reviews/2026-06-08-executive-critique.md)).
+**Product** modules are the coach + defensive overlay path that ships to
+users. **Fund lab** modules are the fund-era learning-loop machinery
+(~1.65k LOC): kept, not deleted, but quarantined — each carries an
+`EXPERIMENTAL — fund lab, not in the coach product path` banner in its
+module docstring, none is imported by any product module (their only
+importers are the fund-era `graph/trading_graph.py` and `web/runner.py`),
+and they carry no product-level support expectation.
+
+| Tier | Modules |
+|---|---|
+| **Coach product** | `agenticwhales/coach.py` · `pretrade.py` · `overlay.py` · `decision_support.py` · `web/coach_api.py` · `web/overlay_api.py` |
+| **Fund lab (EXPERIMENTAL)** | `agenticwhales/ablation.py` · `adaptive.py` · `conviction_decay.py` · `heterogeneity.py` · `disagreement.py` · `memory_v2.py` · `calibration.py` |
+
+One asset crosses the boundary (D3): the eval harness in
+[outcomes.py](agenticwhales/outcomes.py) — outcome resolution + Brier /
+reliability scoring — is kept and being retargeted at the coach's findings.
+Each persisted `coach_findings` row is re-tested against the trades that
+closed *after* the finding was shown to the user, via
+`resolve_finding_forward` in [coach.py](agenticwhales/coach.py), so the
+product's "this bias cost you $X" claims stay falsifiable. The fund-specific
+wiring around that harness (PM-scalar Platt calibration in `calibration.py`,
+the prompt-eval canary in `adaptive.py`) stays in the lab.
+
+---
+
 ## 1. System-level architecture
 
 ```mermaid

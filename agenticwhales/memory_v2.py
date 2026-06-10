@@ -1,4 +1,10 @@
-"""Memory v2 — outcome-predictive retrieval (Phase 2 deliverable #4).
+"""EXPERIMENTAL — fund lab, not in the coach product path.
+
+Fund-era learning-loop machinery, quarantined per the 2026-06-08 executive
+critique (J1): kept for lab research, imported by no coach/overlay product
+module. See ARCHITECTURE.md § "Fund lab vs. coach product".
+
+Memory v2 — outcome-predictive retrieval (Phase 2 deliverable #4).
 
 The existing `TradingMemoryLog` uses Jaccard token overlap for retrieval.
 Demis-review D5: that retrieves *topically* similar entries, not
