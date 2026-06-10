@@ -1,7 +1,22 @@
 
 # AgenticWhales: Multi-Agent Financial Intelligence
 
-Multi-agent LLM debate over a ticker → structured decision → paper-trading sandbox → cognitive journal. Two web surfaces: **`/fund`** (the product — autonomy spine, risk guards, paper trading, journal) and **`/analyze`** (legacy power-user surface — one-shot analyses + batches). The same `agenticwhales` Python package + CLI works headless.
+> **⚡ Product update (2026-06).** The shipped product is the **Trading Discipline
+> Coach** (`/coach`): upload a brokerage history (CSV / PDF / scanned image) or
+> connect a brokerage (SnapTrade), and it quantifies — in dollars — what your
+> behavioral leaks cost you, tracks your discipline month-over-month, and runs a
+> pre-trade check against your *own* history. It needs **no predictive edge** to be
+> useful.
+>
+> This is a deliberate pivot. The original goal — an autonomous fund with a
+> *durable trading edge* — was put to a cheap, look-ahead-proof test
+> ([edge-probe findings](docs/reviews/2026-06-07-edge-probe-findings.md)): the LLM
+> debate showed **zero cross-sectional selection skill** (market-neutral Sharpe ≈ 0);
+> its only "wins" were market beta captured *worse* than buy-and-hold. So we stopped
+> selling alpha we don't have and started selling **discipline**, which is real. The
+> multi-agent framework below still powers analysis and the pre-trade read.
+
+Multi-agent LLM debate over a ticker → structured decision → paper-trading sandbox → cognitive journal. Web surfaces: **`/coach`** (the product — dollar-quantified discipline audit + pre-trade check), **`/fund`** (autonomy spine, risk guards, paper trading, journal), and **`/analyze`** (legacy one-shot analyses + batches). The same `agenticwhales` Python package + CLI works headless.
 
 ---
 

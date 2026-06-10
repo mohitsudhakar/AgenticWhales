@@ -1,5 +1,17 @@
 # AgenticWhales — Roadmap to the North Star
 
+> **⚡ Horizon-1 returned its verdict (2026-06): KILL → pivot.** This roadmap was
+> ordered by one rule — *"don't build the behavioral coach, better data, or
+> execution until M1 proves the LLM debate has an edge."* M1 was run (a cheap,
+> look-ahead-proof edge probe) and the answer was **no edge**
+> ([findings](docs/reviews/2026-06-07-edge-probe-findings.md)): the debate doesn't
+> beat a turnover-matched random sizer or buy-and-hold, net of cost, out of sample —
+> even forced to commit, it loses to passively holding. That is a *valid, valuable*
+> result; it redirected the whole roadmap. **The stop-list below is lifted, and the
+> coach was built and shipped** — the **Trading Discipline Coach** (`/coach`) is on
+> `main` (PR #15). Treat the milestones below as historical context for the
+> autonomous-fund track, now paused pending a reason to believe an edge exists.
+
 > **What this doc is.** The execution plan that turns [NORTH_STAR.md](NORTH_STAR.md)
 > (vision + the eight gaps G1–G8) into shippable milestones. Each milestone has a
 > concrete deliverable, an **acceptance bar** (how we know it's done), and the

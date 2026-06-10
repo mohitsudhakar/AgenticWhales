@@ -1,6 +1,20 @@
 # AgenticWhales — North Star
 
-> **The vision.** A *truly intelligent agentic hedge fund in your pocket*: an
+> **⚡ Pivoted (2026-06) — read this first.** The vision below ("an autonomous hedge
+> fund in your pocket") was put to the test, and **the alpha thesis was empirically
+> killed**: a look-ahead-proof edge probe found the LLM debate has **no
+> cross-sectional selection skill** (IC ≈ 0, market-neutral Sharpe ≈ 0) — its only
+> "wins" were market beta captured worse than buy-and-hold. Full writeup:
+> [docs/reviews/2026-06-07-edge-probe-findings.md](docs/reviews/2026-06-07-edge-probe-findings.md).
+> The product pivoted to the **Trading Discipline Coach** (`/coach`), which monetizes
+> *discipline*, not a predictive edge. The original vision and the honest "what
+> 'intelligent' must mean here" framework are kept below as the **record of why we
+> pivoted** — the bar for intelligent autonomous trading is real, and we measured
+> ourselves short of it. The autonomous-fund track is paused pending a reason to
+> believe an edge exists.
+
+> **The vision (original — now reframed; see the banner above).** A *truly
+> intelligent agentic hedge fund in your pocket*: an
 > autonomous system that forms theses, sizes risk, executes, learns from every
 > outcome, and compounds an edge — while coaching its operator out of their own
 > worst instincts. Not a chatbot that talks about markets; a fund that *runs*.
