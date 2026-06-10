@@ -1,4 +1,22 @@
+import logging
 from typing import Annotated
+
+from agenticwhales.asof import LookAheadViolation, _parse_date, current_as_of, is_strict
+
+log = logging.getLogger(__name__)
+
+# Position of the date argument in the *args passed to route_to_vendor()
+# (i.e. the positional args *after* `method`). 0-indexed.
+_DATE_ARG_POS: dict[str, dict] = {
+    "get_stock_data":      {"param": "end_date",  "pos": 2},   # (symbol, start_date, end_date)
+    "get_indicators":      {"param": "curr_date", "pos": 2},   # (symbol, indicator, curr_date, look_back_days)
+    "get_fundamentals":    {"param": "curr_date", "pos": 1},   # (ticker, curr_date)
+    "get_balance_sheet":   {"param": "curr_date", "pos": 2},   # (ticker, freq, curr_date)
+    "get_cashflow":        {"param": "curr_date", "pos": 2},   # (ticker, freq, curr_date)
+    "get_income_statement":{"param": "curr_date", "pos": 2},   # (ticker, freq, curr_date)
+    "get_news":            {"param": "end_date",  "pos": 2},   # (ticker, start_date, end_date)
+    "get_global_news":     {"param": "curr_date", "pos": 0},   # (curr_date, look_back_days, limit)
+}
 
 # Import from vendor-specific modules
 from .y_finance import (
@@ -156,7 +174,42 @@ def get_vendor(category: str, method: str = None) -> str:
     return config.get("data_vendors", {}).get(category, "default")
 
 def route_to_vendor(method: str, *args, **kwargs):
-    """Route method calls to appropriate vendor implementation with fallback support."""
+    """Route method calls to appropriate vendor implementation with fallback support.
+
+    As-of guard: when called inside a ``with as_of_date(...)`` block, any
+    future-dated ``end_date`` / ``curr_date`` argument is silently truncated
+    to the as-of date.  In strict mode the requested date must not exceed
+    as-of — a ``LookAheadViolation`` is raised instead, surfacing look-ahead
+    bugs in the backtest harness rather than silently hiding them.
+    """
+    # ── as-of guard ──────────────────────────────────────────────────────
+    bound = current_as_of()
+    if bound is not None and method in _DATE_ARG_POS:
+        spec = _DATE_ARG_POS[method]
+        param = spec["param"]
+        pos = spec["pos"]
+        date_raw = (
+            kwargs.get(param)
+            if param in kwargs
+            else (args[pos] if len(args) > pos else None)
+        )
+        if date_raw is not None:
+            date_val = _parse_date(date_raw)
+            if date_val is not None and date_val > bound:
+                if is_strict():
+                    raise LookAheadViolation(
+                        f"{method}: {param} {date_val} > as_of {bound} in strict mode "
+                        f"(replay acceptance tests require zero look-ahead)"
+                    )
+                log.debug(
+                    "as_of_truncate method=%s %s=%s truncated_to=%s",
+                    method, param, date_val, bound,
+                )
+                args = list(args)
+                args[pos] = bound.isoformat()
+                args = tuple(args)
+    # ── end as-of guard ──────────────────────────────────────────────────
+
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
     primary_vendors = [v.strip() for v in vendor_config.split(',')]

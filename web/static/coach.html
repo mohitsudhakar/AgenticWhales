@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — Trading Discipline Coach</title>
+  <meta name="description" content="Know what your habits cost you. A behavioral coach + pre-trade check that turns your own trading history into discipline — quantified in dollars." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script type="module" src="/static/supabase-client.js"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657',
+                  line: '#E7E0D2', emerald: '#1F6F54', amber: '#B45309', crimson: '#B3261E' },
+        fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+      }}
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
+    .glass { background: rgba(255,255,255,0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+             border: 1px solid rgba(231,224,210,0.9); }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px;
+            box-shadow: 0 1px 2px rgba(26,26,23,0.03), 0 8px 30px rgba(26,26,23,0.04); }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+    .animate-float { animation: float 4s ease-in-out infinite; }
+    .grain { background-image: radial-gradient(rgba(26,26,23,0.025) 1px, transparent 1px); background-size: 4px 4px; }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    .fade-in { animation: fade .5s ease both; } @keyframes fade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+  </style>
+</head>
+<body class="grain">
+
+  <!-- Nav -->
+  <nav class="sticky top-0 z-40 glass">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="text-xl">🐋</span>
+        <span class="font-logo text-xl">AgenticWhales</span>
+        <span class="hidden sm:inline pill text-muted ml-2 border-l border-line pl-3">Discipline Coach</span>
+      </div>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="#audit" class="hover:text-ink transition">Audit</a>
+        <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
+        <span id="authUser" class="hidden text-ink font-medium"></span>
+        <button id="settingsBtn" class="hidden text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
+        <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
+      </div>
+    </div>
+    <div id="settingsPanel" class="hidden absolute right-6 top-[60px] z-50 card p-4 w-72 text-sm">
+      <div class="font-medium mb-1">Settings</div>
+      <p class="text-muted text-xs mb-3">Your uploaded trades and discipline history are private to you.</p>
+      <button id="deleteDataBtn" class="text-crimson text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition flex items-center gap-1.5">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete all my data</button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header class="max-w-6xl mx-auto px-6 pt-20 pb-16">
+    <div class="max-w-3xl">
+      <div id="heroPill" class="pill text-emerald mb-5">Behavioral edge, not market prediction</div>
+      <h1 id="heroTitle" class="font-display text-5xl sm:text-6xl leading-[1.05] mb-6">
+        Know what your <span class="italic">habits</span> cost you —<br>then stop repeating them.
+      </h1>
+      <p id="heroSub" class="text-lg text-muted leading-relaxed mb-8 max-w-2xl">
+        We don't sell predictions. We turn your own trading history into discipline:
+        a dollar-quantified audit of your behavioral leaks, and a pre-trade check that
+        catches the mistake <span class="text-ink font-medium">before</span> you click buy.
+      </p>
+      <div id="heroCtas" class="flex flex-wrap gap-3">
+        <a href="#audit" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2">
+          See a live audit <i data-lucide="arrow-down" class="w-4 h-4"></i></a>
+        <a href="#check" class="border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition">Try the pre-trade check</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Audit -->
+  <section id="audit" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="flex items-end justify-between mb-8 flex-wrap gap-4">
+      <div>
+        <div class="pill text-muted mb-2">The audit</div>
+        <h2 class="font-display text-4xl">Your discipline scorecard</h2>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <button id="loadDemo" class="border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
+          <i data-lucide="sparkles" class="w-4 h-4"></i> Load sample trader</button>
+        <button id="connectBroker" class="hidden border border-line px-4 py-2 rounded-full hover:bg-white transition flex items-center gap-2">
+          <i data-lucide="link" class="w-4 h-4"></i> Connect brokerage</button>
+        <label class="bg-ink text-cream px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition flex items-center gap-2">
+          <i data-lucide="upload" class="w-4 h-4"></i> <span id="uploadLabel">Upload CSV / PDF / image</span>
+          <input id="csvFile" type="file" accept=".csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff" class="hidden">
+        </label>
+      </div>
+    </div>
+
+    <div id="scorecard" class="grid lg:grid-cols-3 gap-5">
+      <!-- filled by JS -->
+      <div class="card p-8 lg:col-span-3 text-center text-muted">Loading a sample audit…</div>
+    </div>
+
+    <div id="insightHeadline" class="mt-6"></div>
+    <div id="insights" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4"></div>
+
+    <h3 id="leaksTitle" class="font-display text-2xl mt-10 mb-4 hidden">Where your edge leaks</h3>
+    <div id="leaks" class="grid md:grid-cols-2 gap-5"></div>
+  </section>
+
+  <!-- Discipline over time -->
+  <section id="trend" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Progress</div>
+    <h2 class="font-display text-4xl mb-6">Discipline over time</h2>
+    <div id="trendBody" class="card p-8"></div>
+  </section>
+
+  <!-- Pre-trade check -->
+  <section id="check" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Decision support</div>
+    <h2 class="font-display text-4xl mb-2">Pre-trade check</h2>
+    <p class="text-muted mb-8 max-w-2xl">Run a trade past your risk rules and your own behavioral history before you place it. Toggle “use sample history” to see it catch a revenge trade.</p>
+
+    <div class="grid lg:grid-cols-2 gap-6 items-start">
+      <div class="card p-7">
+        <div class="grid grid-cols-2 gap-4 text-sm">
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Symbol</span>
+            <input id="t_symbol" value="NVDA" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Side</span>
+            <select id="t_side" class="border border-line rounded-lg px-3 py-2 bg-cream/40"><option value="long">long</option><option value="short">short</option></select></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Shares</span>
+            <input id="t_qty" type="number" value="300" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Entry price</span>
+            <input id="t_entry" type="number" value="120" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Stop (optional)</span>
+            <input id="t_stop" type="number" placeholder="—" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Target (optional)</span>
+            <input id="t_target" type="number" placeholder="—" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Account equity</span>
+            <input id="t_equity" type="number" value="200000" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+          <label class="flex items-center gap-2 mt-6 text-muted">
+            <input id="t_demo" type="checkbox" checked class="accent-emerald w-4 h-4"> <span id="demoLabel">use sample history</span>
+        </div>
+        <button id="checkBtn" class="mt-6 w-full bg-ink text-cream py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center justify-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4"></i> Check this trade</button>
+      </div>
+      <div id="verdict" class="card p-7 min-h-[200px] flex items-center justify-center text-muted">
+        Fill the form and run a check.
+      </div>
+    </div>
+  </section>
+
+  <footer class="max-w-6xl mx-auto px-6 py-12 mt-8 border-t border-line text-sm text-muted">
+    <p class="max-w-3xl">Paper / analysis only — AgenticWhales never places orders. The dollar figures are
+    deterministic counterfactuals computed from your history, not predictions or advice. Educational use.</p>
+  </footer>
+
+<script>
+// Auto-attach the Supabase bearer token to every /api/* call (mirrors fund.js).
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function(input, init){
+  const url = typeof input === 'string' ? input : (input?.url || '');
+  if (url.startsWith('/api/')) {
+    const token = window.AgenticWhalesAuth?.getAccessToken?.();
+    if (token) { init = init ? {...init} : {}; const h = new Headers(init.headers || (typeof input!=='string'?input.headers:undefined));
+      if(!h.has('Authorization')) h.set('Authorization', `Bearer ${token}`); init.headers = h; }
+  }
+  return _origFetch(input, init);
+};
+
+const $ = (id) => document.getElementById(id);
+const money = (n) => (n<0?'-':'') + '$' + Math.abs(Math.round(n)).toLocaleString();
+const sevColor = { high:'crimson', medium:'amber', low:'muted' };
+
+function scoreColor(s){ return s>=70?'emerald':s>=40?'amber':'crimson'; }
+
+function renderAudit(r){
+  const c = scoreColor(r.discipline_score);
+  const swing = r.total_quantified_leak;
+  $('scorecard').innerHTML = `
+    <div class="card p-8 flex flex-col items-center justify-center fade-in">
+      <div class="pill text-muted mb-3">Discipline score</div>
+      <div class="relative w-32 h-32 mb-2">
+        <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
+          <circle cx="50" cy="50" r="42" fill="none" stroke="#E7E0D2" stroke-width="8"/>
+          <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"
+            class="text-${c}" stroke-dasharray="${2*Math.PI*42}" stroke-dashoffset="${2*Math.PI*42*(1-r.discipline_score/100)}"/>
+        </svg>
+        <div class="absolute inset-0 flex items-center justify-center font-display text-4xl text-${c}">${r.discipline_score}</div>
+      </div>
+      <div class="text-sm text-muted">${r.n_trades} round-trips · ${(r.hit_rate*100).toFixed(0)}% win-rate · payoff ${r.payoff_ratio}</div>
+    </div>
+    <div class="card p-8 lg:col-span-2 fade-in flex flex-col justify-center">
+      <div class="pill text-muted mb-2">What your behavior — not the market — cost you</div>
+      <div class="font-display text-2xl leading-snug mb-4">
+        Disciplined rules would have moved your P&amp;L from
+        <span class="text-crimson">${money(r.total_pnl)}</span> to
+        <span class="text-emerald">${money(r.disciplined_pnl)}</span>.
+      </div>
+      <div class="flex items-baseline gap-3">
+        <span class="font-display text-5xl text-emerald">${money(swing)}</span>
+        <span class="text-muted text-sm">recoverable swing from a size cap + a 15% stop alone</span>
+      </div>
+    </div>`;
+  renderInsights(r.insights || {});
+  $('leaksTitle').classList.toggle('hidden', !(r.leaks||[]).length);
+  $('leaks').innerHTML = (r.leaks||[]).map((l,i)=>`
+    <div class="card p-6 fade-in" style="animation-delay:${i*60}ms">
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div class="font-medium text-lg leading-snug">${l.name}</div>
+        <span class="pill text-${sevColor[l.severity]} border border-line rounded-full px-2.5 py-1 whitespace-nowrap">~${money(l.dollars)}</span>
+      </div>
+      <p class="text-sm text-muted mb-3">${l.evidence}</p>
+      <div class="text-sm flex items-start gap-2 text-ink"><i data-lucide="check-circle-2" class="w-4 h-4 mt-0.5 text-emerald shrink-0"></i><span>${l.fix}</span></div>
+    </div>`).join('') || '<div class="card p-6 text-muted">No major leaks detected — disciplined trader. 👏</div>';
+  lucide.createIcons();
+}
+
+async function loadDemo(){
+  try { const r = await (await fetch('/api/coach/demo')).json(); renderAudit(r); }
+  catch(e){ $('scorecard').innerHTML = '<div class="card p-8 text-crimson">Could not load demo.</div>'; }
+}
+
+$('loadDemo').onclick = loadDemo;
+// Render the progress card ONCE, then update text/width in place so the spinner
+// and structure don't flicker on every event.
+function showProgress(pct, msg){
+  pct = Math.max(2, Math.min(100, pct||0));
+  if(!document.getElementById('progressBox')){
+    $('scorecard').innerHTML = `<div id="progressBox" class="card p-10 lg:col-span-3 fade-in">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-5 h-5 border-2 border-line border-t-emerald rounded-full animate-spin"></div>
+        <span class="font-display text-2xl">Analyzing your history…</span></div>
+      <p id="progressMsg" class="text-muted mb-4"></p>
+      <div class="h-2 bg-line rounded-full overflow-hidden"><div id="progressBar" class="h-full bg-emerald" style="width:2%;transition:width .4s ease"></div></div>
+      <p id="progressPct" class="text-xs text-muted mt-2"></p>
+      <p class="text-xs text-muted mt-1">Large or scanned files can take a minute or two — you can keep this tab open.</p></div>`;
+    $('insights').innerHTML=''; $('insightHeadline').innerHTML='';
+    $('leaksTitle').classList.add('hidden'); $('leaks').innerHTML='';
+  }
+  $('progressMsg').textContent = msg || 'Working…';
+  $('progressBar').style.width = pct + '%';
+  $('progressPct').textContent = Math.round(pct) + '%';
+}
+function showProgressError(msg){
+  PROCESSING = false;
+  $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${msg||'Something went wrong.'}</p></div>`;
+  $('leaks').innerHTML = ''; lucide.createIcons();
+}
+
+$('csvFile').onchange = async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  e.target.value = '';
+  PROCESSING = true;
+  window.location.hash = '#audit';
+  showProgress(2, 'Uploading your file…');
+  let jid;
+  try {
+    const fd = new FormData(); fd.append('file', f);
+    const j = await (await fetch('/api/coach/upload_async', {method:'POST', body: fd})).json();
+    if(!j.job_id){ showProgressError(j.error || 'Upload failed.'); return; }
+    jid = j.job_id;
+  } catch(err){ showProgressError('Upload failed: ' + err); return; }
+  const es = new EventSource(`/api/coach/jobs/${jid}/stream`);
+  es.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    if(d.status === 'error'){ es.close(); showProgressError(d.error); return; }
+    showProgress(d.pct, d.message);
+    if(d.status === 'done'){
+      es.close(); PROCESSING = false;
+      const r = d.report || {};
+      renderAudit(r);
+      if(r.warnings && r.warnings.length) console.warn('warnings:', r.warnings);
+      if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly); }
+    }
+  };
+  es.onerror = () => { es.close(); showProgressError('Lost connection to the server. Please retry.'); };
+};
+
+const vColor = { GO:'emerald', CAUTION:'amber', BLOCK:'crimson' };
+const vIcon  = { GO:'check-circle-2', CAUTION:'alert-triangle', BLOCK:'octagon-x' };
+const ckIcon = { pass:'check', warn:'alert-triangle', fail:'x' };
+
+$('checkBtn').onclick = async () => {
+  const num = (id)=>{ const v=$(id).value; return v===''?null:parseFloat(v); };
+  const body = {
+    trade: { symbol:$('t_symbol').value, side:$('t_side').value, qty:num('t_qty'),
+             entry_price:num('t_entry'), stop_price:num('t_stop'), target_price:num('t_target') },
+    equity: num('t_equity'), use_demo_history: $('t_demo').checked,
+  };
+  $('verdict').innerHTML = '<span class="text-muted">Checking…</span>';
+  const v = await (await fetch('/api/pretrade/check',{method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)})).json();
+  const c = vColor[v.verdict];
+  $('verdict').className = 'card p-7 fade-in';
+  $('verdict').innerHTML = `
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-11 h-11 rounded-full bg-${c}/10 flex items-center justify-center text-${c}"><i data-lucide="${vIcon[v.verdict]}" class="w-6 h-6"></i></div>
+      <div><div class="font-display text-3xl text-${c}">${v.verdict}</div>
+      <div class="text-xs text-muted">risk ${money(v.risk_dollars)} · ${(v.risk_pct_equity*100).toFixed(1)}% of equity${v.payoff_ratio?' · payoff '+v.payoff_ratio:''}</div></div>
+    </div>
+    <div class="space-y-3">${v.checks.map(ck=>`
+      <div class="flex items-start gap-2.5 text-sm">
+        <i data-lucide="${ckIcon[ck.status]}" class="w-4 h-4 mt-0.5 shrink-0 text-${ck.status==='pass'?'emerald':ck.status==='warn'?'amber':'crimson'}"></i>
+        <div><span class="font-medium">${ck.name}.</span> <span class="text-muted">${ck.message}</span>
+        ${ck.suggestion?`<div class="text-ink mt-0.5">→ ${ck.suggestion}</div>`:''}</div>
+      </div>`).join('')}</div>
+    <div class="mt-5 pt-4 border-t border-line text-sm">
+      <span class="text-muted">Disciplined version:</span>
+      <span class="font-medium">${v.disciplined.qty} sh · stop ${money(v.disciplined.stop)} · target ${money(v.disciplined.target)}</span>
+      <span class="text-muted">(risk ${money(v.disciplined.risk_dollars)})</span>
+    </div>
+    ${renderSupport(v.decision_support)}`;
+  lucide.createIcons();
+};
+
+function renderSupport(d){
+  if(!d || !d.available) return '';
+  const sigs = (d.signals||[]).map(s=>{
+    const c = s.direction>0?'emerald':s.direction<0?'crimson':'muted';
+    const arrow = s.direction>0?'↑':s.direction<0?'↓':'→';
+    return `<span class="pill border border-line rounded-full px-2 py-0.5 text-${c}">${s.name} ${arrow}</span>`;
+  }).join(' ');
+  return `<div class="mt-4 pt-4 border-t border-line">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="line-chart" class="w-4 h-4 text-muted"></i>
+      <span class="pill text-muted">Decision support · ${d.symbol} @ ${money(d.last_price)}</span>
+      <span class="pill border border-line rounded-full px-2 py-0.5 ml-auto">${d.rating}</span>
+    </div>
+    <div class="flex flex-wrap gap-1.5 mb-2">${sigs}</div>
+    ${d.ai_note?`<p class="text-sm text-muted italic">“${d.ai_note}”</p>`:''}
+    <p class="text-[11px] text-muted mt-2">Context only — not a recommendation. You decide.</p>
+  </div>`;
+}
+
+// ---- Auth + journey (guest / new / returning) ----
+let CURRENT = null;
+let PROCESSING = false;  // true while an upload/sync is in flight — blocks journey re-renders
+const BTN_DARK = 'bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2';
+const BTN_LINE = 'border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition flex items-center gap-2';
+const firstName = (u) => (u?.displayName && u.displayName !== 'trader') ? u.displayName.split(' ')[0]
+  : (u?.email ? u.email.split('@')[0] : '');
+const isSignedIn = (u) => !!(u && !u.isGuest && (u.email || u.displayName));
+
+function updateAuthUI(user){
+  CURRENT = user;
+  const b = $('authBtn'), u = $('authUser'); b.classList.remove('hidden');
+  if(isSignedIn(user)){
+    u.textContent = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
+    u.classList.remove('hidden');
+    b.textContent = 'Sign out'; b.onclick = () => window.AgenticWhalesAuth.signOut();
+  } else {
+    u.classList.add('hidden'); u.textContent = '';
+    b.textContent = 'Sign in'; b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
+  }
+  $('settingsBtn').classList.toggle('hidden', !isSignedIn(user));
+  $('loadDemo').classList.toggle('hidden', isSignedIn(user));  // signed-in users see their own data
+  applyJourney(user);
+}
+
+// Settings panel + delete-my-data
+$('settingsBtn').onclick = (e) => { e.stopPropagation(); $('settingsPanel').classList.toggle('hidden'); };
+document.addEventListener('click', (e) => {
+  const p = $('settingsPanel'), b = $('settingsBtn');
+  if(!p.contains(e.target) && e.target !== b && !b.contains(e.target)) p.classList.add('hidden');
+});
+$('deleteDataBtn').onclick = async () => {
+  if(!confirm('Delete all your uploaded trades and discipline history? This cannot be undone.')) return;
+  try {
+    const r = await (await fetch('/api/coach/data/delete', {method:'POST'})).json();
+    $('settingsPanel').classList.add('hidden');
+    if(r.ok){ applyJourney(CURRENT); } else { alert(r.error || 'Delete failed.'); }
+  } catch(e){ alert('Delete failed: ' + e); }
+};
+
+function renderHero(mode, name){
+  const upload = `onclick="document.getElementById('csvFile').click()"`;
+  const H = {
+    guest: { pill:['Behavioral edge, not market prediction','text-emerald'],
+      title:'Know what your <span class="italic">habits</span> cost you —<br>then stop repeating them.',
+      sub:"We don't sell predictions. We turn your own trading history into discipline: a dollar-quantified audit of your behavioral leaks, and a pre-trade check that catches the mistake <span class=\"text-ink font-medium\">before</span> you click buy.",
+      ctas:`<a href="#audit" class="${BTN_DARK}">See a live audit <i data-lucide="arrow-down" class="w-4 h-4"></i></a><a href="#check" class="${BTN_LINE}">Try the pre-trade check</a>` },
+    new: { pill:['Welcome to AgenticWhales','text-muted'],
+      title:`Let's run your <span class="italic">first</span> audit${name?', '+name:''}.`,
+      sub:"Upload a statement — CSV, PDF, or a screenshot — and I'll show you, in dollars, exactly what your habits cost you, and the rules that fix them. Nothing is shared; we never place orders.",
+      ctas:`<button ${upload} class="${BTN_DARK}"><i data-lucide="upload" class="w-4 h-4"></i> Upload your statement</button><button onclick="loadDemo();location.hash='#audit'" class="${BTN_LINE}">See a sample first</button>` },
+    returning: { pill:['Welcome back','text-muted'],
+      title:`Here's where your <span class="italic">discipline</span> stands${name?', '+name:''}.`,
+      sub:"Your latest audit and discipline trend are below. Upload a new statement anytime to refresh them, or run a trade past the pre-trade check.",
+      ctas:`<button ${upload} class="${BTN_DARK}"><i data-lucide="upload" class="w-4 h-4"></i> Upload a new statement</button><a href="#check" class="${BTN_LINE}">Pre-trade check</a>` },
+  }[mode];
+  $('heroPill').textContent = H.pill[0]; $('heroPill').className = 'pill mb-5 ' + H.pill[1];
+  $('heroTitle').innerHTML = H.title; $('heroSub').innerHTML = H.sub; $('heroCtas').innerHTML = H.ctas;
+  lucide.createIcons();
+}
+
+function renderEmptyAudit(){
+  $('scorecard').innerHTML = `<div class="card p-10 lg:col-span-3 text-center fade-in">
+    <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto mb-3 text-muted"></i>
+    <p class="font-display text-2xl mb-2">No audit yet</p>
+    <p class="text-muted mb-5 max-w-md mx-auto">Upload your trading history and I'll quantify what your habits cost you — and exactly how to fix them.</p>
+    <button onclick="document.getElementById('csvFile').click()" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Upload CSV / PDF / image</button></div>`;
+  $('insights').innerHTML = ''; $('insightHeadline').innerHTML = '';
+  $('leaksTitle').classList.add('hidden'); $('leaks').innerHTML = '';
+  lucide.createIcons();
+}
+
+function setPretradeMode(signedIn){
+  const demo = $('t_demo'), lbl = $('demoLabel');
+  if(signedIn){ demo.checked = false; demo.classList.add('hidden'); lbl.textContent = 'checking against your history'; }
+  else { demo.checked = true; demo.classList.remove('hidden'); lbl.textContent = 'use sample history'; }
+}
+
+async function applyJourney(user){
+  if(PROCESSING) return;  // don't clobber an in-progress upload on auth/visibility events
+  const signedIn = isSignedIn(user);
+  setPretradeMode(signedIn);
+  if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false}); return; }
+  refreshBrokerStatus();
+  const name = firstName(user);
+  let latest = null;
+  try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
+  if(latest && latest.has_audit){
+    renderHero('returning', name); renderAudit(latest.report); renderMonthlyTrend(latest.report.monthly);
+  } else {
+    renderHero('new', name); renderEmptyAudit(); renderMonthlyTrend([]);
+  }
+}
+
+function renderInsights(ins){
+  const el = $('insights'), head = $('insightHeadline');
+  if(!ins || !ins.n_trades){ el.innerHTML=''; head.innerHTML=''; return; }
+  head.innerHTML = `<div class="card p-5 flex items-start gap-3 fade-in">
+    <i data-lucide="sparkles" class="w-5 h-5 text-emerald mt-0.5 shrink-0"></i>
+    <p class="font-display text-xl leading-snug">${ins.headline}</p></div>`;
+  const card = (label,big,sub,icon,color='ink') => `<div class="card p-5 fade-in">
+    <div class="flex items-center gap-2 mb-2 text-muted"><i data-lucide="${icon}" class="w-4 h-4"></i><span class="pill">${label}</span></div>
+    <div class="font-display text-2xl text-${color} leading-tight">${big}</div>
+    <p class="text-xs text-muted mt-1">${sub}</p></div>`;
+  const cards = [];
+  cards.push(card('Activity', `${ins.n_trades} trades`, `${ins.period.start} → ${ins.period.end} · ${ins.period.label}`, 'calendar-days'));
+  cards.push(card('Win rate', `${Math.round(ins.win_rate*100)}%`, 'of round-trips were green', 'target'));
+  const ratio = ins.hold_ratio;
+  cards.push(card('Holding discipline', ratio>1.2?`${ratio}× longer`:'balanced',
+    ratio>1.2?`you hold losers ${ratio}× longer than winners`:`winners ${ins.hold_winners_days}d · losers ${ins.hold_losers_days}d`,
+    'hourglass', ratio>1.2?'crimson':'emerald'));
+  if(ins.top_fix) cards.push(card('Fix this week', money(ins.top_fix.dollars), ins.top_fix.fix, 'wrench', 'emerald'));
+  else cards.push(card('Best trade', money(ins.best_trade.pnl), `${ins.best_trade.symbol} +${ins.best_trade.return_pct}%`, 'trophy', 'emerald'));
+  el.innerHTML = cards.join('');
+  lucide.createIcons();
+}
+
+function renderMonthlyTrend(monthly){
+  const el = $('trendBody');
+  if(!monthly || monthly.length===0){
+    el.innerHTML = `<p class="text-muted text-center py-6">Upload more history (or connect a brokerage) and your month-by-month discipline will chart here automatically.</p>`;
+    return;
+  }
+  if(monthly.length===1){
+    const m = monthly[0];
+    el.innerHTML = `<div class="text-center py-6"><span class="font-display text-4xl text-emerald">${Math.round(m.score)}</span>
+      <p class="text-muted">discipline score for ${m.month} · ${m.n_trades} trades</p>
+      <p class="text-xs text-muted mt-2">Add another month — or connect a brokerage to keep it updating itself.</p></div>`;
+    return;
+  }
+  const W=680,H=170,pad=26, step=Math.ceil(monthly.length/6);
+  const xs=(i)=> pad + i*(W-2*pad)/(monthly.length-1);
+  const ys=(s)=> H-pad-(s/100)*(H-2*pad);
+  const pts = monthly.map((m,i)=>`${xs(i).toFixed(1)},${ys(m.score).toFixed(1)}`).join(' ');
+  const dots = monthly.map((m,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(m.score).toFixed(1)}" r="3.5" fill="#1F6F54"><title>${m.month}: ${Math.round(m.score)} (${m.n_trades} trades)</title></circle>`).join('');
+  const labels = monthly.map((m,i)=> (i%step===0)?`<text x="${xs(i).toFixed(1)}" y="${H-6}" font-size="9" fill="#6B6657" text-anchor="middle">${m.month.slice(2)}</text>`:'').join('');
+  const last=monthly[monthly.length-1], first=monthly[0], delta=last.score-first.score;
+  el.innerHTML = `<div class="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+    <div><span class="font-display text-4xl text-emerald">${Math.round(last.score)}</span> <span class="text-muted text-sm">latest month (${last.month})</span></div>
+    <div class="text-sm ${delta>=0?'text-emerald':'text-crimson'}">${delta>=0?'▲':'▼'} ${Math.abs(Math.round(delta))} vs ${first.month} · ${monthly.length} months</div></div>
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:190px">
+      <line x1="${pad}" y1="${ys(50)}" x2="${W-pad}" y2="${ys(50)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
+      <polyline points="${pts}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}${labels}
+    </svg>`;
+}
+
+async function loadHistory(){
+  try { const r = await (await fetch('/api/coach/history')).json(); renderTrend(r); }
+  catch(e){ /* ignore */ }
+}
+
+// ---- SnapTrade brokerage connect ----
+async function refreshBrokerStatus(){
+  const b = $('connectBroker'); if(!b) return;
+  try {
+    const s = await (await fetch('/api/snaptrade/status')).json();
+    if(!s.configured){ b.classList.add('hidden'); return; }
+    b.classList.remove('hidden');
+    b.dataset.mode = s.connected ? 'sync' : 'connect';
+    b.innerHTML = s.connected
+      ? '<i data-lucide="refresh-cw" class="w-4 h-4"></i> Sync brokerage'
+      : '<i data-lucide="link" class="w-4 h-4"></i> Connect brokerage';
+    lucide.createIcons();
+  } catch(e){ b.classList.add('hidden'); }
+}
+
+$('connectBroker').onclick = async () => {
+  if(!isSignedIn(CURRENT)){ window.AgenticWhalesAuth?.signInWithGoogle?.(); return; }
+  const b = $('connectBroker');
+  if(b.dataset.mode === 'sync'){
+    PROCESSING = true;
+    window.location.hash = '#audit';
+    showProgress(20, 'Reading your brokerage activity…');
+    try {
+      const r = await (await fetch('/api/snaptrade/sync', {method:'POST'})).json();
+      if(r.error){ showProgressError(r.error); return; }
+      PROCESSING = false;
+      renderAudit(r); renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly);
+    } catch(err){ showProgressError('Sync failed: ' + err); }
+  } else {
+    try {
+      const r = await (await fetch('/api/snaptrade/connect', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({redirect: location.href})})).json();
+      if(r.url){ window.location.href = r.url; }
+      else { alert(r.error || 'Could not start the brokerage connection.'); }
+    } catch(err){ alert('Connect failed: ' + err); }
+  }
+};
+
+function renderTrend(r){
+  const el = $('trendBody');
+  if(!r.signed_in){
+    el.innerHTML = `<div class="text-center py-6">
+      <p class="font-display text-2xl mb-2">Track your discipline as it improves.</p>
+      <p class="text-muted mb-5 max-w-lg mx-auto">Sign in and every audit is saved, so you can watch your discipline score climb as your habits get tighter.</p>
+      <button onclick="window.AgenticWhalesAuth?.signInWithGoogle?.()" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Sign in with Google</button></div>`;
+    return;
+  }
+  const a = (r.audits||[]).slice().reverse(); // oldest -> newest
+  if(a.length === 0){ el.innerHTML = `<p class="text-muted text-center py-6">No audits yet — upload a history above and your discipline score will start tracking here.</p>`; return; }
+  const W=680, H=160, pad=24;
+  const xs = (i)=> a.length<2 ? W/2 : pad + i*(W-2*pad)/(a.length-1);
+  const ys = (s)=> H-pad - (s/100)*(H-2*pad);
+  const pts = a.map((x,i)=>`${xs(i).toFixed(1)},${ys(x.discipline_score).toFixed(1)}`).join(' ');
+  const dots = a.map((x,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(x.discipline_score).toFixed(1)}" r="3.5" fill="#1F6F54"/>`).join('');
+  const last = a[a.length-1], first = a[0];
+  const delta = (last.discipline_score - first.discipline_score);
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+      <div><span class="font-display text-4xl text-emerald">${Math.round(last.discipline_score)}</span>
+      <span class="text-muted text-sm">current discipline score</span></div>
+      <div class="text-sm ${delta>=0?'text-emerald':'text-crimson'}">${delta>=0?'▲':'▼'} ${Math.abs(Math.round(delta))} since first audit · ${a.length} audits</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:180px">
+      <line x1="${pad}" y1="${ys(50)}" x2="${W-pad}" y2="${ys(50)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
+      <polyline points="${pts}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}
+    </svg>`;
+}
+
+function whenAuthReady(cb, n=0){
+  if(window.AgenticWhalesAuth){ cb(); }
+  else if(n<40){ setTimeout(()=>whenAuthReady(cb, n+1), 150); }
+  else { applyJourney(null); } // Supabase unavailable -> guest journey
+}
+
+lucide.createIcons();
+applyJourney(null); // optimistic guest render so the page isn't blank during auth load
+whenAuthReady(() => {
+  window.AgenticWhalesAuth.onChange(updateAuthUI);
+  // OAuth-redirect race: after Google sends the user back, Supabase establishes
+  // the session asynchronously and its SIGNED_IN event can fire before this
+  // listener is attached (so the page would otherwise look logged-out until a
+  // manual refresh). Poll getUser() briefly and re-render the instant a
+  // signed-in user appears.
+  let tries = 0;
+  const settle = setInterval(() => {
+    const u = window.AgenticWhalesAuth.getUser && window.AgenticWhalesAuth.getUser();
+    if (isSignedIn(u) && !isSignedIn(CURRENT)) updateAuthUI(u);
+    if (isSignedIn(u) || ++tries > 15) clearInterval(settle); // ~6s window
+  }, 400);
+});
+</script>
+</body>
+</html>

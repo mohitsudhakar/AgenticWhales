@@ -132,6 +132,13 @@ app = FastAPI(title="AgenticWhales Web", lifespan=lifespan)
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Behavioral coach + pre-trade decision-support API (deterministic, read-only).
+from web.coach_api import router as coach_router  # noqa: E402
+from web.snaptrade_api import router as snaptrade_router  # noqa: E402
+
+app.include_router(coach_router)
+app.include_router(snaptrade_router)
+
 
 def _supabase_runtime_config_tag() -> str:
     """Inline `<script>` tag that hands the Supabase URL + anon key to the
@@ -188,6 +195,12 @@ async def fund_page() -> HTMLResponse:
 async def analyze_page() -> HTMLResponse:
     """Power-user surface: one-shot analyses + batches with full model picker."""
     return _render_html("index.html")
+
+
+@app.get("/coach", response_class=HTMLResponse)
+async def coach_page() -> HTMLResponse:
+    """Behavioral coach + pre-trade decision-support — the discipline product."""
+    return _render_html("coach.html")
 
 
 @app.get("/welcome", response_class=HTMLResponse)

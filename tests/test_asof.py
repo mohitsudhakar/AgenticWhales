@@ -12,7 +12,46 @@ from agenticwhales.asof import (
     assert_as_of,
     bounded_to_as_of,
     current_as_of,
+    is_strict,
 )
+
+
+class TestStrictMode:
+    def test_default_is_lenient(self):
+        with as_of_date("2024-06-01"):
+            assert is_strict() is False
+
+    def test_strict_flag_set(self):
+        with as_of_date("2024-06-01", strict=True):
+            assert is_strict() is True
+
+    def test_strict_raises_on_future_end(self):
+        @bounded_to_as_of()
+        def fetch(symbol, start_date, end_date):
+            return end_date
+
+        with as_of_date("2024-06-01", strict=True):
+            with pytest.raises(LookAheadViolation, match="strict"):
+                fetch("AAPL", start_date="2024-01-01", end_date="2024-12-31")
+
+    def test_strict_allows_within_bound(self):
+        @bounded_to_as_of()
+        def fetch(symbol, start_date, end_date):
+            return end_date
+
+        with as_of_date("2024-06-01", strict=True):
+            assert fetch("AAPL", start_date="2024-01-01", end_date="2024-05-01") == "2024-05-01"
+
+    def test_strict_scope_restored_on_exit(self):
+        with as_of_date("2024-06-01", strict=True):
+            assert is_strict() is True
+        assert is_strict() is False
+
+    def test_nested_lenient_inside_strict(self):
+        with as_of_date("2024-06-01", strict=True):
+            with as_of_date("2024-06-01"):
+                assert is_strict() is False
+            assert is_strict() is True
 
 
 class TestContext:

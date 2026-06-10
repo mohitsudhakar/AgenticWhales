@@ -183,6 +183,8 @@ def run_backtest(
     kelly_cap: float = 0.10,
     history: Optional[pd.DataFrame] = None,
     warmup_days: int = 60,
+    cost_bps: float = 0.0,
+    strict: bool = False,
 ) -> BacktestResult:
     """Replay a backtest for one symbol.
 
@@ -193,6 +195,11 @@ def run_backtest(
     The decision is computed using only history up to and including the as-of
     date. The fill (if any) happens at the *next* trading day's open — never on
     the as-of bar itself. This is the strict-causal convention.
+
+    `cost_bps` charges a transaction cost (in basis points of notional) on every
+    fill leg — entry and exit alike — so the equity curve is net of cost. Default
+    0.0 preserves the legacy cost-free behavior. `strict` runs the per-day as-of
+    binding in raise-on-future mode (defense-in-depth for replay; default off).
     """
     fd = _coerce_date(from_date)
     td = _coerce_date(to_date)
@@ -206,6 +213,9 @@ def run_backtest(
     trading_days = [d.date() for d in history.index if fd <= d.date() <= td]
     if not trading_days:
         raise ValueError(f"no trading days in {fd}..{td} for {symbol}")
+
+    def _txn_cost(qty: float, px: float) -> float:
+        return abs(qty) * px * cost_bps / 1e4
 
     cash = float(starting_cash)
     open_trade: Optional[_OpenTrade] = None
@@ -228,7 +238,7 @@ def run_backtest(
         #    a new one — keeps decisions independent of in-flight position state.
         if open_trade and open_trade.hold_days_remaining <= 0:
             closed.append(_close_trade(open_trade, day, bar_open, "time"))
-            cash += open_trade.qty * bar_open
+            cash += open_trade.qty * bar_open - _txn_cost(open_trade.qty, bar_open)
             open_trade = None
 
         # 2) Intraday: check stop. Strict-causal — if the high/low touched the
@@ -237,13 +247,13 @@ def run_backtest(
             triggered, fill_px = _check_stop(open_trade, bar_low, bar_high)
             if triggered:
                 closed.append(_close_trade(open_trade, day, fill_px, "stop"))
-                cash += open_trade.qty * fill_px
+                cash += open_trade.qty * fill_px - _txn_cost(open_trade.qty, fill_px)
                 open_trade = None
 
         # 3) On-close: generate a decision using history up through `day` only.
         if open_trade is None:
             history_slice = history.loc[history.index.date <= day]
-            with as_of_date(day):
+            with as_of_date(day, strict=strict):
                 decision = decision_fn(symbol, day, history_slice)
             if decision is not None:
                 decisions_made += 1
@@ -259,7 +269,7 @@ def run_backtest(
                             kelly_fraction_cap=kelly_cap,
                         )
                         if sizing.qty != 0:
-                            cash -= sizing.qty * fill_px
+                            cash -= sizing.qty * fill_px + _txn_cost(sizing.qty, fill_px)
                             open_trade = _OpenTrade(
                                 symbol=symbol,
                                 entry_date=next_day,
@@ -286,7 +296,7 @@ def run_backtest(
     if open_trade:
         last_close = float(history.loc[history.index.date <= trading_days[-1]]["Close"].iloc[-1])
         closed.append(_close_trade(open_trade, trading_days[-1], last_close, "eof"))
-        cash += open_trade.qty * last_close
+        cash += open_trade.qty * last_close - _txn_cost(open_trade.qty, last_close)
 
     hits = sum(1 for t in closed if t.realized_return_pct > 0)
     hit_rate = hits / len(closed) if closed else 0.0

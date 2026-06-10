@@ -694,6 +694,109 @@ def _select_columns(
         return []
 
 
+def insert_coach_audit(row: Dict[str, Any]) -> None:
+    """Persist a behavioral-coach audit summary for the current user.
+    Dual-path: memstore first, then Supabase (columnar)."""
+    pk = row.get("id") or f"{row.get('user_id')}|{row.get('created_at')}"
+    _memstore[("coach_audits", pk)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("coach_audits", row, on_conflict="id")
+
+
+_AUDIT_SUMMARY_COLS = "id,created_at,discipline_score,total_pnl,disciplined_pnl,n_trades"
+
+
+def list_coach_audits(user_id: str, *, limit: int = 60) -> list:
+    """A user's audit *summaries*, newest first (for the discipline-over-time chart).
+    Deliberately excludes the heavy `transactions`/`leak_summary` payloads."""
+    if _db_writable():
+        return _select_columns(
+            "coach_audits", filters={"user_id": user_id},
+            order="created_at.desc", limit=limit, select=_AUDIT_SUMMARY_COLS,
+        )
+    out = [
+        {k: r.get(k) for k in ("id", "created_at", "discipline_score",
+                               "total_pnl", "disciplined_pnl", "n_trades")}
+        for (t, _), r in _memstore.items()
+        if t == "coach_audits" and r.get("user_id") == user_id
+    ]
+    out.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return out[:limit]
+
+
+def get_latest_coach_audit(user_id: str) -> Optional[Dict[str, Any]]:
+    """The user's most recent audit row INCLUDING its raw `transactions`,
+    so the dashboard can recompute the full report without a re-upload."""
+    if _db_writable():
+        rows = _select_columns(
+            "coach_audits", filters={"user_id": user_id},
+            order="created_at.desc", limit=1,
+        )
+        return rows[0] if rows else None
+    mine = [r for (t, _), r in _memstore.items()
+            if t == "coach_audits" and r.get("user_id") == user_id]
+    mine.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return mine[0] if mine else None
+
+
+def save_coach_trades(user_id: str, transactions: list) -> None:
+    """Store the user's full deduped trade history (the continuous-timeline source)."""
+    row = {"user_id": user_id, "transactions": transactions, "updated_at": _ts_iso(time.time())}
+    _memstore[("coach_trades", user_id)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("coach_trades", row, on_conflict="user_id")
+
+
+def get_coach_trades(user_id: str) -> list:
+    if _db_writable():
+        rows = _select_columns("coach_trades", filters={"user_id": user_id}, limit=1)
+        if rows:
+            return rows[0].get("transactions") or []
+    return (_memstore.get(("coach_trades", user_id)) or {}).get("transactions") or []
+
+
+def delete_coach_data(user_id: str) -> Dict[str, int]:
+    """Delete all of a user's uploaded coach data (trades + audit snapshots)."""
+    n_trades = len(get_coach_trades(user_id))
+    n_audits = len(list_coach_audits(user_id, limit=1000))
+    _memstore.pop(("coach_trades", user_id), None)
+    for key in [k for k in list(_memstore)
+                if k[0] == "coach_audits" and _memstore[k].get("user_id") == user_id]:
+        _memstore.pop(key, None)
+    if _db_writable():
+        _delete_where("coach_trades", {"user_id": user_id})
+        _delete_where("coach_audits", {"user_id": user_id})
+    return {"trades": n_trades, "audits": n_audits}
+
+
+def upsert_snaptrade_user(user_id: str, st_user_id: str, st_user_secret: str) -> None:
+    """Store a user's SnapTrade userSecret (the long-lived read credential)."""
+    row = {"user_id": user_id, "st_user_id": st_user_id,
+           "st_user_secret": st_user_secret, "updated_at": _ts_iso(time.time())}
+    _memstore[("snaptrade_users", user_id)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("snaptrade_users", row, on_conflict="user_id")
+
+
+def get_snaptrade_user(user_id: str) -> Optional[Dict[str, Any]]:
+    if _db_writable():
+        rows = _select_columns("snaptrade_users", filters={"user_id": user_id}, limit=1)
+        if rows:
+            return rows[0]
+    return _memstore.get(("snaptrade_users", user_id))
+
+
+def list_all_snaptrade_users() -> list:
+    """Every connected user's id — drives the nightly auto-sync (service-role only)."""
+    if _db_writable():
+        return _select_columns("snaptrade_users", filters={}, select="user_id", limit=10_000)
+    return [{"user_id": r.get("user_id")}
+            for (t, _), r in _memstore.items() if t == "snaptrade_users"]
+
+
 def _delete_where(table: str, filters: Dict[str, Any]) -> bool:
     if not _db_writable():
         return True

@@ -1096,3 +1096,64 @@ drop policy if exists "transactions: delete own" on public.transactions;
 create policy "transactions: delete own"
   on public.transactions for delete
   using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- coach_audits — behavioral-coach audit summaries (discipline over time)
+-- ---------------------------------------------------------------------------
+create table if not exists public.coach_audits (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  discipline_score numeric(8,2) not null default 0,
+  total_pnl numeric(20,8) not null default 0,
+  disciplined_pnl numeric(20,8) not null default 0,
+  n_trades integer not null default 0,
+  leak_summary jsonb,
+  transactions jsonb          -- raw extracted trades, so a returning user's audit
+                              -- is reconstructable without re-uploading
+);
+
+-- Idempotent column add for databases created before `transactions` existed.
+alter table public.coach_audits add column if not exists transactions jsonb;
+
+create index if not exists coach_audits_user_idx
+  on public.coach_audits (user_id, created_at desc);
+
+alter table public.coach_audits enable row level security;
+
+drop policy if exists "coach_audits: read own" on public.coach_audits;
+create policy "coach_audits: read own"
+  on public.coach_audits for select
+  using (auth.uid() = user_id);
+drop policy if exists "coach_audits: insert own" on public.coach_audits;
+create policy "coach_audits: insert own"
+  on public.coach_audits for insert
+  with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- snaptrade_users — per-user SnapTrade connection (read-only brokerage link)
+-- ---------------------------------------------------------------------------
+create table if not exists public.snaptrade_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  st_user_id text not null,
+  st_user_secret text not null,   -- treat as a secret; encrypt at rest in prod
+  updated_at timestamptz not null default now()
+);
+
+alter table public.snaptrade_users enable row level security;
+-- No anon policies: only the service role (server) reads/writes this table.
+
+-- ---------------------------------------------------------------------------
+-- coach_trades — the user's full deduped trade history (continuous timeline)
+-- ---------------------------------------------------------------------------
+create table if not exists public.coach_trades (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  transactions jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.coach_trades enable row level security;
+drop policy if exists "coach_trades: read own" on public.coach_trades;
+create policy "coach_trades: read own" on public.coach_trades for select using (auth.uid() = user_id);
+drop policy if exists "coach_trades: write own" on public.coach_trades;
+create policy "coach_trades: write own" on public.coach_trades for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);

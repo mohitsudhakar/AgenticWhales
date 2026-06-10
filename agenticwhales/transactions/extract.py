@@ -120,12 +120,18 @@ def extract_transactions(
     model: str = "gpt-5.4-mini",
     base_url: Optional[str] = None,
     on_warn: Optional[Callable[[str], None]] = None,
+    on_progress: Optional[Callable[[int, int], None]] = None,
+    concurrency: int = 1,
+    chunk_chars: int = CHUNK_CHARS,
 ) -> List[Transaction]:
     """Extract a de-duplicated transaction list from raw document text.
 
     The LLM is injectable via ``llm`` (a LangChain chat model) so tests can
     pass a fake and never touch the network. When ``llm`` is None a client is
     built from ``provider``/``model`` via the standard factory.
+
+    ``on_progress(done, total)`` is called after each chunk so long documents can
+    report extraction progress to a UI.
 
     Unlike the TS original we extract chunks sequentially (no asyncio
     requirement); failures are retried per chunk and, as a last resort,
@@ -134,21 +140,43 @@ def extract_transactions(
     if llm is None:
         llm = create_llm_client(provider=provider, model=model, base_url=base_url).get_llm()
 
-    chunks = chunk_text(raw_text, CHUNK_CHARS)
-    lists: List[List[Transaction]] = []
+    chunks = chunk_text(raw_text, chunk_chars)
+    n = len(chunks)
+    lists: List[List[Transaction]] = [[] for _ in range(n)]
     failed = 0
-    for i, chunk in enumerate(chunks):
-        try:
-            lists.append(_extract_chunk_with_retry(llm, chunk))
-        except Exception as e:  # noqa: BLE001
-            failed += 1
-            if on_warn:
-                on_warn(f"Could not parse section {i + 1} of {len(chunks)}: {e}")
-            lists.append([])
+    completed = 0
+
+    if concurrency and concurrency > 1 and n > 1:
+        # Chunks are independent — extract them in parallel to cut wall-clock on
+        # large documents (LangChain chat clients are safe across threads).
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=min(concurrency, n)) as ex:
+            futs = {ex.submit(_extract_chunk_with_retry, llm, chunks[i]): i for i in range(n)}
+            for fut in as_completed(futs):
+                i = futs[fut]
+                try:
+                    lists[i] = fut.result()
+                except Exception as e:  # noqa: BLE001
+                    failed += 1
+                    if on_warn:
+                        on_warn(f"Could not parse section {i + 1} of {n}: {e}")
+                completed += 1
+                if on_progress:
+                    on_progress(completed, n)
+    else:
+        for i in range(n):
+            try:
+                lists[i] = _extract_chunk_with_retry(llm, chunks[i])
+            except Exception as e:  # noqa: BLE001
+                failed += 1
+                if on_warn:
+                    on_warn(f"Could not parse section {i + 1} of {n}: {e}")
+            if on_progress:
+                on_progress(i + 1, n)
 
     if failed > 0 and on_warn:
         on_warn(
-            f"{failed} of {len(chunks)} document sections failed to parse — "
+            f"{failed} of {n} document sections failed to parse — "
             f"some transactions may be missing."
         )
 
