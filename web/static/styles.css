@@ -2125,3 +2125,15 @@ body.standalone {
   background: var(--bg-card);
   box-shadow: var(--shadow);
 }
+
+/* ---------- Admin: coach funnel + product tiles (usage page) ---------- */
+.usage-coach-funnel { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.coach-funnel-row { display: grid; grid-template-columns: 180px 1fr 64px; align-items: center; gap: 12px; }
+.coach-funnel-label { font-size: 13px; color: var(--text-soft, var(--text)); }
+.coach-funnel-bar { height: 10px; border-radius: 6px; background: var(--hover); overflow: hidden; }
+.coach-funnel-bar i { display: block; height: 100%; border-radius: 6px; background: var(--accent); min-width: 2px; }
+.coach-funnel-n { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.usage-coach-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.coach-tile { border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 10px; padding: 12px 14px; }
+.coach-tile-v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.coach-tile-l { font-size: 12px; color: var(--text-soft, var(--text)); opacity: .75; margin-top: 2px; }

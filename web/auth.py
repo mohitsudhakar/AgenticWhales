@@ -757,18 +757,412 @@ def get_coach_trades(user_id: str) -> list:
     return (_memstore.get(("coach_trades", user_id)) or {}).get("transactions") or []
 
 
+def insert_coach_finding(row: Dict[str, Any]) -> None:
+    """Persist one emitted coach finding (a flagged leak + its prescribed rule).
+    The forward-validation seam: rows are later resolved against the trades
+    that happened AFTER the finding was shown (D1 in the 2026-06-08 critique)."""
+    pk = row.get("id") or f"{row.get('user_id')}|{row.get('leak_key')}|{row.get('created_at')}"
+    row.setdefault("id", pk)
+    _memstore[("coach_findings", pk)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("coach_findings", row, on_conflict="id")
+
+
+def list_coach_findings(user_id: str, *, unresolved_only: bool = False,
+                        limit: int = 200) -> list:
+    """A user's persisted findings, newest first."""
+    if _db_writable():
+        filters: Dict[str, Any] = {"user_id": user_id}
+        if unresolved_only:
+            filters["resolved_at"] = None
+        return _select_columns("coach_findings", filters=filters,
+                               order="created_at.desc", limit=limit)
+    out = [r for (t, _), r in _memstore.items()
+           if t == "coach_findings" and r.get("user_id") == user_id
+           and (not unresolved_only or not r.get("resolved_at"))]
+    out.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return out[:limit]
+
+
+def update_coach_finding(finding_id: str, fields: Dict[str, Any]) -> None:
+    """Merge resolution fields into a finding (memstore + Supabase upsert)."""
+    row = _memstore.get(("coach_findings", finding_id))
+    if row is not None:
+        row.update(fields)
+    if not _db_writable():
+        return
+    db_rows = _select_columns("coach_findings", filters={"id": finding_id}, limit=1)
+    if db_rows:
+        merged = {**db_rows[0], **fields}
+        _upsert_columns("coach_findings", merged, on_conflict="id")
+    elif row is not None:
+        _upsert_columns("coach_findings", row, on_conflict="id")
+
+
+def insert_coach_rule(row: Dict[str, Any]) -> None:
+    """Persist one rule-book row (suggested/active/paused). Dual-path."""
+    pk = row.get("id")
+    _memstore[("coach_rules", pk)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("coach_rules", row, on_conflict="id")
+
+
+def list_coach_rules(user_id: str, *, status: Optional[str] = None,
+                     limit: int = 100) -> list:
+    if _db_writable():
+        filters: Dict[str, Any] = {"user_id": user_id}
+        if status:
+            filters["status"] = status
+        return _select_columns("coach_rules", filters=filters,
+                               order="created_at.desc", limit=limit)
+    out = [r for (t, _), r in _memstore.items()
+           if t == "coach_rules" and r.get("user_id") == user_id
+           and (status is None or r.get("status") == status)]
+    out.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return out[:limit]
+
+
+def get_coach_rule(rule_id: str) -> Optional[Dict[str, Any]]:
+    row = _memstore.get(("coach_rules", rule_id))
+    if row is not None:
+        return row
+    if _db_writable():
+        rows = _select_columns("coach_rules", filters={"id": rule_id}, limit=1)
+        return rows[0] if rows else None
+    return None
+
+
+def update_coach_rule(rule_id: str, fields: Dict[str, Any]) -> None:
+    row = _memstore.get(("coach_rules", rule_id))
+    if row is not None:
+        row.update(fields)
+    if not _db_writable():
+        return
+    db_rows = _select_columns("coach_rules", filters={"id": rule_id}, limit=1)
+    if db_rows:
+        _upsert_columns("coach_rules", {**db_rows[0], **fields}, on_conflict="id")
+    elif row is not None:
+        _upsert_columns("coach_rules", row, on_conflict="id")
+
+
+def insert_coach_rule_event(row: Dict[str, Any]) -> None:
+    """Persist one rule violation event. The id is deterministic (hash of
+    user|rule|trade identity), so re-audits of merged history are no-ops."""
+    pk = row.get("id")
+    _memstore[("coach_rule_events", pk)] = row
+    if not _db_writable():
+        return
+    _upsert_columns("coach_rule_events", row, on_conflict="id")
+
+
+def list_coach_rule_events(user_id: str, *, limit: int = 500) -> list:
+    if _db_writable():
+        return _select_columns("coach_rule_events", filters={"user_id": user_id},
+                               order="occurred_on.desc", limit=limit)
+    out = [r for (t, _), r in _memstore.items()
+           if t == "coach_rule_events" and r.get("user_id") == user_id]
+    out.sort(key=lambda r: r.get("occurred_on") or "", reverse=True)
+    return out[:limit]
+
+
+def get_coach_prefs(user_id: str) -> Dict[str, Any]:
+    row = _memstore.get(("coach_prefs", user_id))
+    if row is None and _db_writable():
+        rows = _select_columns("coach_prefs", filters={"user_id": user_id}, limit=1)
+        row = rows[0] if rows else None
+        if row is not None:
+            _memstore[("coach_prefs", user_id)] = row
+    return row or {"user_id": user_id, "email_digest": False,
+                   "digest_email": "", "unsubscribe_token": ""}
+
+
+def upsert_coach_prefs(user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+    row = get_coach_prefs(user_id)
+    row.update(fields)
+    row["user_id"] = user_id
+    row["updated_at"] = _ts_iso(time.time())
+    _memstore[("coach_prefs", user_id)] = row
+    if _db_writable():
+        _upsert_columns("coach_prefs", row, on_conflict="user_id")
+    return row
+
+
+def find_coach_prefs_by_token(token: str) -> Optional[Dict[str, Any]]:
+    if not token:
+        return None
+    for (t, _), r in _memstore.items():
+        if t == "coach_prefs" and r.get("unsubscribe_token") == token:
+            return r
+    if _db_writable():
+        rows = _select_columns("coach_prefs", filters={"unsubscribe_token": token},
+                               limit=1)
+        return rows[0] if rows else None
+    return None
+
+
+def insert_coach_digest(row: Dict[str, Any]) -> bool:
+    """Idempotent by pk `user_id|week_start`: returns False if that week's
+    digest already exists."""
+    pk = row.get("id") or f"{row.get('user_id')}|{row.get('week_start')}"
+    row["id"] = pk
+    if _memstore.get(("coach_digests", pk)) is not None:
+        return False
+    if _db_writable():
+        existing = _select_columns("coach_digests", filters={"id": pk}, limit=1)
+        if existing:
+            _memstore[("coach_digests", pk)] = existing[0]
+            return False
+    _memstore[("coach_digests", pk)] = row
+    if _db_writable():
+        _upsert_columns("coach_digests", row, on_conflict="id")
+    return True
+
+
+def list_coach_digests(user_id: str, *, limit: int = 12) -> list:
+    if _db_writable():
+        return _select_columns("coach_digests", filters={"user_id": user_id},
+                               order="week_start.desc", limit=limit)
+    out = [r for (t, _), r in _memstore.items()
+           if t == "coach_digests" and r.get("user_id") == user_id]
+    out.sort(key=lambda r: r.get("week_start") or "", reverse=True)
+    return out[:limit]
+
+
+def insert_coach_partner(row: Dict[str, Any]) -> None:
+    _memstore[("coach_partners", row["id"])] = row
+    if _db_writable():
+        _upsert_columns("coach_partners", row, on_conflict="id")
+
+
+def list_coach_partners(user_id: str) -> list:
+    if _db_writable():
+        return _select_columns("coach_partners", filters={"user_id": user_id},
+                               order="invited_at.desc", limit=10)
+    out = [r for (t, _), r in _memstore.items()
+           if t == "coach_partners" and r.get("user_id") == user_id]
+    out.sort(key=lambda r: r.get("invited_at") or "", reverse=True)
+    return out
+
+
+def get_coach_partner(partner_id: str) -> Optional[Dict[str, Any]]:
+    row = _memstore.get(("coach_partners", partner_id))
+    if row is None and _db_writable():
+        rows = _select_columns("coach_partners", filters={"id": partner_id}, limit=1)
+        row = rows[0] if rows else None
+    return row
+
+
+def find_coach_partner_by_token(token: str) -> Optional[Dict[str, Any]]:
+    if not token:
+        return None
+    for (t, _), r in _memstore.items():
+        if t == "coach_partners" and r.get("view_token") == token:
+            return r
+    if _db_writable():
+        rows = _select_columns("coach_partners", filters={"view_token": token}, limit=1)
+        return rows[0] if rows else None
+    return None
+
+
+def update_coach_partner(partner_id: str, fields: Dict[str, Any]) -> None:
+    row = _memstore.get(("coach_partners", partner_id))
+    if row is not None:
+        row.update(fields)
+    if not _db_writable():
+        return
+    db_rows = _select_columns("coach_partners", filters={"id": partner_id}, limit=1)
+    if db_rows:
+        _upsert_columns("coach_partners", {**db_rows[0], **fields}, on_conflict="id")
+    elif row is not None:
+        _upsert_columns("coach_partners", row, on_conflict="id")
+
+
+# Every coach-owned table must appear here — tests assert this list covers all
+# coach_*/referral migrations, so "delete all my data" can never silently miss
+# a new table.
+COACH_DATA_TABLES = ("coach_trades", "coach_audits", "coach_findings",
+                     "coach_rules", "coach_rule_events", "coach_prefs",
+                     "coach_digests", "coach_partners", "referral_attributions")
+
+
 def delete_coach_data(user_id: str) -> Dict[str, int]:
-    """Delete all of a user's uploaded coach data (trades + audit snapshots)."""
+    """Delete ALL of a user's coach data (trades, audits, findings, rules,
+    violations, prefs, digests, partner links, referral attribution)."""
     n_trades = len(get_coach_trades(user_id))
     n_audits = len(list_coach_audits(user_id, limit=1000))
+    n_findings = len(list_coach_findings(user_id, limit=10000))
+    n_rules = len(list_coach_rules(user_id, limit=1000))
     _memstore.pop(("coach_trades", user_id), None)
-    for key in [k for k in list(_memstore)
-                if k[0] == "coach_audits" and _memstore[k].get("user_id") == user_id]:
-        _memstore.pop(key, None)
+    _memstore.pop(("coach_prefs", user_id), None)
+    _memstore.pop(("referral_attributions", user_id), None)
+    for table in ("coach_audits", "coach_findings", "coach_rules",
+                  "coach_rule_events", "coach_digests", "coach_partners"):
+        for key in [k for k in list(_memstore)
+                    if k[0] == table and _memstore[k].get("user_id") == user_id]:
+            _memstore.pop(key, None)
     if _db_writable():
-        _delete_where("coach_trades", {"user_id": user_id})
-        _delete_where("coach_audits", {"user_id": user_id})
-    return {"trades": n_trades, "audits": n_audits}
+        for table in COACH_DATA_TABLES:
+            _delete_where(table, {"user_id": user_id})
+    return {"trades": n_trades, "audits": n_audits, "findings": n_findings,
+            "rules": n_rules}
+
+
+def list_cohort_scores() -> List[float]:
+    """Latest discipline score per signed-in user — the benchmark cohort.
+    Heavy uploaders count once (latest row wins); guests are excluded."""
+    if _db_writable():
+        rows = _select_columns("coach_audits", filters={},
+                               select="user_id,discipline_score,created_at",
+                               limit=10000)
+    else:
+        rows = [r for (t, _), r in _memstore.items() if t == "coach_audits"]
+    latest: Dict[str, tuple] = {}
+    for r in rows:
+        uid = r.get("user_id")
+        if not uid or uid == ANONYMOUS_USER_ID:
+            continue
+        ts = r.get("created_at") or ""
+        if uid not in latest or ts > latest[uid][0]:
+            latest[uid] = (ts, r.get("discipline_score"))
+    return [float(s) for _, s in latest.values() if s is not None]
+
+
+def admin_coach_stats() -> Dict[str, int]:
+    """Coach activation + findings funnel for the admin dashboard.
+    Activation = a user with at least one persisted audit (their first
+    quantified leak card; the `coach_activation` audit event marks the moment)."""
+    if _db_writable():
+        audits = _select_columns("coach_audits", filters={},
+                                 select="user_id", limit=10000)
+        findings = _select_columns("coach_findings", filters={},
+                                   select="user_id,resolved_at,persisted", limit=10000)
+    else:
+        audits = [r for (t, _), r in _memstore.items() if t == "coach_audits"]
+        findings = [r for (t, _), r in _memstore.items() if t == "coach_findings"]
+    return {
+        "activated_users": len({r.get("user_id") for r in audits if r.get("user_id")}),
+        "total_audits": len(audits),
+        "open_findings": sum(1 for f in findings if not f.get("resolved_at")),
+        "resolved_findings": sum(1 for f in findings if f.get("resolved_at")),
+        "leaks_fixed": sum(1 for f in findings
+                           if f.get("resolved_at") and f.get("persisted") is False),
+    }
+
+
+def save_referral_attribution(user_id: str, code: str, source: str = "") -> bool:
+    """First-touch referral attribution: record the code that brought this
+    user, once. Returns True if newly recorded, False if one already exists."""
+    if _memstore.get(("referral_attributions", user_id)) is not None:
+        return False
+    if _db_writable():
+        existing = _select_columns("referral_attributions",
+                                   filters={"user_id": user_id}, limit=1)
+        if existing:
+            _memstore[("referral_attributions", user_id)] = existing[0]
+            return False
+    row = {"user_id": user_id, "code": code, "source": source,
+           "created_at": _ts_iso(time.time())}
+    _memstore[("referral_attributions", user_id)] = row
+    if _db_writable():
+        _upsert_columns("referral_attributions", row, on_conflict="user_id")
+    return True
+
+
+def admin_referral_stats(*, limit: int = 10000) -> Dict[str, int]:
+    """Signups attributed per referral code (attribution only — no rewards)."""
+    if _db_writable():
+        rows = _select_columns("referral_attributions", filters={},
+                               select="code", limit=limit)
+    else:
+        rows = [r for (t, _), r in _memstore.items() if t == "referral_attributions"]
+    counts: Dict[str, int] = {}
+    for r in rows:
+        code = (r.get("code") or "").strip()
+        if code:
+            counts[code] = counts.get(code, 0) + 1
+    return counts
+
+
+def _parse_iso_ts(v: Any) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def admin_funnel_stats() -> Dict[str, Any]:
+    """Coach funnel + health metrics from durable audit_log events.
+
+    Honesty rules baked in: activation = first persisted audit; D30 retention
+    counts USER-INITIATED audits only (origin != 'sync_auto' — the nightly cron
+    writing audits is scheduler uptime, not retention); metrics are None when
+    the underlying population is empty rather than fake zeros."""
+    counts: Dict[str, int] = {}
+    actors: Dict[str, set] = {}
+    activation_rows: List[Dict[str, Any]] = []
+    for action in ("demo_viewed", "upload_started", "audit_viewed",
+                   "share_card_exported", "broker_connected", "coach_activation"):
+        rows = list_audit(action=action, limit=10000)
+        if len(rows) >= 10000:
+            log.warning("admin_funnel_stats: %s hit the 10k page limit — counts are "
+                        "truncated; move to a SQL count", action)
+        counts[action] = len(rows)
+        actors[action] = {r.get("actor") for r in rows if r.get("actor")}
+        if action == "coach_activation":
+            activation_rows = rows
+    activated = len(actors["coach_activation"])
+    share_rate = (round(len(actors["share_card_exported"]) / activated, 3)
+                  if activated else None)
+
+    # Median minutes from account creation to the first personal leak card.
+    median_minutes_to_first_card = None
+    user_created = {u.get("id"): u.get("created_at")
+                    for u in admin_list_users() if u.get("id")}
+    deltas = []
+    for r in activation_rows:
+        t0 = _parse_iso_ts(user_created.get(r.get("actor")))
+        t1 = _parse_iso_ts(r.get("created_at"))
+        if t0 and t1 and t1 >= t0:
+            deltas.append((t1 - t0).total_seconds() / 60.0)
+    if deltas:
+        deltas.sort()
+        median_minutes_to_first_card = round(deltas[len(deltas) // 2], 1)
+
+    # D30 retention over user-initiated signals only.
+    if _db_writable():
+        audit_rows = _select_columns("coach_audits", filters={},
+                                     select="user_id,created_at,origin", limit=10000)
+    else:
+        audit_rows = [r for (t, _), r in _memstore.items() if t == "coach_audits"]
+    now = datetime.now(tz=timezone.utc)
+    cohort = set()
+    retained = set()
+    activated_at = {}
+    for r in activation_rows:
+        ts = _parse_iso_ts(r.get("created_at"))
+        if r.get("actor") and ts:
+            activated_at[r["actor"]] = ts
+    for uid, ts in activated_at.items():
+        if (now - ts).days >= 30:
+            cohort.add(uid)
+    for r in audit_rows:
+        uid = r.get("user_id")
+        ts = _parse_iso_ts(r.get("created_at"))
+        if (uid in cohort and ts and (now - ts).days <= 30
+                and (r.get("origin") or "upload") != "sync_auto"):
+            retained.add(uid)
+    d30_retention = round(len(retained) / len(cohort), 3) if cohort else None
+
+    return {
+        "events": counts,
+        "activated_users": activated,
+        "share_rate": share_rate,
+        "median_minutes_to_first_card": median_minutes_to_first_card,
+        "d30_retention": d30_retention,
+        "d30_cohort_size": len(cohort),
+    }
 
 
 def upsert_snaptrade_user(user_id: str, st_user_id: str, st_user_secret: str) -> None:

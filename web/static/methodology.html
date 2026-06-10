@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — How the Numbers Are Computed</title>
+  <meta name="description" content="The coach's methodology: deterministic arithmetic on your own fills, past-tense attribution, and a forward-validation loop that keeps every claim testable." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=Lora:wght@600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54' },
+      fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+    }}}
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <nav class="border-b border-line">
+    <div class="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/coach" class="flex items-center gap-2.5"><span class="text-xl">🐋</span><span class="font-logo text-xl">AgenticWhales</span></a>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="/coach" class="hover:text-ink transition">Coach</a>
+        <a href="/security" class="hover:text-ink transition">Security</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-6 py-14">
+    <h1 class="font-display text-5xl mb-3">How the numbers are computed</h1>
+    <p class="text-muted mb-10 max-w-2xl">Every dollar figure the coach shows is deterministic arithmetic over your own
+    fills. Same trades in, same numbers out — no model in the loop, no judgment calls, and nothing forward-looking.
+    This page is the contract.</p>
+
+    <div class="space-y-7 text-[15px] leading-relaxed">
+      <section>
+        <h2 class="font-display text-2xl mb-2">The design law</h2>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li><span class="text-ink font-medium">Deterministic dollars.</span> Your trades are matched into round-trips (FIFO lot matching). Every figure is computed from those round-trips by fixed arithmetic.</li>
+          <li><span class="text-ink font-medium">Past tense only.</span> Figures are historical attribution — what a pattern cost <em>in the period analyzed</em>. They are not predictions, and adopting a rule carries no promised result.</li>
+          <li><span class="text-ink font-medium">Language models narrate; they never compute.</span> When AI is used (reading a statement into rows, phrasing findings), it is handed the already-computed numbers and is forbidden from inventing any. Extraction output is shown to you as rows you can review.</li>
+          <li><span class="text-ink font-medium">No directives.</span> The product never says buy or sell. A code-level tripwire test sweeps generated copy for directive language on every change.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">The detectors</h2>
+        <p class="text-muted mb-2">Each flagged "leak" has a fixed definition and a dollar counterfactual computed from your history:</p>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li><span class="text-ink">Disposition effect</span> — losers held materially longer than winners while the average loss exceeds the average win; costed as the excess of each loss beyond your average win.</li>
+          <li><span class="text-ink">Overtrading / cost drag</span> — churn measured by short holds and estimated fees + slippage against gross P&amp;L.</li>
+          <li><span class="text-ink">Oversizing / tail risk</span> — your worst loss versus your median loss; costed as the excess beyond 3× median.</li>
+          <li><span class="text-ink">Revenge trading</span> — oversized entries within days of a loss; costed as the realized P&amp;L of those entries.</li>
+          <li><span class="text-ink">Inverted payoff</span> — average loss larger than average win; costed as the gap across your losses.</li>
+          <li><span class="text-ink">Price-path checks</span> (when price data is available) — what a fixed stop would have changed on losers, and how far winners ran after you sold. Measured on real OHLC paths, not modeled.</li>
+        </ul>
+        <p class="text-muted mt-2">The headline "disciplined P&amp;L" applies two rules together — a size cap at your
+        median notional and a fixed stop — so overlapping leak estimates are never summed into one inflated number.</p>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">Forward validation — we test our own claims</h2>
+        <p class="text-muted">Every flagged finding is stored with the window it was computed on. Once at least five
+        newer trades exist, the same detector re-runs on only those trades and records whether the pattern was
+        <span class="text-ink">detected again</span> or <span class="text-ink">not detected forward</span> — with both
+        window sizes shown. We say "not detected forward," not "fixed": a five-trade window is evidence, not proof,
+        and we won't claim causation our data can't support.</p>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">The discipline score &amp; benchmarks</h2>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li>The score starts at 85 and subtracts fixed penalties per detected leak by severity, floored at 5. It is a habit summary, not a performance prediction.</li>
+          <li><span class="text-ink font-medium">Percentiles only from real data.</span> Comparative claims ("top X%") appear only once enough traders are in the cohort (50+), and the label names that cohort. Until then we show your score alone. Published research on retail trading behavior (e.g. Barber &amp; Odean, 2000) motivates <em>which</em> leaks we detect; it cannot place you on a percentile, so we don't pretend it can.</li>
+          <li>Quarterly summaries bucket round-trips by exit date; the quarterly counterfactual uses your full-history median size, so quarter figures stay consistent with the all-time headline.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">Limitations, stated plainly</h2>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li>Partial history skews results — the coach sees what you give it (or what your connected broker reports).</li>
+          <li>Fill timestamps are date-granular: same-day sequencing inside a day is not observable.</li>
+          <li>Small samples are noisy; detectors require minimum trade counts before claiming anything.</li>
+          <li>The sample audit on the landing page is synthetic — a believable demo trader, clearly labeled.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="max-w-3xl mx-auto px-6 py-10 border-t border-line text-sm text-muted">
+    <p><span class="text-ink font-medium">Educational, not investment advice.</span> Historical attribution from your
+    own trades; nothing here is a recommendation. Data handling: see <a href="/security" class="text-emerald underline underline-offset-2">Security &amp; your data</a>.</p>
+  </footer>
+</body>
+</html>

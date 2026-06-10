@@ -123,6 +123,18 @@ class _Metrics:
             "1 if this worker holds the scheduler leader lock; 0 otherwise",
             registry=self.registry,
         )
+        self.coach_event = Counter(
+            "aw_coach_event_total",
+            "Coach funnel/product events (allowlisted names only — fixed cardinality)",
+            ["event"],
+            registry=self.registry,
+        )
+        self.coach_rule_violation = Counter(
+            "aw_coach_rule_violation_total",
+            "Detected rule-book violations by rule kind",
+            ["rule_kind"],
+            registry=self.registry,
+        )
 
     def scrape(self) -> bytes:
         """Return the Prometheus text exposition. Empty bytes when disabled."""

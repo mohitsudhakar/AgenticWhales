@@ -222,6 +222,18 @@ class RecipeScheduler:
             misfire_grace_time=21_600,
             max_instances=1,
         )
+        # Weekly discipline digest — Mondays 14:00 UTC (US morning, after the
+        # nightly sync refreshed connected accounts). Idempotent per user-week;
+        # email goes only to opted-in users and only when Resend is configured —
+        # the in-app digest row is always written.
+        self._scheduler.add_job(
+            self._run_coach_digest,
+            CronTrigger.from_crontab("0 14 * * 1", timezone="UTC"),
+            id="coach_digest_weekly",
+            replace_existing=True,
+            misfire_grace_time=43_200,
+            max_instances=1,
+        )
 
     # PR-3: stuck-run reaper. Tunable via env so ops can dial it on a hot
     # incident without a redeploy.
@@ -375,6 +387,18 @@ class RecipeScheduler:
             except Exception as exc:  # noqa: BLE001
                 log.warning("snaptrade_sync cron failure for %s: %s", uid, exc)
         log.info("snaptrade_sync cron complete", users=len(rows), synced=synced)
+
+    def _run_coach_digest(self) -> None:
+        """Write each user's weekly in-app digest (idempotent per user-week)
+        and email the opted-in subset. Leader-only."""
+        if not self._is_leader:
+            return
+        from web import digest as digest_mod
+        try:
+            result = digest_mod.send_weekly_digests()
+            log.info("coach_digest cron complete", **result)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("coach_digest cron failed: %s", exc)
 
     def _run_prompt_evals(self) -> None:
         """Walk every user with enough resolved outcomes and run a baseline

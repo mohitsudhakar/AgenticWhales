@@ -10,9 +10,11 @@ The extraction system prompt is reused verbatim from extract.ts.
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 import re
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from agenticwhales.llm_clients import create_llm_client
 
@@ -67,11 +69,23 @@ def parse_json_loose(text: str) -> object:
     raise ValueError("Unbalanced JSON in model response")
 
 
-def _invoke_llm(llm, system: str, user: str) -> str:
-    """Invoke a LangChain chat model with a system + user message and return text."""
+def _invoke_llm(llm, system: str, user, on_usage: Optional[Callable[[int, int], None]] = None) -> str:
+    """Invoke a LangChain chat model with a system + user message and return text.
+
+    `user` may be a plain string or a multimodal content-block list (the
+    LangChain shape all first-party clients accept). `on_usage(in, out)` is
+    called with the response's token counts when available — the hook real
+    spend accounting hangs off."""
     from langchain_core.messages import HumanMessage, SystemMessage
 
     resp = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
+    if on_usage is not None:
+        usage = getattr(resp, "usage_metadata", None) or {}
+        try:
+            on_usage(int(usage.get("input_tokens", 0) or 0),
+                     int(usage.get("output_tokens", 0) or 0))
+        except Exception:  # noqa: BLE001 — accounting must never break extraction
+            pass
     content = getattr(resp, "content", resp)
     if isinstance(content, list):
         parts = [
@@ -85,9 +99,7 @@ def _invoke_llm(llm, system: str, user: str) -> str:
     return text
 
 
-def _extract_chunk(llm, text: str) -> List[Transaction]:
-    user = f'Extract all transactions from this Robinhood document text:\n\n"""\n{text}\n"""'
-    raw = _invoke_llm(llm, EXTRACTION_SYSTEM, user)
+def _rows_to_transactions(raw: str) -> List[Transaction]:
     parsed = parse_json_loose(raw)
     rows = parsed.get("transactions", []) if isinstance(parsed, dict) else []
     if not isinstance(rows, list):
@@ -102,14 +114,112 @@ def _extract_chunk(llm, text: str) -> List[Transaction]:
     return out
 
 
-def _extract_chunk_with_retry(llm, text: str) -> List[Transaction]:
+def _extract_chunk(llm, text: str, on_usage=None) -> List[Transaction]:
+    user = f'Extract all transactions from this Robinhood document text:\n\n"""\n{text}\n"""'
+    raw = _invoke_llm(llm, EXTRACTION_SYSTEM, user, on_usage)
+    return _rows_to_transactions(raw)
+
+
+def _extract_chunk_with_retry(llm, text: str, on_usage=None) -> List[Transaction]:
     last_err: Optional[Exception] = None
     for attempt in range(1, MAX_CHUNK_ATTEMPTS + 1):
         try:
-            return _extract_chunk(llm, text)
+            return _extract_chunk(llm, text, on_usage)
         except Exception as e:  # noqa: BLE001 - retry any transient failure
             last_err = e
     raise last_err if last_err else RuntimeError("extraction failed")
+
+
+# --------------------------------------------------------------------------- #
+# Vision path — screenshots / photos of trade history, no OCR server needed.
+# --------------------------------------------------------------------------- #
+
+# Explicit opt-in via env: key PRESENCE is deliberately not the gate, because
+# test environments set placeholder provider keys (conftest.py) and an
+# implicit default-on would fire real network calls in CI.
+_VISION_DEFAULT_MODELS = {
+    "google": "gemini-3-flash-preview",
+    "openai": "gpt-5.4-mini",
+    "anthropic": "claude-haiku-4-5-20251001",
+}
+
+
+def vision_config() -> Optional[Tuple[str, str]]:
+    """(provider, model) for screenshot extraction, or None when not enabled.
+    Enabled ONLY by setting AGENTICWHALES_VISION_PROVIDER explicitly."""
+    provider = (os.getenv("AGENTICWHALES_VISION_PROVIDER") or "").strip().lower()
+    if not provider:
+        return None
+    model = (os.getenv("AGENTICWHALES_VISION_MODEL") or "").strip() \
+        or _VISION_DEFAULT_MODELS.get(provider, "")
+    if not model:
+        return None
+    return provider, model
+
+
+_VISION_USER_TEXT = (
+    "Extract all transactions from this brokerage screenshot or statement "
+    "image. Apply the system rules exactly; output only the JSON object."
+)
+
+
+def _extract_image(llm, image: bytes, mime: str, on_usage=None) -> List[Transaction]:
+    b64 = base64.b64encode(image).decode("ascii")
+    user = [
+        {"type": "text", "text": _VISION_USER_TEXT},
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+    ]
+    raw = _invoke_llm(llm, EXTRACTION_SYSTEM, user, on_usage)
+    return _rows_to_transactions(raw)
+
+
+def extract_transactions_from_image(
+    images: List[bytes],
+    mime_types: Optional[List[str]] = None,
+    *,
+    llm=None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    on_warn: Optional[Callable[[str], None]] = None,
+    on_progress: Optional[Callable[[int, int], None]] = None,
+    on_usage: Optional[Callable[[int, int], None]] = None,
+) -> List[Transaction]:
+    """Extract transactions directly from screenshot/photo bytes via a vision
+    model. One call per image (per-image retry, like text chunks); results are
+    de-duplicated across images so an overlapping double-screenshot can't
+    double-count a trade. Raises RuntimeError when vision isn't enabled and no
+    explicit llm/provider was given."""
+    if llm is None:
+        if provider is None or model is None:
+            cfg = vision_config()
+            if cfg is None:
+                raise RuntimeError(
+                    "vision extraction not enabled (set AGENTICWHALES_VISION_PROVIDER)")
+            provider, model = cfg
+        llm = create_llm_client(provider=provider, model=model).get_llm()
+
+    mimes = mime_types or ["image/png"] * len(images)
+    n = len(images)
+    flat: List[Transaction] = []
+    failed = 0
+    for i, (img, mime) in enumerate(zip(images, mimes), 1):
+        last_err: Optional[Exception] = None
+        for _ in range(MAX_CHUNK_ATTEMPTS):
+            try:
+                flat.extend(_extract_image(llm, img, mime or "image/png", on_usage))
+                last_err = None
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+        if last_err is not None:
+            failed += 1
+            if on_warn:
+                on_warn(f"Could not read image {i} of {n}: {last_err}")
+        if on_progress:
+            on_progress(i, n)
+    if failed == n and n > 0:
+        raise RuntimeError("could not read any of the supplied images")
+    return dedupe(flat)
 
 
 def extract_transactions(
@@ -121,6 +231,7 @@ def extract_transactions(
     base_url: Optional[str] = None,
     on_warn: Optional[Callable[[str], None]] = None,
     on_progress: Optional[Callable[[int, int], None]] = None,
+    on_usage: Optional[Callable[[int, int], None]] = None,
     concurrency: int = 1,
     chunk_chars: int = CHUNK_CHARS,
 ) -> List[Transaction]:
@@ -151,7 +262,8 @@ def extract_transactions(
         # large documents (LangChain chat clients are safe across threads).
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=min(concurrency, n)) as ex:
-            futs = {ex.submit(_extract_chunk_with_retry, llm, chunks[i]): i for i in range(n)}
+            futs = {ex.submit(_extract_chunk_with_retry, llm, chunks[i], on_usage): i
+                    for i in range(n)}
             for fut in as_completed(futs):
                 i = futs[fut]
                 try:
@@ -166,7 +278,7 @@ def extract_transactions(
     else:
         for i in range(n):
             try:
-                lists[i] = _extract_chunk_with_retry(llm, chunks[i])
+                lists[i] = _extract_chunk_with_retry(llm, chunks[i], on_usage)
             except Exception as e:  # noqa: BLE001
                 failed += 1
                 if on_warn:

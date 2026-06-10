@@ -125,6 +125,46 @@ class Leak:
     fix: str                 # the concrete rule that addresses it
 
 
+def leak_key(name: str) -> str:
+    """Stable identifier for a leak *kind*, independent of the human-facing
+    wording. Findings persistence + forward validation key on this, so the
+    copy can evolve without orphaning history."""
+    import re
+    base = name.split("(")[0].strip().lower()
+    return re.sub(r"[^a-z0-9]+", "_", base).strip("_")
+
+
+# The product's central claim is "this bias cost you $X". That claim must stay
+# falsifiable: each persisted finding is later re-tested on the trades that
+# happened AFTER it was shown to the user — did the flagged behavior persist?
+MIN_FORWARD_TRADES = 5
+
+
+def resolve_finding_forward(finding: Dict, trips: List["RoundTrip"],
+                            *, min_forward_trades: int = MIN_FORWARD_TRADES) -> Optional[Dict]:
+    """Re-run the leak detectors on the round-trips closed AFTER a finding's
+    window, and report whether that leak kind persisted.
+
+    Returns None while there isn't enough forward data to say anything
+    (fewer than `min_forward_trades` closed trades after `window_end`).
+    Price-path leaks (`no_stop_loss`, `cutting_winners_early`) need price data
+    and are not resolved here — they also return None.
+    """
+    key = finding.get("leak_key") or ""
+    if key in ("no_stop_loss", "cutting_winners_early"):
+        return None
+    window_end = str(finding.get("window_end") or "")[:10]
+    fwd = [t for t in trips if t.exit_date[:10] > window_end]
+    if len(fwd) < min_forward_trades:
+        return None
+    match = [l for l in detect_leaks(fwd) if leak_key(l.name) == key]
+    return {
+        "persisted": bool(match),
+        "forward_dollars": round(match[0].dollars, 2) if match else 0.0,
+        "n_forward_trades": len(fwd),
+    }
+
+
 def dedupe_transactions(txns: Sequence[Transaction]) -> List[Transaction]:
     """Union helper for continuous history: drop exact-duplicate rows so the same
     trade uploaded in overlapping statements isn't double-counted."""
@@ -217,6 +257,40 @@ def monthly_discipline(trips: List[RoundTrip]) -> List[Dict]:
     return out
 
 
+def quarterly_discipline(trips: List[RoundTrip]) -> List[Dict]:
+    """Per-calendar-quarter summary (by exit date — round-trips spanning a
+    boundary land in the exit quarter, same convention as monthly_discipline).
+    The quarterly counterfactual uses the FULL-history median size cap so
+    quarter figures stay consistent with the all-time headline; documented on
+    /methodology."""
+    from collections import defaultdict
+    if not trips:
+        return []
+    buckets: Dict[str, List[RoundTrip]] = defaultdict(list)
+    for t in trips:
+        d = _d(t.exit_date)
+        if d:
+            buckets[f"{d.year}-Q{(d.month - 1) // 3 + 1}"].append(t)
+    global_med = statistics.median(abs(t.qty * t.entry_px) for t in trips)
+    out = []
+    for quarter in sorted(buckets):
+        qt = buckets[quarter]
+        leaks = detect_leaks(qt)
+        pnl = sum(t.pnl for t in qt)
+        disciplined = counterfactual_disciplined(qt, med_notional=global_med)
+        top = leaks[0] if leaks else None
+        out.append({
+            "quarter": quarter,
+            "n_trades": len(qt),
+            "pnl": round(pnl, 2),
+            "score": _discipline_score(qt, leaks, sum(abs(t.pnl) for t in qt)),
+            "quantified_leak": round(disciplined - pnl, 2),
+            "top_leak": leak_key(top.name) if top else None,
+            "top_leak_name": (top.name.split("(")[0].strip() if top else None),
+        })
+    return out
+
+
 @dataclass
 class CoachReport:
     n_trades: int
@@ -229,6 +303,7 @@ class CoachReport:
     leaks: List[Leak] = field(default_factory=list)
     insights: Dict = field(default_factory=dict)
     monthly: List[Dict] = field(default_factory=list)
+    quarterly: List[Dict] = field(default_factory=list)
     # Single coherent counterfactual: P&L under disciplined rules (size cap + stop),
     # and the swing vs. actual. This is the defensible headline number — NOT the sum
     # of the per-leak estimates, which overlap.
@@ -349,7 +424,8 @@ def detect_leaks(trips: List[RoundTrip], *, fees_paid: float = 0.0,
     return leaks
 
 
-def counterfactual_disciplined(trips: List[RoundTrip], *, stop_pct: float = 0.15) -> float:
+def counterfactual_disciplined(trips: List[RoundTrip], *, stop_pct: float = 0.15,
+                               med_notional: Optional[float] = None) -> float:
     """P&L if two simple rules had been enforced, applied together (no double-count):
 
       * size discipline — cap each position's notional at the median notional;
@@ -357,11 +433,14 @@ def counterfactual_disciplined(trips: List[RoundTrip], *, stop_pct: float = 0.15
 
     Wins are scaled down by the same size cap (discipline costs some upside too —
     an honest teaching point). Returns the disciplined total P&L.
+
+    `med_notional` lets period slices (quarters) use the FULL-history median so
+    period figures reconcile with the all-time headline.
     """
     if not trips:
         return 0.0
     notionals = [abs(t.qty * t.entry_px) for t in trips]
-    med = statistics.median(notionals) or 1.0
+    med = med_notional or statistics.median(notionals) or 1.0
     disc = 0.0
     for t in trips:
         notional = abs(t.qty * t.entry_px) or 1.0
@@ -489,6 +568,7 @@ def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
     report.discipline_score = _discipline_score(trips, leaks, abs(total_pnl))
     report.insights = behavioral_insights(trips, leaks)
     report.monthly = monthly_discipline(trips)
+    report.quarterly = quarterly_discipline(trips)
     if narrate:
         try:
             report.narrative = narrate(report)

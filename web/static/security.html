@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — Security &amp; Your Data</title>
+  <meta name="description" content="How the Trading Discipline Coach handles your data: read-only by design, private per-account, deletable anytime." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=Lora:wght@600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54' },
+      fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+    }}}
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <nav class="border-b border-line">
+    <div class="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/coach" class="flex items-center gap-2.5"><span class="text-xl">🐋</span><span class="font-logo text-xl">AgenticWhales</span></a>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="/coach" class="hover:text-ink transition">Coach</a>
+        <a href="/methodology" class="hover:text-ink transition">Methodology</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-6 py-14">
+    <h1 class="font-display text-5xl mb-3">Security &amp; your data</h1>
+    <p class="text-muted mb-10 max-w-2xl">The coach works on the most sensitive financial document you have — your own
+    trading history. Here is exactly what we do and don't do with it. Every claim below corresponds to behavior in our
+    code, not a policy aspiration.</p>
+
+    <div class="space-y-7 text-[15px] leading-relaxed">
+      <section>
+        <h2 class="font-display text-2xl mb-2">Read-only, by construction</h2>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li><span class="text-ink font-medium">We never place orders or move money.</span> There is no order-placement code in the product. Brokerage access, where you connect it, is read-only.</li>
+          <li><span class="text-ink font-medium">Your brokerage login never passes through us.</span> Connections use SnapTrade's portal: you authenticate with your broker directly. What we hold is a revocable, read-only access token — stored server-side under per-user row-level security, never exposed to the browser.</li>
+          <li>You can revoke the connection at your broker or via SnapTrade at any time.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">What we store, and for whom</h2>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li><span class="text-ink font-medium">Guests:</span> nothing. Files you try without signing in are analyzed in memory and the extracted rows are discarded with the response; no account, no persistence.</li>
+          <li><span class="text-ink font-medium">Signed-in users:</span> we store the extracted transaction rows (date, side, symbol, quantity, price), your audit summaries, and the findings the coach flags — all private to your account under row-level security. The original uploaded file is processed and discarded; we keep rows, not documents.</li>
+          <li><span class="text-ink font-medium">Delete everything, anytime:</span> Settings → "Delete all my data" removes your trades, audits, and findings in one action.</li>
+          <li>We do not sell or share your data. An append-only audit log records system actions on your account.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">Third-party processors</h2>
+        <p class="text-muted mb-2">Named plainly, because "we use trusted partners" is not a disclosure:</p>
+        <ul class="list-disc pl-5 space-y-2 text-muted">
+          <li><span class="text-ink">LLM providers</span> — used to read documents (turning a statement or screenshot into transaction rows) and to narrate already-computed findings. They never see credentials, and they never compute your dollar figures.</li>
+          <li><span class="text-ink">OCR service</span> — optionally used for scanned documents; receives the document image, returns text.</li>
+          <li><span class="text-ink">SnapTrade</span> — brokerage connectivity (read-only).</li>
+          <li><span class="text-ink">Supabase</span> — authentication and storage, with row-level security on every user table.</li>
+          <li><span class="text-ink">Resend</span> — email delivery, only if you explicitly opt into emails; off by default.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-display text-2xl mb-2">What this product is not</h2>
+        <p class="text-muted">An educational tool, not investment advice. The coach quantifies what already happened in
+        your own history; it does not predict, and it never tells you to buy or sell anything. See
+        <a href="/methodology" class="text-emerald underline underline-offset-2">how the numbers are computed</a>.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="max-w-3xl mx-auto px-6 py-10 border-t border-line text-sm text-muted">
+    <p><span class="text-ink font-medium">Educational, not investment advice.</span> AgenticWhales never places orders.
+    Questions about your data: open an issue or contact the operator of your deployment.</p>
+  </footer>
+</body>
+</html>

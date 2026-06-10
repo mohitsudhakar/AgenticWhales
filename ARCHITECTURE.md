@@ -123,6 +123,21 @@ flowchart LR
 
 ---
 
+### The one event-loop rule: never block the leader loop
+
+The whole product is **one uvicorn process**: HTTP + WebSocket/SSE + the
+APScheduler + the leader-only Alpaca streaming worker all share a single event
+loop. CPU-bound or long-blocking work (coach OCR round-trips, chunked LLM
+transaction extraction, price-path audits) must therefore run **off-loop in a
+bounded pool**, never inline in an `async def` route and never as one unbounded
+thread per request. The coach upload pipeline does this via `_UPLOAD_POOL` in
+[web/coach_api.py](web/coach_api.py) (cap: `AGENTICWHALES_COACH_UPLOAD_WORKERS`,
+default 2; excess jobs queue as "Queued…"). New heavy endpoints must follow the
+same pattern — a blocked loop starves the streaming pump and every SSE
+heartbeat in the process.
+
+---
+
 ## 1. System-level architecture
 
 ```mermaid
