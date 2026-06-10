@@ -77,6 +77,7 @@ GEMINI_DIM_BY_MODEL = {
 # Resolved-once at first call. Picks the user's configured default embedding
 # model: env var > Gemini if google-key configured > hashing-trick.
 _DEFAULT_MODEL_CACHE: Optional[str] = None
+_DEFAULT_MODEL_SOURCE: Optional[str] = None   # 'env' | 'google-key' | 'fallback'
 
 
 # ---------------------------------------------------------------------------
@@ -115,24 +116,61 @@ def _default_embedding_model() -> str:
     (mixing embeddings across model_ids in the same corpus is a footgun —
     cosine isn't meaningful across spaces).
     """
-    global _DEFAULT_MODEL_CACHE
+    global _DEFAULT_MODEL_CACHE, _DEFAULT_MODEL_SOURCE
     if _DEFAULT_MODEL_CACHE is not None:
         return _DEFAULT_MODEL_CACHE
     env = os.getenv("AGENTICWHALES_EMBEDDING_MODEL", "").strip()
     if env:
         _DEFAULT_MODEL_CACHE = env
+        _DEFAULT_MODEL_SOURCE = "env"
     elif os.getenv("GOOGLE_API_KEY"):
         _DEFAULT_MODEL_CACHE = GEMINI_DEFAULT_MODEL
+        _DEFAULT_MODEL_SOURCE = "google-key"
     else:
         _DEFAULT_MODEL_CACHE = "hashing-trick"
-    log.debug("memory_v2 default embedding model: %s", _DEFAULT_MODEL_CACHE)
+        _DEFAULT_MODEL_SOURCE = "fallback"
+    if _DEFAULT_MODEL_CACHE == "hashing-trick":
+        # J3 (2026-06-08 critique): never degrade retrieval silently. The
+        # hashing trick is token-overlap, not semantics — any retrieval-
+        # quality claim is void in this mode, so say so at WARNING level.
+        reason = (
+            "explicitly selected via AGENTICWHALES_EMBEDDING_MODEL"
+            if _DEFAULT_MODEL_SOURCE == "env"
+            else "no embedding provider configured (AGENTICWHALES_EMBEDDING_MODEL"
+                 " unset, GOOGLE_API_KEY missing)"
+        )
+        log.warning(
+            "memory_v2 embedder DEGRADED: %s — using hashing-trick TF vectors "
+            "(%d-dim, token overlap only, no semantics). Set "
+            "AGENTICWHALES_EMBEDDING_MODEL or GOOGLE_API_KEY for real embeddings.",
+            reason, EMBED_DIM,
+        )
+    else:
+        log.debug("memory_v2 default embedding model: %s", _DEFAULT_MODEL_CACHE)
     return _DEFAULT_MODEL_CACHE
 
 
 def reset_default_model_cache() -> None:
     """Test helper — re-resolve the default on next `embed()` call."""
-    global _DEFAULT_MODEL_CACHE
+    global _DEFAULT_MODEL_CACHE, _DEFAULT_MODEL_SOURCE
     _DEFAULT_MODEL_CACHE = None
+    _DEFAULT_MODEL_SOURCE = None
+
+
+def embedder_mode() -> Dict[str, Any]:
+    """Operator-visible embedder status (J3: no silent degradation).
+
+    Returns ``{"model", "source", "degraded"}`` where ``degraded`` is True
+    when retrieval runs on hashing-trick TF vectors instead of a real
+    embedding model. Surfaced through the web layer's readiness endpoint so
+    a deploy whose retrieval quietly fell back is observable, not silent.
+    """
+    model = _default_embedding_model()
+    return {
+        "model": model,
+        "source": _DEFAULT_MODEL_SOURCE,
+        "degraded": model == "hashing-trick",
+    }
 
 
 def embed_gemini(text: str, *, model: str = GEMINI_DEFAULT_MODEL) -> List[float]:
@@ -184,7 +222,11 @@ def embed(text: str, *, model: Optional[str] = None) -> List[float]:
         try:
             return embed_gemini(text, model=resolved)
         except Exception as exc:
-            log.warning("Gemini embed failed (%s); falling back to hashing-trick", exc)
+            log.warning(
+                "memory_v2 embedder DEGRADED for this call: Gemini embed via "
+                "%s failed (%s); falling back to hashing-trick TF vector "
+                "(token overlap only, no semantics)", resolved, exc,
+            )
             return embed_hashing_trick(text)
     raise ValueError(f"unsupported embedding model: {resolved}")
 

@@ -403,6 +403,13 @@ async def readyz() -> JSONResponse:
     except Exception as exc:  # noqa: BLE001
         db_ok = False
         checks["db"] = f"error: {exc}"
+    # Embedder mode (J3): degraded retrieval is not an outage, so it never
+    # flips readiness — but it must be visible, never silent.
+    try:
+        from agenticwhales import memory_v2
+        checks["embedder"] = memory_v2.embedder_mode()
+    except Exception as exc:  # noqa: BLE001
+        checks["embedder"] = f"error: {exc}"
     ready = db_ok
     return JSONResponse(
         status_code=200 if ready else 503,
