@@ -160,6 +160,7 @@ async function loadDashboard(opts = {}) {
     renderDashboardChart();
     renderMiniChart();
     renderTopUsers();
+    renderCoach();
     renderDashboardUsers();
     const gen = $("#dash-generated");
     if (gen && dashState.data.generated_at) {
@@ -274,6 +275,50 @@ function renderHero() {
       </dl>
     </article>
   `).join("");
+}
+
+// ---------- Coach funnel + product tiles ----------
+
+function renderCoach() {
+  const fEl = $("#usage-coach-funnel");
+  const tEl = $("#usage-coach-tiles");
+  if (!fEl || !tEl || !dashState.data) return;
+  const coach = dashState.data.coach || {};
+  const funnel = dashState.data.funnel || {};
+  const ev = funnel.events || {};
+
+  const steps = [
+    ["Demo viewed", ev.demo_viewed || 0],
+    ["Uploads started", ev.upload_started || 0],
+    ["Activated (first card)", funnel.activated_users || 0],
+    ["Broker connected", ev.broker_connected || 0],
+    ["Cards shared", ev.share_card_exported || 0],
+  ];
+  const max = Math.max(1, ...steps.map((s) => s[1]));
+  fEl.innerHTML = steps.map(([label, n]) => `
+    <div class="coach-funnel-row">
+      <span class="coach-funnel-label">${escapeHTML(label)}</span>
+      <span class="coach-funnel-bar"><i style="width:${Math.round((100 * n) / max)}%"></i></span>
+      <span class="coach-funnel-n">${fmtInt(n)}</span>
+    </div>`).join("");
+
+  const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+  const tiles = [
+    ["Audits", fmtInt(coach.total_audits || 0)],
+    ["Open findings", fmtInt(coach.open_findings || 0)],
+    ["Resolved findings", fmtInt(coach.resolved_findings || 0)],
+    ["Not detected forward", fmtInt(coach.leaks_fixed || 0)],
+    ["Median min → first card", funnel.median_minutes_to_first_card == null
+      ? "—" : String(funnel.median_minutes_to_first_card)],
+    ["D30 retention", funnel.d30_retention == null
+      ? `— (cohort ${fmtInt(funnel.d30_cohort_size || 0)})` : pct(funnel.d30_retention)],
+    ["Share rate", pct(funnel.share_rate)],
+  ];
+  tEl.innerHTML = tiles.map(([label, v]) => `
+    <div class="coach-tile">
+      <div class="coach-tile-v">${escapeHTML(String(v))}</div>
+      <div class="coach-tile-l">${escapeHTML(label)}</div>
+    </div>`).join("");
 }
 
 // ---------- Daily tokens chart (SVG, stacked) ----------

@@ -9,6 +9,7 @@ Three layers:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -70,17 +71,77 @@ class TestEmbed:
         memory_v2.reset_default_model_cache()
         assert memory_v2._default_embedding_model() == "hashing-trick"
 
-    def test_gemini_failure_falls_back_silently(self, monkeypatch):
+    def test_gemini_failure_falls_back_loudly(self, monkeypatch, caplog):
         """When Gemini errors (no key, quota, network), embed() must not
-        raise — it should fall back to hashing-trick so retrieval stays up."""
+        raise — it falls back to hashing-trick so retrieval stays up, but
+        the degradation is logged at WARNING (J3: never silent)."""
         from agenticwhales import memory_v2 as mv2
 
         def boom(text, **_):
             raise RuntimeError("simulated provider error")
         monkeypatch.setattr(mv2, "embed_gemini", boom)
-        vec = mv2.embed("hello world", model="text-embedding-004")
+        with caplog.at_level(logging.WARNING, logger="agenticwhales.memory_v2"):
+            vec = mv2.embed("hello world", model="text-embedding-004")
         # Should be the hashing-trick fallback length.
         assert len(vec) == mv2.EMBED_DIM
+        assert any("DEGRADED" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Embedder mode — J3: the hashing-trick fallback is loud and inspectable
+# ---------------------------------------------------------------------------
+
+class TestEmbedderMode:
+    @pytest.fixture(autouse=True)
+    def _fresh_resolution(self):
+        memory_v2.reset_default_model_cache()
+        yield
+        memory_v2.reset_default_model_cache()
+
+    def test_implicit_fallback_warns(self, monkeypatch, caplog):
+        monkeypatch.delenv("AGENTICWHALES_EMBEDDING_MODEL", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        with caplog.at_level(logging.WARNING, logger="agenticwhales.memory_v2"):
+            assert memory_v2._default_embedding_model() == "hashing-trick"
+        degraded = [r for r in caplog.records if "DEGRADED" in r.message]
+        assert degraded and "no embedding provider configured" in degraded[0].message
+
+    def test_explicit_hashing_trick_still_warns(self, monkeypatch, caplog):
+        """An operator who explicitly picks hashing-trick made the call, but
+        the deploy is still degraded — the flag must not go quiet."""
+        monkeypatch.setenv("AGENTICWHALES_EMBEDDING_MODEL", "hashing-trick")
+        with caplog.at_level(logging.WARNING, logger="agenticwhales.memory_v2"):
+            memory_v2._default_embedding_model()
+        degraded = [r for r in caplog.records if "DEGRADED" in r.message]
+        assert degraded and "explicitly selected" in degraded[0].message
+
+    def test_real_model_does_not_warn(self, monkeypatch, caplog):
+        monkeypatch.delenv("AGENTICWHALES_EMBEDDING_MODEL", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        with caplog.at_level(logging.WARNING, logger="agenticwhales.memory_v2"):
+            memory_v2._default_embedding_model()
+        assert not [r for r in caplog.records if "DEGRADED" in r.message]
+
+    def test_mode_reports_fallback_degraded(self, monkeypatch):
+        monkeypatch.delenv("AGENTICWHALES_EMBEDDING_MODEL", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        assert memory_v2.embedder_mode() == {
+            "model": "hashing-trick", "source": "fallback", "degraded": True,
+        }
+
+    def test_mode_reports_real_model(self, monkeypatch):
+        monkeypatch.delenv("AGENTICWHALES_EMBEDDING_MODEL", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        assert memory_v2.embedder_mode() == {
+            "model": memory_v2.GEMINI_DEFAULT_MODEL,
+            "source": "google-key", "degraded": False,
+        }
+
+    def test_mode_reports_env_override(self, monkeypatch):
+        monkeypatch.setenv("AGENTICWHALES_EMBEDDING_MODEL", "gemini-embedding-001")
+        assert memory_v2.embedder_mode() == {
+            "model": "gemini-embedding-001", "source": "env", "degraded": False,
+        }
 
 
 # ---------------------------------------------------------------------------

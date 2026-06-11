@@ -1,4 +1,10 @@
-"""Conviction-score time-decay + macro re-evaluation gates (Phase 3 #4).
+"""EXPERIMENTAL — fund lab, not in the coach product path.
+
+Fund-era learning-loop machinery, quarantined per the 2026-06-08 executive
+critique (J1): kept for lab research, imported by no coach/overlay product
+module. See ARCHITECTURE.md § "Fund lab vs. coach product".
+
+Conviction-score time-decay + macro re-evaluation gates (Phase 3 #4).
 
 A `conviction_scores` row is recorded at the moment of decision. Without decay,
 a 9/10 conviction call from 21 days ago shows up alongside today's 7/10 — but a

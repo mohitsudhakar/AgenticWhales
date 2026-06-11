@@ -16,11 +16,43 @@ repeating them in the moment.
 
 from __future__ import annotations
 
+import re
 import statistics
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
 from .coach import CoachReport, RoundTrip
+
+# Advice posture: this is a DISCIPLINE CHECKLIST, not a recommendation engine.
+# Every GENERATED user-facing string (check messages, leak evidence/fixes, rule
+# copy, digest lines, benchmark labels) must be process guidance — never a
+# directional directive. `contains_directive` is the tripwire; tests assert it
+# over every generator so a directive can't silently leak into product copy.
+#
+# Scope note: this is calibrated for short generated strings, NOT whole HTML
+# pages — mandatory disclaimer copy legitimately contains the words "buy" and
+# "sell" ("never says buy or sell"). Page-level checks use an explicit
+# forbidden-phrases list in tests instead.
+_DIRECTIVE_RE = re.compile(
+    r"\b("
+    # hard directives
+    r"buy|sell|go long|go short|enter now|exit now|take this trade|"
+    r"recommend(?:ed|ation)?|"
+    # advice constructions ("should exit", "consider selling", "worth adding")
+    r"should (?:buy|sell|short|exit|enter|add|trim|hold)|"
+    r"(?:consider|start|try|worth) (?:buying|selling|shorting|entering|exiting|adding|trimming)|"
+    r"time to (?:buy|sell|exit|enter)|"
+    # object-directed position verbs ("exit your position", "add to the trade")
+    r"(?:add to|trim|exit|dump|unload) (?:the|your|this) (?:position|stake|trade|shares)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def contains_directive(text: str) -> bool:
+    """True if a user-facing string reads as a buy/sell directive."""
+    return bool(_DIRECTIVE_RE.search(text or ""))
+
 
 DEFAULT_STOP_PCT = 0.08
 DEFAULT_MAX_RISK_PCT = 0.02
@@ -72,22 +104,51 @@ def check_trade(
     max_concentration_pct: float = DEFAULT_MAX_CONCENTRATION,
     min_payoff: float = DEFAULT_MIN_PAYOFF,
     default_stop_pct: float = DEFAULT_STOP_PCT,
+    size_cap_x_median: float = 2.0,
+    stop_required: bool = False,
+    cooldown_hours: Optional[float] = None,
+    today: Optional["_dt.date"] = None,
 ) -> PretradeVerdict:
+    """The personalization kwargs (size_cap_x_median, stop_required,
+    cooldown_hours) come from the user's ADOPTED rule book — they tighten the
+    process checklist; nothing here is directional. `today` is injectable so
+    cooldown checks are deterministic in tests."""
+    import datetime as _dt
     long = trade.side == "long"
     entry = trade.entry_price
     notional = abs(trade.qty * entry)
     checks: List[Check] = []
 
-    # --- Structure: stop present? ---
+    # --- Structure: stop present? (escalates to fail under the user's rule) ---
     stop = trade.stop_price
     if stop is None:
         stop = entry * (1 - default_stop_pct) if long else entry * (1 + default_stop_pct)
         checks.append(Check(
-            "Stop-loss", "warn",
-            "No stop set — you'd be trading without a defined exit.",
+            "Stop-loss", "fail" if stop_required else "warn",
+            ("Your adopted rule requires a stop before entry — none is set."
+             if stop_required else
+             "No stop set — you'd be trading without a defined exit."),
             f"Set a stop near ${stop:,.2f} (a {default_stop_pct:.0%} move).",
         ))
     risk_per_share = abs(entry - stop)
+
+    # --- Behavior: the user's own cooldown rule (date-granular fills) ---
+    if cooldown_hours and recent_trades:
+        last = recent_trades[-1]
+        try:
+            last_exit = _dt.date.fromisoformat(str(last.exit_date)[:10])
+        except ValueError:
+            last_exit = None
+        now_d = today or _dt.date.today()
+        window_days = max(1, int(float(cooldown_hours) / 24 + 0.999))
+        if last_exit and not last.is_win and 0 <= (now_d - last_exit).days < window_days:
+            checks.append(Check(
+                "Cooldown rule", "fail",
+                f"Your last trade ({last.symbol}) closed at a loss "
+                f"{(now_d - last_exit).days} day(s) ago — inside your "
+                f"{float(cooldown_hours):.0f}h cooldown (fill timestamps are date-only).",
+                "The rule you adopted: no new position until the cooldown passes.",
+            ))
 
     # --- Risk: per-trade sizing ---
     risk_dollars = trade.qty * risk_per_share
@@ -146,10 +207,11 @@ def check_trade(
                 f"{notional/med:.1f}x your typical size. That's the revenge pattern.",
                 "Take the cooldown. Trade this at normal size or not today.",
             ))
-        elif med and notional > 2 * med:
+        elif med and notional > size_cap_x_median * med:
             checks.append(Check(
                 "Oversizing vs your norm", "warn",
-                f"This is {notional/med:.1f}x your median position size.",
+                f"This is {notional/med:.1f}x your median position size "
+                f"(your cap: {size_cap_x_median:.1f}x).",
                 "Unusual size needs an unusually good reason — size it normally.",
             ))
 

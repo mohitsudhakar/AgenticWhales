@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script type="module" src="/static/supabase-client.js"></script>
+  <script src="/static/share_card.js"></script>
   <script>
     tailwind.config = {
       theme: { extend: {
@@ -48,7 +49,9 @@
       </div>
       <div class="flex items-center gap-5 text-sm text-muted">
         <a href="#audit" class="hover:text-ink transition">Audit</a>
+        <a href="#rules" class="hidden sm:inline hover:text-ink transition">Rules</a>
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
+        <a href="#overlay" class="hidden sm:inline hover:text-ink transition">Overlay</a>
         <span id="authUser" class="hidden text-ink font-medium"></span>
         <button id="settingsBtn" class="hidden text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
         <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
@@ -61,6 +64,16 @@
         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete all my data</button>
     </div>
   </nav>
+
+  <!-- Persistent compliance strip: educational framing + data posture -->
+  <div class="border-b border-line bg-cream">
+    <div class="max-w-6xl mx-auto px-6 py-1.5 text-[11px] text-muted flex flex-wrap gap-x-5 gap-y-0.5">
+      <span><span class="text-ink font-medium">Educational, not investment advice.</span>
+        Dollar figures are historical attribution computed from your own trades — what happened, not what will.</span>
+      <span class="hidden md:inline">Read-only: we never place orders or move money. Delete your data anytime.</span>
+      <span class="hidden lg:inline"><a href="/methodology" class="underline underline-offset-2 hover:text-ink">How the numbers are computed</a> · <a href="/security" class="underline underline-offset-2 hover:text-ink">Your data</a></span>
+    </div>
+  </div>
 
   <!-- Hero -->
   <header class="max-w-6xl mx-auto px-6 pt-20 pb-16">
@@ -96,7 +109,11 @@
           <i data-lucide="link" class="w-4 h-4"></i> Connect brokerage</button>
         <label class="bg-ink text-cream px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition flex items-center gap-2">
           <i data-lucide="upload" class="w-4 h-4"></i> <span id="uploadLabel">Upload CSV / PDF / image</span>
-          <input id="csvFile" type="file" accept=".csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff" class="hidden">
+          <input id="csvFile" type="file" multiple accept=".csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff" class="hidden">
+        </label>
+        <label class="sm:hidden border border-line px-4 py-2 rounded-full cursor-pointer hover:bg-white transition flex items-center gap-2">
+          <i data-lucide="camera" class="w-4 h-4"></i> Snap your trades
+          <input id="cameraFile" type="file" accept="image/*" capture="environment" multiple class="hidden">
         </label>
       </div>
     </div>
@@ -105,6 +122,7 @@
       <!-- filled by JS -->
       <div class="card p-8 lg:col-span-3 text-center text-muted">Loading a sample audit…</div>
     </div>
+    <div id="sharePanel" class="hidden mt-4"></div>
 
     <div id="insightHeadline" class="mt-6"></div>
     <div id="insights" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4"></div>
@@ -117,14 +135,39 @@
   <section id="trend" class="max-w-6xl mx-auto px-6 py-14">
     <div class="pill text-muted mb-2">Progress</div>
     <h2 class="font-display text-4xl mb-6">Discipline over time</h2>
+    <div id="digestCard" class="hidden"></div>
     <div id="trendBody" class="card p-8"></div>
+  </section>
+
+  <!-- Your rules: the enforcement loop (signed-in only) -->
+  <section id="rules" class="max-w-6xl mx-auto px-6 py-14 hidden">
+    <div class="pill text-muted mb-2">Your rules</div>
+    <h2 class="font-display text-4xl mb-2">The rules you adopted — and what happened after</h2>
+    <p class="text-muted mb-8 max-w-3xl">Each flagged leak suggests a process rule. Adopt the ones you choose; trades
+    from your uploads and syncs are then checked against them — and every flagged pattern is re-tested on the trades
+    that came after, so the claim stays honest.</p>
+    <div id="rulesStreak" class="mb-5"></div>
+    <div class="grid lg:grid-cols-2 gap-6 items-start">
+      <div>
+        <h3 class="font-display text-2xl mb-3">Rule book</h3>
+        <div id="rulesList" class="space-y-3"></div>
+      </div>
+      <div>
+        <h3 class="font-display text-2xl mb-3">Flagged → re-tested</h3>
+        <div id="forwardList" class="space-y-3"></div>
+        <h3 class="font-display text-2xl mt-8 mb-3">Recent rule breaks</h3>
+        <div id="violationsList" class="space-y-3"></div>
+      </div>
+    </div>
   </section>
 
   <!-- Pre-trade check -->
   <section id="check" class="max-w-6xl mx-auto px-6 py-14">
     <div class="pill text-muted mb-2">Decision support</div>
     <h2 class="font-display text-4xl mb-2">Pre-trade check</h2>
-    <p class="text-muted mb-8 max-w-2xl">Run a trade past your risk rules and your own behavioral history before you place it. Toggle “use sample history” to see it catch a revenge trade.</p>
+    <p class="text-muted mb-8 max-w-2xl">A discipline checklist, not a recommendation: it checks a trade you've already decided on
+    against your risk rules and your own behavioral history — sizing, stops, payoff, your known patterns. It never says buy or sell;
+    you decide. Toggle “use sample history” to see it catch a revenge trade.</p>
 
     <div class="grid lg:grid-cols-2 gap-6 items-start">
       <div class="card p-7">
@@ -155,9 +198,37 @@
     </div>
   </section>
 
+  <!-- Defensive overlay — the second product surface (educational) -->
+  <section id="overlay" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Defensive overlay · experimental</div>
+    <h2 class="font-display text-4xl mb-2">Structure beats prediction</h2>
+    <p class="text-muted mb-8 max-w-3xl">The same research lab that disproved our own “edge” validated one thing across
+    20 years of walk-forward — through 2008, the 2010s trend drought, 2020 and 2022: a 50/50 blend of a diversified
+    7-ETF basket and 12-month trend, vol-targeted. <span class="text-ink font-medium">Sharpe 0.91 vs SPY’s 0.64, with
+    roughly a third of the drawdown.</span> No forecasts anywhere — it harvests risk premia, not alpha. Below is the
+    rule set’s current mechanical state, shown as education, not as advice.</p>
+    <div class="flex items-center gap-3 mb-5 text-sm">
+      <span class="text-muted">Leverage</span>
+      <select id="ovLev" class="border border-line rounded-lg px-3 py-1.5 bg-cream/40">
+        <option value="1.0" selected>1.0× (validated baseline)</option>
+        <option value="1.5">1.5× (matches SPY’s 20-yr return, ~half the drawdown)</option>
+        <option value="2.0">2.0×</option>
+      </select>
+    </div>
+    <div id="overlayBody" class="card p-8 text-muted">Loading the current state of the rule set…</div>
+  </section>
+
   <footer class="max-w-6xl mx-auto px-6 py-12 mt-8 border-t border-line text-sm text-muted">
-    <p class="max-w-3xl">Paper / analysis only — AgenticWhales never places orders. The dollar figures are
-    deterministic counterfactuals computed from your history, not predictions or advice. Educational use.</p>
+    <p class="max-w-3xl mb-3"><span class="text-ink font-medium">Educational, not investment advice.</span>
+    AgenticWhales never places orders or moves money. The dollar figures are deterministic, backward-looking
+    counterfactuals computed from your own trade history — historical attribution, not predictions. The pre-trade
+    check is a discipline checklist; the defensive overlay shows the mechanical state of a published rule set.
+    Nothing here is a recommendation to buy or sell anything.</p>
+    <p class="max-w-3xl mb-3">Your data: uploads and brokerage connections are <span class="text-ink">read-only</span> and
+    private to your account; brokerage credentials are held server-side under per-user row-level security and are
+    never exposed to the browser. Delete everything anytime from Settings → “Delete all my data”.</p>
+    <p class="max-w-3xl"><a href="/methodology" class="underline underline-offset-2 hover:text-ink">How the numbers are computed</a>
+    · <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a></p>
   </footer>
 
 <script>
@@ -179,7 +250,46 @@ const sevColor = { high:'crimson', medium:'amber', low:'muted' };
 
 function scoreColor(s){ return s>=70?'emerald':s>=40?'amber':'crimson'; }
 
+function renderBenchmark(b){
+  if(!b) return '';
+  if(b.cohort === 'real'){
+    return `<div class="mt-2 pill text-ink border border-line rounded-full px-3 py-1">${b.band} · of ${b.n_cohort} AgenticWhales traders</div>`;
+  }
+  // pending / demo: NO comparative claim — say exactly why.
+  return `<div class="mt-2 text-[11px] text-muted">${b.label || ''}</div>`;
+}
+
+let LAST_REPORT = null;
+let SHARE_DOLLARS = false;
+
+function openShareCard(){
+  if(!LAST_REPORT || typeof renderShareCard !== 'function') return;
+  const panel = $('sharePanel');
+  panel.classList.remove('hidden');
+  const canvas = renderShareCard(LAST_REPORT, {showDollars: SHARE_DOLLARS});
+  panel.innerHTML = `<div class="card p-5 fade-in">
+    <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+      <span class="pill text-muted">Share card — anonymized by default (no symbols, no sizes)</span>
+      <div class="flex items-center gap-3 text-sm">
+        <label class="flex items-center gap-2 text-muted text-xs"><input type="checkbox" id="shareDollars" ${SHARE_DOLLARS?'checked':''} class="accent-emerald w-3.5 h-3.5"> show the $ figure</label>
+        <button id="shareDo" class="bg-ink text-cream rounded-full px-4 py-1.5 text-xs hover:opacity-90 transition">Share</button>
+        <button id="shareDl" class="border border-line rounded-full px-4 py-1.5 text-xs hover:bg-white transition">Download</button>
+        <button onclick="$('sharePanel').classList.add('hidden')" class="text-muted text-xs hover:text-ink transition">Close</button>
+      </div></div>
+    <img id="shareImg" class="w-full rounded-xl border border-line" alt="share card preview"></div>`;
+  $('shareImg').src = canvas.toDataURL('image/png');
+  $('shareDollars').onchange = (e) => { SHARE_DOLLARS = e.target.checked; openShareCard(); };
+  const track = () => fetch('/api/coach/events', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({event:'share_card_exported', metadata:{dollars: SHARE_DOLLARS}})}).catch(()=>{});
+  $('shareDo').onclick = async () => {
+    await shareCard(renderShareCard(LAST_REPORT, {showDollars: SHARE_DOLLARS})); track(); };
+  $('shareDl').onclick = () => {
+    downloadCard(renderShareCard(LAST_REPORT, {showDollars: SHARE_DOLLARS})); track(); };
+}
+
 function renderAudit(r){
+  LAST_REPORT = r;
   const c = scoreColor(r.discipline_score);
   const swing = r.total_quantified_leak;
   $('scorecard').innerHTML = `
@@ -194,6 +304,9 @@ function renderAudit(r){
         <div class="absolute inset-0 flex items-center justify-center font-display text-4xl text-${c}">${r.discipline_score}</div>
       </div>
       <div class="text-sm text-muted">${r.n_trades} round-trips · ${(r.hit_rate*100).toFixed(0)}% win-rate · payoff ${r.payoff_ratio}</div>
+      ${renderBenchmark(r.benchmark)}
+      <button onclick="openShareCard()" class="mt-3 text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition flex items-center gap-1.5">
+        <i data-lucide="share-2" class="w-3.5 h-3.5"></i> Share scorecard</button>
     </div>
     <div class="card p-8 lg:col-span-2 fade-in flex flex-col justify-center">
       <div class="pill text-muted mb-2">What your behavior — not the market — cost you</div>
@@ -253,19 +366,37 @@ function showProgressError(msg){
   $('leaks').innerHTML = ''; lucide.createIcons();
 }
 
-$('csvFile').onchange = async (e) => {
-  const f = e.target.files[0]; if(!f) return;
-  e.target.value = '';
+function showLimitError(j){
+  PROCESSING = false;
+  $('scorecard').innerHTML = `<div class="card p-10 lg:col-span-3 text-center fade-in">
+    <i data-lucide="hourglass" class="w-8 h-8 mx-auto mb-3 text-muted"></i>
+    <p class="font-display text-2xl mb-2">That's today's free limit</p>
+    <p class="text-muted text-sm mb-5 max-w-md mx-auto">${j.error || 'Daily guest limit reached.'}</p>
+    ${j.signin ? `<button onclick="window.AgenticWhalesAuth?.signInWithGoogle?.()" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Sign in free to continue</button>` : ''}
+  </div>`;
+  lucide.createIcons();
+}
+
+async function uploadFiles(fileList){
+  const files = Array.from(fileList || []).filter(Boolean);
+  if(!files.length) return;
   PROCESSING = true;
   window.location.hash = '#audit';
-  showProgress(2, 'Uploading your file…');
+  showProgress(2, files.length > 1 ? `Uploading ${files.length} files…` : 'Uploading your file…');
   let jid;
   try {
-    const fd = new FormData(); fd.append('file', f);
-    const j = await (await fetch('/api/coach/upload_async', {method:'POST', body: fd})).json();
+    const fd = new FormData();
+    files.forEach((f, i) => fd.append('file', f, f.name || `pasted-${i+1}.png`));
+    const resp = await fetch('/api/coach/upload_async', {method:'POST', body: fd});
+    const j = await resp.json();
+    if(resp.status === 429){ showLimitError(j); return; }
     if(!j.job_id){ showProgressError(j.error || 'Upload failed.'); return; }
     jid = j.job_id;
   } catch(err){ showProgressError('Upload failed: ' + err); return; }
+  followJob(jid);
+}
+
+function followJob(jid){
   const es = new EventSource(`/api/coach/jobs/${jid}/stream`);
   es.onmessage = (ev) => {
     const d = JSON.parse(ev.data);
@@ -280,7 +411,28 @@ $('csvFile').onchange = async (e) => {
     }
   };
   es.onerror = () => { es.close(); showProgressError('Lost connection to the server. Please retry.'); };
-};
+}
+
+$('csvFile').onchange = (e) => { uploadFiles(e.target.files); e.target.value = ''; };
+const cameraInput = $('cameraFile');
+if(cameraInput) cameraInput.onchange = (e) => { uploadFiles(e.target.files); e.target.value = ''; };
+
+// Paste a screenshot anywhere on the page -> instant audit (the activation path).
+document.addEventListener('paste', (e) => {
+  const files = Array.from(e.clipboardData?.items || [])
+    .filter(i => i.kind === 'file').map(i => i.getAsFile())
+    .filter(f => f && f.type.startsWith('image/'));
+  if(files.length){ e.preventDefault(); uploadFiles(files); }
+});
+
+// Drag-drop files onto the page.
+document.addEventListener('dragover', (e) => {
+  if(Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault();
+});
+document.addEventListener('drop', (e) => {
+  const files = Array.from(e.dataTransfer?.files || []);
+  if(files.length){ e.preventDefault(); uploadFiles(files); }
+});
 
 const vColor = { GO:'emerald', CAUTION:'amber', BLOCK:'crimson' };
 const vIcon  = { GO:'check-circle-2', CAUTION:'alert-triangle', BLOCK:'octagon-x' };
@@ -338,6 +490,166 @@ function renderSupport(d){
   </div>`;
 }
 
+// ---- Defensive overlay (educational; deterministic rule-set state) ----
+async function loadOverlay(){
+  const el = $('overlayBody');
+  try {
+    const r = await (await fetch(`/api/overlay/status?leverage=${$('ovLev').value}`)).json();
+    if(r.error){ el.innerHTML = `<p class="text-muted">${r.error}</p>`; return; }
+    renderOverlay(r);
+  } catch(e){ el.innerHTML = '<p class="text-muted">Could not load the overlay state.</p>'; }
+}
+
+function renderOverlay(r){
+  const rows = r.sleeves.map(s=>`
+    <tr class="border-t border-line">
+      <td class="py-2 font-medium">${s.symbol}</td>
+      <td class="py-2 ${s.in_trend?'text-emerald':'text-muted'}">${s.in_trend?'↑ in trend':'— flat'}</td>
+      <td class="py-2 text-right text-muted">${s.lookback_return_pct>0?'+':''}${s.lookback_return_pct}%</td>
+      <td class="py-2 text-right text-muted">${s.realized_vol_pct}%</td>
+      <td class="py-2 text-right font-medium">${s.target_weight_pct}%</td>
+    </tr>`).join('');
+  const ev = r.evidence.full_period.map(e=>`
+    <tr class="border-t border-line ${e.name==='50/50 blend'?'text-ink font-medium':'text-muted'}">
+      <td class="py-1.5">${e.name}</td><td class="py-1.5 text-right">${e.sharpe.toFixed(2)}</td>
+      <td class="py-1.5 text-right">+${e.return_pct}%</td><td class="py-1.5 text-right">−${e.max_dd_pct}%</td>
+    </tr>`).join('');
+  const wy = r.evidence.worst_year;
+  $('overlayBody').className = 'card p-8 fade-in';
+  $('overlayBody').innerHTML = `
+    <div class="grid lg:grid-cols-2 gap-8">
+      <div>
+        <div class="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+          <div class="pill text-muted">Target weights · as of ${r.as_of} · ${r.leverage}×</div>
+          <div class="text-sm text-muted">${r.trend_sleeves_on}/${r.sleeves.length} sleeves in trend</div>
+        </div>
+        <table class="w-full text-sm">
+          <thead><tr class="text-muted pill">
+            <th class="text-left font-normal pb-2">ETF</th><th class="text-left font-normal pb-2">Trend (12m)</th>
+            <th class="text-right font-normal pb-2">12m return</th><th class="text-right font-normal pb-2">Vol</th>
+            <th class="text-right font-normal pb-2">Weight</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="mt-4 pt-3 border-t border-line text-sm flex justify-between">
+          <span class="text-muted">Total equity exposure</span>
+          <span class="font-medium">${r.equity_exposure_pct}% · ${r.cash_pct>=0?r.cash_pct+'% cash':Math.abs(r.cash_pct)+'% borrowed'}</span>
+        </div>
+      </div>
+      <div>
+        <div class="pill text-muted mb-3">${r.evidence.window}</div>
+        <table class="w-full text-sm">
+          <thead><tr class="text-muted pill">
+            <th class="text-left font-normal pb-2">Strategy</th><th class="text-right font-normal pb-2">Sharpe</th>
+            <th class="text-right font-normal pb-2">Return</th><th class="text-right font-normal pb-2">Max DD</th></tr></thead>
+          <tbody>${ev}</tbody>
+        </table>
+        <p class="text-sm text-muted mt-4">Worst year: blend ${wy.blend.return_pct}% (${wy.blend.year}) vs SPY ${wy.spy.return_pct}% (${wy.spy.year}).
+        ${r.evidence.parameter_robustness}.</p>
+        <p class="text-sm text-muted mt-2">${r.evidence.honest_tradeoff}</p>
+      </div>
+    </div>
+    <p class="text-[11px] text-muted mt-5 pt-4 border-t border-line">${r.disclaimer}</p>`;
+}
+
+$('ovLev').onchange = loadOverlay;
+loadOverlay();
+
+// ---- Weekly in-app digest (the email carries counts only; $ lives here) ----
+async function loadDigest(){
+  const el = $('digestCard');
+  try {
+    const d = await (await fetch('/api/coach/digests')).json();
+    if(!d.signed_in || !(d.digests||[]).length){ el.classList.add('hidden'); return; }
+    const p = d.digests[0].payload || {};
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="card p-5 mb-4 fade-in flex flex-wrap items-baseline gap-x-7 gap-y-2">
+      <span class="pill text-muted">This week · ${p.week_start} → ${p.week_end}</span>
+      <span class="text-sm"><span class="font-display text-2xl">${p.n_trades_closed}</span> <span class="text-muted">trades closed</span></span>
+      <span class="text-sm"><span class="font-display text-2xl">${money(p.realized_pnl||0)}</span> <span class="text-muted">realized</span></span>
+      <span class="text-sm"><span class="font-display text-2xl ${p.violations?'text-crimson':'text-emerald'}">${p.violations}</span> <span class="text-muted">rule breaks</span></span>
+      <span class="text-sm"><span class="font-display text-2xl text-emerald">${p.streak_weeks}</span> <span class="text-muted">week streak</span></span>
+    </div>`;
+  } catch(e){ el.classList.add('hidden'); }
+}
+
+// ---- Your rules: rule book + forward validation + violations ----
+async function loadRules(){
+  const section = $('rules');
+  try {
+    const s = await (await fetch('/api/coach/rules/summary')).json();
+    if(!s.signed_in){ section.classList.add('hidden'); return; }
+    // Seed suggestions (idempotent), then re-pull the summary if empty.
+    if(!(s.rules||[]).length){
+      await fetch('/api/coach/rules');
+      const s2 = await (await fetch('/api/coach/rules/summary')).json();
+      if((s2.rules||[]).length) return renderRules(s2);
+    }
+    renderRules(s);
+  } catch(e){ section.classList.add('hidden'); }
+}
+
+async function setRuleStatus(id, status){
+  await fetch(`/api/coach/rules/${id}`, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({status})});
+  loadRules();
+}
+
+function renderRules(s){
+  const section = $('rules');
+  if(!(s.rules||[]).length && !(s.forward_validation||[]).length){
+    section.classList.add('hidden'); return;
+  }
+  section.classList.remove('hidden');
+  const streak = s.streak || {};
+  $('rulesStreak').innerHTML = streak.weeks > 0
+    ? `<div class="card p-5 inline-flex items-center gap-3"><i data-lucide="flame" class="w-5 h-5 text-emerald"></i>
+       <span class="font-display text-2xl">${streak.weeks}</span>
+       <span class="text-muted text-sm">week${streak.weeks===1?'':'s'} without a rule violation${streak.since?` · counted since ${streak.since}`:''}</span></div>`
+    : '';
+  const statusChip = (r) => r.status === 'active'
+    ? '<span class="pill text-emerald border border-line rounded-full px-2 py-0.5">active</span>'
+    : r.status === 'paused'
+    ? '<span class="pill text-muted border border-line rounded-full px-2 py-0.5">paused</span>'
+    : '<span class="pill text-amber border border-line rounded-full px-2 py-0.5">suggested</span>';
+  const checkBadge = (r) => r.checkable_from_fills
+    ? '<span class="pill text-muted">checked from fills</span>'
+    : '<span class="pill text-muted">checked at pre-trade</span>';
+  const actions = (r) => r.status === 'active'
+    ? `<button onclick="setRuleStatus('${r.id}','paused')" class="text-xs border border-line rounded-full px-3 py-1 hover:bg-white transition">Pause</button>`
+    : `<button onclick="setRuleStatus('${r.id}','active')" class="text-xs bg-ink text-cream rounded-full px-3 py-1 hover:opacity-90 transition">Adopt</button>`;
+  $('rulesList').innerHTML = (s.rules||[]).map(r => `
+    <div class="card p-5">
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <div class="font-medium">${r.label}</div>
+        <div class="flex items-center gap-2">${statusChip(r)}${actions(r)}</div>
+      </div>
+      <p class="text-sm text-muted mb-2">${r.description}</p>
+      <div class="flex items-center gap-3 text-xs text-muted">${checkBadge(r)}
+        ${r.status==='active' ? `<span>· ${r.violations_30d||0} break${(r.violations_30d||0)===1?'':'s'} in 30d</span>
+        ${r.last_violation?`<span>· last ${r.last_violation}</span>`:''}` : ''}</div>
+    </div>`).join('') || '<div class="card p-5 text-muted text-sm">Run an audit and rule suggestions will appear here.</div>';
+  $('forwardList').innerHTML = (s.forward_validation||[]).map(f => `
+    <div class="card p-5">
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <div class="font-medium leading-snug">${f.name}</div>
+        ${f.persisted === false
+          ? '<span class="pill text-emerald border border-line rounded-full px-2 py-0.5 whitespace-nowrap">not detected forward</span>'
+          : '<span class="pill text-amber border border-line rounded-full px-2 py-0.5 whitespace-nowrap">detected again</span>'}
+      </div>
+      <p class="text-sm text-muted">${money(f.dollars)} in the flagged window (through ${f.window_end});
+      across the ${f.n_forward_trades} trades after: ${money(f.forward_dollars||0)}.</p>
+    </div>`).join('') || '<div class="card p-5 text-muted text-sm">Once a flagged pattern has 5+ newer trades, its re-test lands here.</div>';
+  $('violationsList').innerHTML = (s.recent_violations||[]).map(v => `
+    <div class="card p-5">
+      <div class="flex items-center justify-between gap-3 mb-1 text-sm">
+        <span class="font-medium">${v.occurred_on}</span>
+        <span class="pill text-muted">P&amp;L of the trade${v.rule_kind==='max_trades_per_week'?'s':''}: ${money(v.dollars)}</span>
+      </div>
+      <p class="text-sm text-muted">${v.evidence}</p>
+    </div>`).join('') || '<div class="card p-5 text-muted text-sm">No rule breaks recorded.</div>';
+  lucide.createIcons();
+}
+
 // ---- Auth + journey (guest / new / returning) ----
 let CURRENT = null;
 let PROCESSING = false;  // true while an upload/sync is in flight — blocks journey re-renders
@@ -354,6 +666,15 @@ function updateAuthUI(user){
     u.textContent = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
     u.classList.remove('hidden');
     b.textContent = 'Sign out'; b.onclick = () => window.AgenticWhalesAuth.signOut();
+    // One-time first-touch referral claim (?ref= captured in localStorage).
+    try {
+      const code = localStorage.getItem('aw_ref');
+      if(code && !localStorage.getItem('aw_ref_claimed')){
+        fetch('/api/referral/claim', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({code: code, source: 'web'})})
+          .then(r => { if(r.ok) localStorage.setItem('aw_ref_claimed', '1'); });
+      }
+    } catch(e){}
   } else {
     u.classList.add('hidden'); u.textContent = '';
     b.textContent = 'Sign in'; b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
@@ -383,8 +704,8 @@ function renderHero(mode, name){
   const H = {
     guest: { pill:['Behavioral edge, not market prediction','text-emerald'],
       title:'Know what your <span class="italic">habits</span> cost you —<br>then stop repeating them.',
-      sub:"We don't sell predictions. We turn your own trading history into discipline: a dollar-quantified audit of your behavioral leaks, and a pre-trade check that catches the mistake <span class=\"text-ink font-medium\">before</span> you click buy.",
-      ctas:`<a href="#audit" class="${BTN_DARK}">See a live audit <i data-lucide="arrow-down" class="w-4 h-4"></i></a><a href="#check" class="${BTN_LINE}">Try the pre-trade check</a>` },
+      sub:"We don't sell predictions. We turn your own trading history into discipline: a dollar-quantified audit of your behavioral leaks, and a pre-trade check that catches the mistake <span class=\"text-ink font-medium\">before</span> you click buy. <span class=\"text-ink font-medium\">Paste a screenshot of your trades</span> (Ctrl/Cmd-V, right here) — your personal leak card in under a minute, no signup.",
+      ctas:`<button onclick="document.getElementById('csvFile').click()" class="${BTN_DARK}"><i data-lucide="image" class="w-4 h-4"></i> Upload a screenshot / CSV</button><a href="#audit" class="${BTN_LINE}">See a sample audit</a>` },
     new: { pill:['Welcome to AgenticWhales','text-muted'],
       title:`Let's run your <span class="italic">first</span> audit${name?', '+name:''}.`,
       sub:"Upload a statement — CSV, PDF, or a screenshot — and I'll show you, in dollars, exactly what your habits cost you, and the rules that fix them. Nothing is shared; we never place orders.",
@@ -420,8 +741,11 @@ async function applyJourney(user){
   if(PROCESSING) return;  // don't clobber an in-progress upload on auth/visibility events
   const signedIn = isSignedIn(user);
   setPretradeMode(signedIn);
-  if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false}); return; }
+  if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false});
+    $('rules').classList.add('hidden'); return; }
   refreshBrokerStatus();
+  loadRules();
+  loadDigest();
   const name = firstName(user);
   let latest = null;
   try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
@@ -565,7 +889,24 @@ function whenAuthReady(cb, n=0){
   else { applyJourney(null); } // Supabase unavailable -> guest journey
 }
 
+// Capture ?ref= (first touch) for later claim after sign-in.
+try {
+  const ref = new URLSearchParams(location.search).get('ref');
+  if (ref && !localStorage.getItem('aw_ref')) localStorage.setItem('aw_ref', ref);
+} catch (e) {}
+
 lucide.createIcons();
+
+// Resume an upload started on the landing page (/coach#job=<id> handoff) —
+// the SSE job stream is the capability, so the audit continues seamlessly.
+const _jobHandoff = (location.hash.match(/job=([a-f0-9]{32})/) || [])[1];
+if (_jobHandoff) {
+  PROCESSING = true;
+  history.replaceState(null, '', '/coach#audit');
+  showProgress(5, 'Picking up your upload…');
+  followJob(_jobHandoff);
+}
+
 applyJourney(null); // optimistic guest render so the page isn't blank during auth load
 whenAuthReady(() => {
   window.AgenticWhalesAuth.onChange(updateAuthUI);

@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from agenticwhales import coach, prices
 from agenticwhales.dataflows import snaptrade_client, snaptrade_normalize
 from web import auth
+from web import coach_api
 from web.auth import get_current_user_id
 from web.coach_api import _merge_user_trades, _persist_audit, optional_user_id
 
@@ -81,7 +82,8 @@ async def snaptrade_connect(p: ConnectPayload, user_id: str = Depends(get_curren
                             status_code=502)
 
 
-def _sync_core(user_id: str, client, rec, *, lookback_days: int = 365 * 3):
+def _sync_core(user_id: str, client, rec, *, lookback_days: int = 365 * 3,
+               origin: str = "sync_manual"):
     """Pull activities -> normalize -> merge into the timeline -> audit -> persist.
     Returns the report dict, or None if the connected accounts have no trades yet."""
     start = (_dt.date.today() - _dt.timedelta(days=lookback_days)).isoformat()
@@ -95,7 +97,12 @@ def _sync_core(user_id: str, client, rec, *, lookback_days: int = 365 * 3):
     out["n_transactions"] = len(audit_txns)
     out["new_transactions"] = len(txns)
     out["source"] = "snaptrade"
-    _persist_audit(user_id, out, audit_txns)
+    _persist_audit(user_id, out, audit_txns, origin=origin)
+    # "broker connected" means data actually flowed, not that a portal URL was
+    # minted — so the funnel event fires on the FIRST successful sync only.
+    if not auth.list_audit(actor=user_id, action="broker_connected", limit=1):
+        coach_api.track_event("broker_connected", user_id,
+                              {"n_transactions": len(txns)})
     return out
 
 
@@ -108,7 +115,7 @@ def sync_user(user_id: str):
     rec = auth.get_snaptrade_user(user_id)
     if not rec:
         return None
-    return _sync_core(user_id, client, rec)
+    return _sync_core(user_id, client, rec, origin="sync_auto")
 
 
 @router.post("/api/snaptrade/sync")

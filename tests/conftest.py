@@ -51,6 +51,17 @@ def _force_offline_supabase(monkeypatch, request):
         monkeypatch.delenv(env_var, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _reset_guest_upload_caps():
+    """Guest document-upload caps are per-process state; isolate tests."""
+    try:
+        import web.coach_api as _coach_api
+        _coach_api._GUEST_UPLOADS.clear()
+    except Exception:  # noqa: BLE001 — web extras may be absent in minimal envs
+        pass
+    yield
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — What's your discipline tax?</title>
+  <meta name="description" content="Paste a screenshot of your trades and see, in dollars, what your trading habits cost you. A behavioral discipline coach — educational, read-only, no predictions." />
+  <meta property="og:title" content="What's your discipline tax?" />
+  <meta property="og:description" content="A dollar-quantified audit of your trading habits, from your own history. No predictions, no signup to try." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Lora:wght@600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54', amber: '#B45309', crimson: '#B3261E' },
+      fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+    }}}
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px;
+            box-shadow: 0 1px 2px rgba(26,26,23,0.03), 0 8px 30px rgba(26,26,23,0.04); }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    .dropzone.dragging { outline: 2px dashed #1F6F54; outline-offset: 6px; }
+  </style>
+</head>
+<body>
+
+  <nav class="border-b border-line sticky top-0 bg-cream/90 backdrop-blur z-40">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="text-xl">🐋</span><span class="font-logo text-xl">AgenticWhales</span>
+        <span class="hidden sm:inline pill text-muted ml-2 border-l border-line pl-3">Discipline Coach</span>
+      </div>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="/learn" class="hidden sm:inline hover:text-ink transition">Learn</a>
+        <a href="/methodology" class="hidden sm:inline hover:text-ink transition">Methodology</a>
+        <a href="/coach" class="hover:text-ink transition">Open the coach</a>
+        <a href="/signin" class="border border-line rounded-full px-4 py-1.5 hover:bg-white transition">Sign in</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero: the activation moment -->
+  <header class="max-w-6xl mx-auto px-6 pt-20 pb-14">
+    <div class="max-w-3xl">
+      <div class="pill text-emerald mb-5">No predictions. Your own history, in dollars.</div>
+      <h1 class="font-display text-5xl sm:text-7xl leading-[1.02] mb-6">What's your <span class="italic">discipline tax</span>?</h1>
+      <p class="text-lg text-muted leading-relaxed mb-8 max-w-2xl">
+        Revenge trades, held losers, oversized bets — your own fills already know what your habits cost you.
+        <span class="text-ink font-medium">Paste a screenshot of your trades</span> and get the number, in dollars,
+        in under a minute. No signup to try. Read-only, always.
+      </p>
+      <div id="dropzone" class="dropzone card p-8 mb-6 text-center cursor-pointer" onclick="document.getElementById('homeFile').click()">
+        <i data-lucide="image-plus" class="w-8 h-8 mx-auto mb-3 text-emerald"></i>
+        <p class="font-display text-2xl mb-1">Drop a screenshot, statement, or CSV here</p>
+        <p class="text-muted text-sm" id="dropHint">…or paste with Ctrl/Cmd-V, or tap to choose a file</p>
+        <input id="homeFile" type="file" multiple accept=".csv,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff,image/*" class="hidden">
+      </div>
+      <div class="flex flex-wrap gap-3 items-center">
+        <a href="/coach" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Open the full coach</a>
+        <a href="#sample" class="border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition">See a sample audit</a>
+        <button data-waitlist onclick="document.getElementById('waitlist').scrollIntoView({behavior:'smooth'})"
+                class="border border-line px-6 py-3 rounded-full text-sm font-medium hover:bg-white transition">Join the waitlist</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sample audit -->
+  <section id="sample" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">A sample audit</div>
+    <h2 class="font-display text-4xl mb-2">What it finds, on a believable trader</h2>
+    <p class="text-muted mb-8 max-w-2xl">Synthetic demo data — a trader who cuts winners fast, holds losers, and sizes up
+    after losses. Your audit runs on your own trades instead.</p>
+    <div id="demoCards" class="grid md:grid-cols-3 gap-5"><div class="card p-6 text-muted md:col-span-3">Loading the sample…</div></div>
+  </section>
+
+  <!-- How it works -->
+  <section class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">How it works</div>
+    <h2 class="font-display text-4xl mb-8">Three steps, no predictions anywhere</h2>
+    <div class="grid md:grid-cols-3 gap-5">
+      <div class="card p-7">
+        <div class="pill text-emerald mb-3">1 · Show it your trades</div>
+        <p class="text-muted text-sm leading-relaxed">Screenshot, CSV, PDF statement, or a read-only brokerage connection.
+        Guests are analyzed in memory and never stored.</p>
+      </div>
+      <div class="card p-7">
+        <div class="pill text-emerald mb-3">2 · Get the dollar number</div>
+        <p class="text-muted text-sm leading-relaxed">Deterministic arithmetic on your own fills quantifies each behavioral
+        leak — what it cost, past tense — plus the process rule that addresses it.</p>
+      </div>
+      <div class="card p-7">
+        <div class="pill text-emerald mb-3">3 · Watch it shrink</div>
+        <p class="text-muted text-sm leading-relaxed">Sign in and every audit is saved: your discipline score trends,
+        flagged patterns get re-tested on your newer trades, and the pre-trade check guards your next entry.</p>
+      </div>
+    </div>
+    <p class="text-sm text-muted mt-6">The fine print, in plain sight:
+      <a href="/methodology" class="underline underline-offset-2 hover:text-ink">how every number is computed</a> ·
+      <a href="/security" class="underline underline-offset-2 hover:text-ink">what happens to your data</a>.</p>
+  </section>
+
+  <!-- Waitlist -->
+  <section id="waitlist" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="card p-10 text-center">
+      <h2 class="font-display text-4xl mb-2">Join the waitlist</h2>
+      <p class="text-muted mb-6 max-w-xl mx-auto">Brokerage auto-sync, weekly discipline digests, and the rule book are
+      rolling out gradually. Leave an email and we'll open your slot.</p>
+      <form id="waitlistForm" class="flex flex-wrap justify-center gap-3">
+        <input id="wlEmail" type="email" required placeholder="you@example.com"
+               class="border border-line rounded-full px-5 py-3 text-sm bg-white/70 w-72">
+        <button type="submit" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Join the waitlist</button>
+      </form>
+      <p id="wlMsg" class="text-sm text-emerald mt-3 hidden"></p>
+      <p class="text-xs text-muted mt-4"><span id="wlCount"></span></p>
+    </div>
+  </section>
+
+  <footer class="max-w-6xl mx-auto px-6 py-12 border-t border-line text-sm text-muted">
+    <p class="max-w-3xl mb-2"><span class="text-ink font-medium">Educational, not investment advice.</span>
+    Every figure is historical attribution computed from a trader's own fills — what happened, not what will.
+    AgenticWhales never places orders or moves money. Nothing here is a recommendation to buy or sell anything.</p>
+    <p><a href="/methodology" class="underline underline-offset-2 hover:text-ink">Methodology</a> ·
+       <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a> ·
+       <a href="/learn" class="underline underline-offset-2 hover:text-ink">Learn</a> ·
+       <a href="/signin" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
+  </footer>
+
+<script>
+const $id = (x) => document.getElementById(x);
+const money = (n) => (n<0?'-':'') + '$' + Math.abs(Math.round(n)).toLocaleString();
+
+// ---- Referral attribution: first touch, persisted for claim after sign-in ----
+try {
+  const ref = new URLSearchParams(location.search).get('ref');
+  if (ref && !localStorage.getItem('aw_ref')) localStorage.setItem('aw_ref', ref);
+} catch (e) {}
+
+// ---- The activation path: files -> upload_async -> /coach#job=<id> ----
+async function homeUpload(fileList){
+  const files = Array.from(fileList || []).filter(Boolean);
+  if(!files.length) return;
+  $id('dropHint').textContent = 'Uploading…';
+  try {
+    const fd = new FormData();
+    files.forEach((f, i) => fd.append('file', f, f.name || `pasted-${i+1}.png`));
+    const resp = await fetch('/api/coach/upload_async', {method:'POST', body: fd});
+    const j = await resp.json();
+    if(resp.status === 429){
+      $id('dropHint').innerHTML = (j.error || 'Daily free limit reached.') +
+        ' <a href="/coach" class="underline">Sign in free on the coach page</a>.';
+      return;
+    }
+    if(!j.job_id){ $id('dropHint').textContent = j.error || 'Upload failed — try again.'; return; }
+    window.location.href = '/coach#job=' + j.job_id;   // coach page resumes the live stream
+  } catch(err){ $id('dropHint').textContent = 'Upload failed: ' + err; }
+}
+
+$id('homeFile').onchange = (e) => { homeUpload(e.target.files); e.target.value=''; };
+document.addEventListener('paste', (e) => {
+  const files = Array.from(e.clipboardData?.items || [])
+    .filter(i => i.kind === 'file').map(i => i.getAsFile())
+    .filter(f => f && f.type.startsWith('image/'));
+  if(files.length){ e.preventDefault(); homeUpload(files); }
+});
+const dz = $id('dropzone');
+document.addEventListener('dragover', (e) => {
+  if(Array.from(e.dataTransfer?.types || []).includes('Files')){ e.preventDefault(); dz.classList.add('dragging'); }
+});
+document.addEventListener('dragleave', () => dz.classList.remove('dragging'));
+document.addEventListener('drop', (e) => {
+  dz.classList.remove('dragging');
+  const files = Array.from(e.dataTransfer?.files || []);
+  if(files.length){ e.preventDefault(); homeUpload(files); }
+});
+
+// ---- Sample audit cards from the demo endpoint ----
+(async () => {
+  try {
+    const r = await (await fetch('/api/coach/demo')).json();
+    const leaks = (r.leaks || []).slice(0, 2);
+    const sev = { high:'crimson', medium:'amber', low:'muted' };
+    $id('demoCards').innerHTML = `
+      <div class="card p-6">
+        <div class="pill text-muted mb-2">Discipline score</div>
+        <div class="font-display text-5xl text-crimson mb-1">${r.discipline_score}<span class="text-2xl text-muted">/100</span></div>
+        <p class="text-sm text-muted">${r.n_trades} round-trips · disciplined rules would have moved this P&amp;L from
+        <span class="text-crimson">${money(r.total_pnl)}</span> to <span class="text-emerald">${money(r.disciplined_pnl)}</span>.</p>
+      </div>` +
+      leaks.map(l => `
+      <div class="card p-6">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="font-medium leading-snug">${l.name}</div>
+          <span class="pill text-${sev[l.severity]||'muted'} border border-line rounded-full px-2.5 py-1 whitespace-nowrap">~${money(l.dollars)}</span>
+        </div>
+        <p class="text-sm text-muted">${l.evidence}</p>
+      </div>`).join('');
+  } catch(e){
+    $id('demoCards').innerHTML = '<div class="card p-6 text-muted md:col-span-3">Sample unavailable — <a class="underline" href="/coach">open the coach</a>.</div>';
+  }
+  lucide.createIcons();
+})();
+
+// ---- Waitlist (existing /api/waitlist endpoint) ----
+$id('waitlistForm').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const r = await fetch('/api/waitlist', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: $id('wlEmail').value, source: 'coach-landing'})});
+    const j = await r.json();
+    const m = $id('wlMsg');
+    m.textContent = r.ok ? "You're on the list — we'll be in touch." : (j.error || 'Could not sign you up.');
+    m.classList.remove('hidden');
+    if(r.ok) $id('wlEmail').value = '';
+  } catch(err){ alert('Signup failed: ' + err); }
+};
+(async () => {
+  try {
+    const c = await (await fetch('/api/waitlist/count')).json();
+    if(c.display_count) $id('wlCount').textContent = `${c.display_count}+ traders waiting`;
+  } catch(e){}
+})();
+
+lucide.createIcons();
+</script>
+</body>
+</html>

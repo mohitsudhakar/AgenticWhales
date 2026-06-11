@@ -79,7 +79,7 @@ def test_pdf_upload_routes_through_extractor(client, monkeypatch):
         Transaction(date="2025-01-06", type="Buy", symbol="AAPL", quantity=50, price=180, amount=-9000),
         Transaction(date="2025-01-08", type="Sell", symbol="AAPL", quantity=50, price=184, amount=9200),
     ]
-    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn: fake)
+    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn, **kw: fake)
     pdf = _minimal_pdf("2025-01-06 Buy 50 AAPL @ 180\n2025-01-08 Sell 50 AAPL @ 184")
     r = client.post("/api/coach/upload", files={"file": ("stmt.pdf", pdf, "application/pdf")})
     assert r.status_code == 200
@@ -108,7 +108,7 @@ def test_image_to_pdf():
 
 def test_image_upload_routes_through_ocr(client, monkeypatch):
     monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", lambda b: "Buy 50 AAPL @180; Sell 50 AAPL @184")
-    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn: _fake_txns())
+    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn, **kw: _fake_txns())
     r = client.post("/api/coach/upload", files={"file": ("scan.png", _png_bytes(), "image/png")})
     assert r.status_code == 200 and r.json()["n_trades"] == 1
 
@@ -120,7 +120,7 @@ def test_scanned_pdf_falls_back_to_ocr(client, monkeypatch):
         called["ocr"] = True
         return "AAPL buy/sell text"
     monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", ocr)
-    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn: _fake_txns())
+    monkeypatch.setattr(coach_api, "coach_extract_pdf", lambda text, on_warn, **kw: _fake_txns())
     pdf = _minimal_pdf("")  # no extractable text -> OCR fallback
     r = client.post("/api/coach/upload", files={"file": ("scan.pdf", pdf, "application/pdf")})
     assert r.status_code == 200 and called.get("ocr") and r.json()["n_trades"] == 1
@@ -140,7 +140,8 @@ def test_pdf_pages_split():
 
 def test_run_upload_job_csv_completes():
     jid = coach_api._new_job()
-    coach_api._run_upload_job(jid, _sample_csv().encode(), "h.csv", "text/csv", "anonymous")
+    coach_api._run_upload_job(jid, [(_sample_csv().encode(), "h.csv", "text/csv")],
+                              "anonymous")
     j = coach_api._JOBS[jid]
     assert j["status"] == "done" and j["report"]["n_trades"] == 12 and j["pct"] == 100
 
@@ -148,9 +149,10 @@ def test_run_upload_job_csv_completes():
 def test_run_upload_job_scanned_pdf_uses_ocr(monkeypatch):
     monkeypatch.setattr(coach_api, "_ocr_pdf_to_markdown", lambda b: "AAPL buy/sell text")
     monkeypatch.setattr(coach_api, "coach_extract_pdf",
-                        lambda text, on_warn, on_progress=None: _fake_txns())
+                        lambda text, on_warn, on_progress=None, **kw: _fake_txns())
     jid = coach_api._new_job()
-    coach_api._run_upload_job(jid, _minimal_pdf(""), "scan.pdf", "application/pdf", "anonymous")
+    coach_api._run_upload_job(jid, [(_minimal_pdf(""), "scan.pdf", "application/pdf")],
+                              "anonymous")
     assert coach_api._JOBS[jid]["status"] == "done"
     assert coach_api._JOBS[jid]["report"]["n_trades"] == 1
 
@@ -293,7 +295,7 @@ def test_extract_concurrency_matches_sequential(monkeypatch):
     from agenticwhales.transactions import extract as ex
     from agenticwhales.transactions.models import Transaction
 
-    def fake(llm, chunk):
+    def fake(llm, chunk, on_usage=None):
         s = "S" + hashlib.md5(chunk.encode()).hexdigest()[:6]
         return [Transaction(date="2025-01-01", type="Buy", symbol=s, quantity=1, price=1, amount=-1)]
 

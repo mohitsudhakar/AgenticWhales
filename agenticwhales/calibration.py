@@ -1,4 +1,13 @@
-"""Per-user calibration head — Phase 2 deliverable #3.
+"""EXPERIMENTAL — fund lab, not in the coach product path.
+
+Fund-era learning-loop machinery, quarantined per the 2026-06-08 executive
+critique (J1): kept for lab research, imported by no coach/overlay product
+module. See ARCHITECTURE.md § "Fund lab vs. coach product". The reusable
+half of the eval rigor — outcome resolution + Brier/reliability scoring in
+outcomes.py — is kept and being retargeted at coach findings (D3); the
+PM-scalar Platt wiring below is the fund-specific part that stays in the lab.
+
+Per-user calibration head — Phase 2 deliverable #3.
 
 The Portfolio Manager's `prob_of_profit` is a self-reported number from an
 LLM. Empirically LLMs are systematically miscalibrated: a stated 80%

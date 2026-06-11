@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The State of Retail Discipline — AgenticWhales</title>
+  <meta name="description" content="Aggregate, anonymized statistics on retail trading discipline, measured from real trade histories. Past-tense attribution, privacy-thresholded." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=Lora:wght@600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54', crimson: '#B3261E' },
+      fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+    }}}
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px; }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  </style>
+</head>
+<body>
+  <nav class="border-b border-line">
+    <div class="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5"><span class="text-xl">🐋</span><span class="font-logo text-xl">AgenticWhales</span></a>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="/methodology" class="hover:text-ink transition">Methodology</a>
+        <a href="/coach" class="hover:text-ink transition">Coach</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Aggregate · anonymized · past tense</div>
+    <h1 class="font-display text-5xl mb-3">The State of Retail Discipline</h1>
+    <p class="text-muted mb-10 max-w-2xl">What real trade histories show about behavioral leaks — measured with the
+    <a href="/methodology" class="underline underline-offset-2">same deterministic arithmetic</a> the coach uses, aggregated
+    across consenting users, with privacy thresholds enforced server-side.</p>
+    <div id="statsBody"><div class="card p-8 text-muted">Loading…</div></div>
+  </main>
+
+  <footer class="max-w-3xl mx-auto px-6 py-10 border-t border-line text-sm text-muted">
+    <p><span class="text-ink font-medium">Educational, not investment advice.</span> All figures are historical
+    attribution — what already happened in audited histories, never a prediction. Small cohorts are suppressed,
+    dollar aggregates require larger buckets still, and everything is rounded.
+    <a href="/security" class="underline underline-offset-2">Your data</a></p>
+  </footer>
+
+<script>
+const LEAK_LABELS = {
+  disposition_effect: 'Disposition effect (holding losers, cutting winners)',
+  overtrading_cost_drag: 'Overtrading / cost drag',
+  oversizing_tail_risk: 'Oversizing / tail risk',
+  revenge_trading: 'Revenge trading',
+  inverted_payoff: 'Inverted payoff',
+  no_stop_loss: 'No stop-loss',
+  cutting_winners_early: 'Cutting winners early',
+};
+const money = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+
+(async () => {
+  const el = document.getElementById('statsBody');
+  try {
+    const s = await (await fetch('/api/coach/public-stats')).json();
+    if(s.mode === 'early'){
+      el.innerHTML = `<div class="card p-10 text-center">
+        <p class="font-display text-3xl mb-2">${s.n_traders} trader${s.n_traders===1?'':'s'} audited so far</p>
+        <p class="text-muted max-w-md mx-auto mb-5">Honest data over fast claims: distributions unlock once
+        ${s.unlock_at}+ traders have been audited, so no single account can be picked out of the numbers.</p>
+        <a href="/coach" class="inline-block bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Be one of them — run your audit</a>
+      </div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="grid sm:grid-cols-2 gap-5 mb-6">
+        <div class="card p-7"><div class="pill text-muted mb-2">Traders audited</div>
+          <div class="font-display text-5xl">${s.n_traders}</div></div>
+        <div class="card p-7"><div class="pill text-muted mb-2">Median discipline score</div>
+          <div class="font-display text-5xl">${s.median_score}<span class="text-2xl text-muted">/100</span></div></div>
+      </div>
+      <div class="card p-7 mb-6">
+        <div class="pill text-muted mb-4">How common is each leak?</div>
+        ${(s.leaks||[]).map(l => `
+          <div class="flex items-center gap-4 py-2 border-t border-line first:border-t-0">
+            <span class="text-sm flex-1">${LEAK_LABELS[l.leak] || l.leak}</span>
+            <span class="text-sm text-muted w-36 text-right">${l.pct_of_traders}% of traders</span>
+            <span class="text-sm w-32 text-right">${l.historical_dollars != null ? '~'+money(l.historical_dollars)+' measured' : '<span class="text-muted">—</span>'}</span>
+          </div>`).join('') || '<p class="text-muted text-sm">All buckets are below the privacy threshold.</p>'}
+      </div>
+      <div class="card p-7">
+        <div class="pill text-muted mb-2">The validation loop</div>
+        <p class="text-sm text-muted">${s.findings.resolved} flagged patterns re-tested on later trades ·
+        ${s.findings.not_detected_forward} not detected forward.</p>
+      </div>
+      <p class="text-xs text-muted mt-5">${s.note}</p>`;
+  } catch(e){
+    el.innerHTML = '<div class="card p-8 text-muted">Stats are unavailable right now.</div>';
+  }
+})();
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -134,9 +135,11 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Behavioral coach + pre-trade decision-support API (deterministic, read-only).
 from web.coach_api import router as coach_router  # noqa: E402
+from web.overlay_api import router as overlay_router  # noqa: E402
 from web.snaptrade_api import router as snaptrade_router  # noqa: E402
 
 app.include_router(coach_router)
+app.include_router(overlay_router)
 app.include_router(snaptrade_router)
 
 
@@ -169,10 +172,10 @@ def _render_html(filename: str) -> HTMLResponse:
 
 @app.get("/", response_class=HTMLResponse)
 async def root_page() -> HTMLResponse:
-    """Root serves the public marketing landing page. Its 'Try it today' CTAs
-    link to /signin, where the Google sign-in + disclaimer gate lives. Static,
-    no auth, no data — safe to share the bare URL with prospects."""
-    return _render_html("welcome.html")
+    """Root serves the coach-first marketing landing ("What's your discipline
+    tax?") with the screenshot-paste activation path. Static, no auth, no
+    data — safe to share the bare URL with prospects."""
+    return _render_html("home.html")
 
 
 @app.get("/signin", response_class=HTMLResponse)
@@ -207,7 +210,107 @@ async def coach_page() -> HTMLResponse:
 async def welcome_page() -> HTMLResponse:
     """Alias for the marketing landing page (same content as /). Kept so any
     previously-shared /welcome links keep working."""
+    return _render_html("home.html")
+
+
+@app.get("/fund-welcome", response_class=HTMLResponse)
+async def fund_welcome_page() -> HTMLResponse:
+    """The pre-pivot fund-era marketing page, preserved for reference and any
+    old deep links. The coach landing lives at / now."""
     return _render_html("welcome.html")
+
+
+@app.get("/security", response_class=HTMLResponse)
+async def security_page() -> HTMLResponse:
+    """Trust surface: what we store, for whom, and the named third-party
+    processors. Every bullet corresponds to actual code behavior."""
+    return _render_html("security.html")
+
+
+@app.get("/partner", response_class=HTMLResponse)
+async def partner_page() -> HTMLResponse:
+    """Accountability-partner view (token capability; compliance-only data)."""
+    return _render_html("partner.html")
+
+
+@app.get("/stats", response_class=HTMLResponse)
+async def stats_page() -> HTMLResponse:
+    """Public aggregate stats ("State of Retail Discipline") — k-anonymous,
+    server-side suppressed, honest early-days mode."""
+    return _render_html("stats.html")
+
+
+@app.get("/learn", response_class=HTMLResponse)
+async def learn_index() -> HTMLResponse:
+    """SEO content index: broker export guides + leak explainers."""
+    from web import learn_content
+    return HTMLResponse(learn_content.render_learn_index(_public_base_url()))
+
+
+@app.get("/learn/{slug}", response_class=HTMLResponse)
+async def learn_page(slug: str) -> HTMLResponse:
+    from web import learn_content
+    html = learn_content.render_learn_page(slug, _public_base_url())
+    if html is None:
+        return HTMLResponse("<h1>Not found</h1>", status_code=404)
+    return HTMLResponse(html)
+
+
+def _public_base_url() -> str:
+    return os.getenv("AGENTICWHALES_PUBLIC_BASE_URL", "").rstrip("/")
+
+
+@app.get("/sitemap.xml")
+async def sitemap() -> PlainTextResponse:
+    from web import learn_content
+    base = _public_base_url() or "http://localhost:8080"
+    paths = ["/", "/coach", "/learn", "/security", "/methodology", "/stats", "/signin"]
+    paths += [f"/learn/{slug}" for slug in learn_content.learn_slugs()]
+    body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            + "".join(f"  <url><loc>{base}{p}</loc></url>\n" for p in paths)
+            + "</urlset>\n")
+    return PlainTextResponse(body, media_type="application/xml")
+
+
+@app.get("/robots.txt")
+async def robots() -> PlainTextResponse:
+    base = _public_base_url() or "http://localhost:8080"
+    return PlainTextResponse(
+        f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n")
+
+
+@app.get("/methodology", response_class=HTMLResponse)
+async def methodology_page() -> HTMLResponse:
+    """Trust surface: how every dollar figure is computed (deterministic,
+    past-tense, forward-validated), and the stated limitations."""
+    return _render_html("methodology.html")
+
+
+# --------------------------------------------------------------------------
+# Referral attribution — first-touch only, no rewards (billing is out of
+# scope). The client persists ?ref=<code> in localStorage and claims it once
+# after sign-in.
+# --------------------------------------------------------------------------
+
+_REF_CODE_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+
+
+class ReferralClaim(BaseModel):
+    code: str = Field(min_length=1, max_length=40)
+    source: str = Field("", max_length=80)
+
+
+@app.post("/api/referral/claim")
+async def referral_claim(p: ReferralClaim,
+                         user_id: str = Depends(auth.get_current_user_id)):
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return JSONResponse({"error": "Sign in to record a referral."},
+                            status_code=401)
+    if not _REF_CODE_RE.match(p.code):
+        return JSONResponse({"error": "invalid code"}, status_code=400)
+    recorded = auth.save_referral_attribution(user_id, p.code, p.source[:80])
+    return {"ok": True, "recorded": recorded}
 
 
 # --------------------------------------------------------------------------
@@ -272,6 +375,19 @@ async def healthz() -> Dict[str, Any]:
     return {"status": "ok"}
 
 
+@app.get("/metrics")
+async def metrics(token: Optional[str] = None) -> PlainTextResponse:
+    """Prometheus exposition. Gate with AGENTICWHALES_METRICS_TOKEN (?token=…)
+    per the README contract; without the env var it serves openly (assumed
+    private infra)."""
+    from agenticwhales.observability import METRICS
+    required = os.getenv("AGENTICWHALES_METRICS_TOKEN", "")
+    if required and token != required:
+        return PlainTextResponse("forbidden", status_code=403)
+    return PlainTextResponse(METRICS.scrape(),
+                             media_type=METRICS.scrape_content_type())
+
+
 @app.get("/readyz")
 async def readyz() -> JSONResponse:
     """Readiness — 200 only when the DB is reachable. Body shape is stable
@@ -287,6 +403,13 @@ async def readyz() -> JSONResponse:
     except Exception as exc:  # noqa: BLE001
         db_ok = False
         checks["db"] = f"error: {exc}"
+    # Embedder mode (J3): degraded retrieval is not an outage, so it never
+    # flips readiness — but it must be visible, never silent.
+    try:
+        from agenticwhales import memory_v2
+        checks["embedder"] = memory_v2.embedder_mode()
+    except Exception as exc:  # noqa: BLE001
+        checks["embedder"] = f"error: {exc}"
     ready = db_ok
     return JSONResponse(
         status_code=200 if ready else 503,

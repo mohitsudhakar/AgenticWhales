@@ -54,7 +54,12 @@ def test_healthz(client):
 def test_readyz(client):
     r = client.get("/readyz")
     assert r.status_code in (200, 503)
-    assert "ready" in r.json()
+    body = r.json()
+    assert "ready" in body
+    # J3: the embedder mode is surfaced so degraded retrieval is never silent.
+    embedder = body["checks"]["embedder"]
+    assert {"model", "source", "degraded"} <= set(embedder)
+    assert isinstance(embedder["degraded"], bool)
 
 
 def test_config_endpoint(client):

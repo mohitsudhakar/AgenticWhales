@@ -1,4 +1,10 @@
-"""Ablation report — Phase 2 deliverable #8.
+"""EXPERIMENTAL — fund lab, not in the coach product path.
+
+Fund-era learning-loop machinery, quarantined per the 2026-06-08 executive
+critique (J1): kept for lab research, imported by no coach/overlay product
+module. See ARCHITECTURE.md § "Fund lab vs. coach product".
+
+Ablation report — Phase 2 deliverable #8.
 
 For any completed session, surface **which analyst was load-bearing** in
 the PM's final decision. The Phase-1 stub returned a `{status: queued}`

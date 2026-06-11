@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Accountability partner view — AgenticWhales</title>
+  <meta name="robots" content="noindex" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54', crimson: '#B3261E' },
+      fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+    }}}
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px; }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  </style>
+</head>
+<body>
+  <main class="max-w-xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Accountability partner view</div>
+    <h1 class="font-display text-4xl mb-3">Rule compliance</h1>
+    <p class="text-muted text-sm mb-8">Counts and streaks only — no trades, no dollars, no positions, ever.</p>
+    <div id="body"><div class="card p-8 text-muted">Loading…</div></div>
+  </main>
+<script>
+(async () => {
+  const el = document.getElementById('body');
+  const token = new URLSearchParams(location.search).get('token') || '';
+  try {
+    const r = await fetch('/api/coach/partner/view?token=' + encodeURIComponent(token));
+    if(!r.ok){ el.innerHTML = '<div class="card p-8 text-muted">This link has expired or was revoked.</div>'; return; }
+    const v = await r.json();
+    el.innerHTML = `
+      <div class="card p-7 mb-5 flex items-baseline gap-4">
+        <span class="font-display text-5xl text-emerald">${v.streak_weeks}</span>
+        <span class="text-muted text-sm">week${v.streak_weeks===1?'':'s'} without a rule violation ·
+        ${v.week_violations} break${v.week_violations===1?'':'s'} this week</span>
+      </div>
+      <div class="card p-7">
+        <div class="pill text-muted mb-3">Their rule book</div>
+        ${(v.rules||[]).map(r => `
+          <div class="flex items-center justify-between py-2 border-t border-line first:border-t-0 text-sm">
+            <span>${r.label}</span>
+            <span class="pill ${r.status==='active'?'text-emerald':'text-muted'}">${r.status}</span>
+          </div>`).join('') || '<p class="text-muted text-sm">No rules adopted yet.</p>'}
+      </div>`;
+  } catch(e){ el.innerHTML = '<div class="card p-8 text-muted">Unavailable.</div>'; }
+})();
+</script>
+</body>
+</html>
