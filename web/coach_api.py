@@ -236,6 +236,7 @@ def _benchmark_for(score: float) -> Dict:
 COACH_EVENTS = frozenset({
     "demo_viewed", "upload_started", "audit_viewed", "share_card_exported",
     "landing_cta_clicked", "sync_connected", "broker_connected",
+    "pricing_viewed", "founding_reserved",
 })
 
 

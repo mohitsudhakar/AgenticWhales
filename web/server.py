@@ -240,6 +240,14 @@ async def stats_page() -> HTMLResponse:
     return _render_html("stats.html")
 
 
+@app.get("/pricing", response_class=HTMLResponse)
+async def pricing_page() -> HTMLResponse:
+    """Pricing smoke test: real tiers, founding-price reservations into the
+    waitlist store (source=pricing-<plan>). No billing — everything stays
+    free during the beta; the page measures willingness to pay."""
+    return _render_html("pricing.html")
+
+
 @app.get("/learn", response_class=HTMLResponse)
 async def learn_index() -> HTMLResponse:
     """SEO content index: broker export guides + leak explainers."""
@@ -264,7 +272,7 @@ def _public_base_url() -> str:
 async def sitemap() -> PlainTextResponse:
     from web import learn_content
     base = _public_base_url() or "http://localhost:8080"
-    paths = ["/", "/coach", "/learn", "/security", "/methodology", "/stats", "/signin"]
+    paths = ["/", "/coach", "/learn", "/pricing", "/security", "/methodology", "/stats", "/signin"]
     paths += [f"/learn/{slug}" for slug in learn_content.learn_slugs()]
     body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'

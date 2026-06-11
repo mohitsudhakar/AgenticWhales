@@ -39,6 +39,7 @@
       <div class="flex items-center gap-5 text-sm text-muted">
         <a href="/learn" class="hidden sm:inline hover:text-ink transition">Learn</a>
         <a href="/methodology" class="hidden sm:inline hover:text-ink transition">Methodology</a>
+        <a href="/pricing" class="hover:text-ink transition">Pricing</a>
         <a href="/coach" class="hover:text-ink transition">Open the coach</a>
         <a href="/signin" class="border border-line rounded-full px-4 py-1.5 hover:bg-white transition">Sign in</a>
       </div>
@@ -105,6 +106,31 @@
       <a href="/security" class="underline underline-offset-2 hover:text-ink">what happens to your data</a>.</p>
   </section>
 
+  <!-- Who it's for -->
+  <section class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">Who it's for</div>
+    <h2 class="font-display text-4xl mb-8">The same audit, three kinds of trader</h2>
+    <div class="grid md:grid-cols-3 gap-5">
+      <div class="card p-7">
+        <div class="pill text-emerald mb-3">Evaluation (prop-firm) traders</div>
+        <p class="text-muted text-sm leading-relaxed">Daily-loss caps and trailing drawdowns are discipline tests,
+        and resets have a receipt. See, from your own fills, which rule you actually broke and what each breach cost — past tense.</p>
+      </div>
+      <div class="card p-7">
+        <div class="pill text-emerald mb-3">Day &amp; swing traders</div>
+        <p class="text-muted text-sm leading-relaxed">Revenge trades, size creep after losses, losers held past the
+        stop — itemized in dollars from your own history, with the process rule that addresses each one.</p>
+      </div>
+      <div class="card p-7">
+        <div class="pill text-emerald mb-3">Options traders</div>
+        <p class="text-muted text-sm leading-relaxed">Oversized positions and doubling down after a loss show up in
+        the fills no matter the instrument. The audit reads your fills, whatever you trade.</p>
+      </div>
+    </div>
+    <p class="text-sm text-muted mt-6">Everything is free during the beta —
+      <a href="/pricing" class="underline underline-offset-2 hover:text-ink">see the plans and reserve a founding price</a>.</p>
+  </section>
+
   <!-- Waitlist -->
   <section id="waitlist" class="max-w-6xl mx-auto px-6 py-14">
     <div class="card p-10 text-center">
@@ -112,6 +138,14 @@
       <p class="text-muted mb-6 max-w-xl mx-auto">Brokerage auto-sync, weekly discipline digests, and the rule book are
       rolling out gradually. Leave an email and we'll open your slot.</p>
       <form id="waitlistForm" class="flex flex-wrap justify-center gap-3">
+        <select id="wlSegment" class="border border-line rounded-full px-5 py-3 text-sm bg-white/70 text-muted">
+          <option value="">What kind of trader are you?</option>
+          <option value="prop">Prop-firm evaluation trader</option>
+          <option value="day-swing">Day / swing trader (own account)</option>
+          <option value="options">Options trader</option>
+          <option value="investor">Long-term investor</option>
+          <option value="other">Other</option>
+        </select>
         <input id="wlEmail" type="email" required placeholder="you@example.com"
                class="border border-line rounded-full px-5 py-3 text-sm bg-white/70 w-72">
         <button type="submit" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Join the waitlist</button>
@@ -128,6 +162,7 @@
     <p><a href="/methodology" class="underline underline-offset-2 hover:text-ink">Methodology</a> ·
        <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a> ·
        <a href="/learn" class="underline underline-offset-2 hover:text-ink">Learn</a> ·
+       <a href="/pricing" class="underline underline-offset-2 hover:text-ink">Pricing</a> ·
        <a href="/signin" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
   </footer>
 
@@ -210,8 +245,10 @@ document.addEventListener('drop', (e) => {
 $id('waitlistForm').onsubmit = async (e) => {
   e.preventDefault();
   try {
+    const seg = $id('wlSegment').value;
     const r = await fetch('/api/waitlist', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email: $id('wlEmail').value, source: 'coach-landing'})});
+      body: JSON.stringify({email: $id('wlEmail').value, source: 'coach-landing',
+                            note: seg ? 'seg=' + seg : ''})});
     const j = await r.json();
     const m = $id('wlMsg');
     m.textContent = r.ok ? "You're on the list — we'll be in touch." : (j.error || 'Could not sign you up.');
