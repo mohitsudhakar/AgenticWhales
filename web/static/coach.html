@@ -56,6 +56,7 @@
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
         <a href="#overlay" class="hidden sm:inline hover:text-ink transition">Overlay</a>
         <a href="/analyze" class="hover:text-ink transition">Analyst Desk</a>
+        <a href="/pricing" class="hidden sm:inline hover:text-ink transition">Pricing</a>
         <div id="account" class="hidden items-center gap-2.5 pl-2 border-l border-line">
           <img id="accAvatar" class="hidden w-8 h-8 rounded-full border border-line" alt="" referrerpolicy="no-referrer">
           <span id="accInitial" class="hidden w-8 h-8 rounded-full bg-emerald/10 text-emerald text-sm font-semibold items-center justify-center"></span>
@@ -146,6 +147,15 @@
 
     <h3 id="leaksTitle" class="font-display text-2xl mt-10 mb-4 hidden">Where your edge leaks</h3>
     <div id="leaks" class="grid md:grid-cols-2 gap-5"></div>
+
+    <!-- Counterfactual discipline curve (Plus): cumulative actual vs disciplined P&L -->
+    <div id="cfCurveWrap" class="hidden mt-10">
+      <div class="flex items-baseline justify-between flex-wrap gap-2 mb-4">
+        <h3 class="font-display text-2xl">The same trades, with your rules kept</h3>
+        <a href="/pricing" id="cfPlanChip" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Plus</a>
+      </div>
+      <div id="cfCurve" class="card p-8"></div>
+    </div>
   </section>
 
   <!-- Discipline over time -->
@@ -154,6 +164,7 @@
     <h2 class="font-display text-4xl mb-6">Discipline over time</h2>
     <div id="digestCard" class="hidden"></div>
     <div id="trendBody" class="card p-8"></div>
+    <div id="emailPrefs" class="hidden card p-6 mt-5"></div>
   </section>
 
   <!-- Your rules: the enforcement loop -->
@@ -176,6 +187,21 @@
         <div id="violationsList" class="space-y-3"></div>
       </div>
     </div>
+  </section>
+
+  <!-- Evaluation mode (Pro): prop-firm challenge scorekeeping -->
+  <section id="eval" class="hidden max-w-6xl mx-auto px-6 py-14">
+    <div class="flex items-baseline justify-between flex-wrap gap-2">
+      <div>
+        <div class="pill text-muted mb-2">Evaluation mode</div>
+        <h2 class="font-display text-4xl mb-2">Your evaluation, scored from your own fills</h2>
+      </div>
+      <a href="/pricing" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Pro</a>
+    </div>
+    <p class="text-muted mb-8 max-w-3xl">Pick your challenge thresholds and the coach keeps score against your realized
+    P&amp;L — profit-target progress, daily-loss breaches, drawdown proximity. Scorekeeping by exit day, past tense;
+    your prop firm's dashboard remains the official ledger. It never tells you to trade or to stop.</p>
+    <div id="evalBody" class="card p-8"></div>
   </section>
 
   <!-- Pre-trade check -->
@@ -338,6 +364,7 @@ function renderAudit(r){
       </div>
     </div>`;
   renderInsights(r.insights || {});
+  renderCounterfactualCurve(r.counterfactual_curve);
   $('leaksTitle').classList.toggle('hidden', !(r.leaks||[]).length);
   $('leaks').innerHTML = (r.leaks||[]).map((l,i)=>`
     <div class="card p-6 fade-in" style="animation-delay:${i*60}ms">
@@ -575,6 +602,133 @@ function renderOverlay(r){
 $('ovLev').onchange = loadOverlay;
 loadOverlay();
 
+// ---- Evaluation mode (Pro): prop-firm challenge scorekeeping ----
+const EVAL_PRESETS = {
+  ftmo_style:    {label:'FTMO-style', target:'10%', daily:'5%', dd:'10%'},
+  topstep_style: {label:'Topstep-style', target:'6%', daily:'2%', dd:'4%'},
+  custom:        {label:'Custom', target:'8%', daily:'4%', dd:'8%'},
+};
+
+function evalBar(label, frac, color, note){
+  const pct = Math.max(0, Math.min(100, Math.round(frac*100)));
+  return `<div class="mb-4">
+    <div class="flex justify-between text-xs mb-1"><span class="text-muted">${label}</span><span class="font-medium">${note}</span></div>
+    <div class="h-2.5 rounded-full bg-ink/[0.06] overflow-hidden"><div class="h-full rounded-full bg-${color}" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+function renderEvalSetup(){
+  $('evalBody').innerHTML = `
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+      <label class="flex flex-col gap-1.5"><span class="text-muted">Challenge style</span>
+        <select id="ev_preset" class="border border-line rounded-lg px-3 py-2 bg-cream/40">
+          ${Object.entries(EVAL_PRESETS).map(([k,p])=>`<option value="${k}">${p.label} — target ${p.target} · daily ${p.daily} · DD ${p.dd}</option>`).join('')}
+        </select></label>
+      <label class="flex flex-col gap-1.5"><span class="text-muted">Account size ($)</span>
+        <input id="ev_size" type="number" value="100000" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+      <label class="flex flex-col gap-1.5"><span class="text-muted">Start date</span>
+        <input id="ev_start" type="date" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+      <label class="flex flex-col gap-1.5"><span class="text-muted">End date (optional)</span>
+        <input id="ev_end" type="date" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+    </div>
+    <button id="evalSave" class="mt-5 bg-ink text-cream px-6 py-2.5 rounded-full text-sm font-medium hover:opacity-90 transition">Start keeping score</button>
+    <p id="evalMsg" class="text-xs text-crimson mt-2 hidden"></p>`;
+  $('ev_start').valueAsDate = new Date();
+  $('evalSave').onclick = async () => {
+    const body = {preset: $('ev_preset').value, account_size: +$('ev_size').value,
+                  start_date: $('ev_start').value, end_date: $('ev_end').value || null};
+    const r = await fetch('/api/coach/eval', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const j = await r.json();
+    if(!r.ok){ const m=$('evalMsg'); m.textContent = j.error || 'Could not save.'; m.classList.remove('hidden'); return; }
+    renderEvalStatus(j);
+  };
+}
+
+function renderEvalStatus(r){
+  const cfg = r.config || {};
+  const breaches = r.daily_breaches || [];
+  const statusPill = r.status === 'target_reached'
+    ? '<span class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1">target reached</span>'
+    : (r.status === 'thresholds_breached'
+      ? '<span class="pill text-crimson border border-crimson/40 rounded-full px-2.5 py-1">thresholds breached</span>'
+      : '<span class="pill text-muted border border-line rounded-full px-2.5 py-1">in progress</span>');
+  const ddFrac = r.max_drawdown_limit > 0 ? r.max_drawdown_seen / r.max_drawdown_limit : 0;
+  $('evalBody').innerHTML = `
+    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-6">
+      <div class="font-display text-2xl">${EVAL_PRESETS[cfg.preset]?.label || 'Custom'} · ${money(cfg.account_size)} account</div>
+      <div class="flex items-center gap-3">${statusPill}
+        <button id="evalStop" class="text-xs text-muted underline underline-offset-2 hover:text-ink">stop tracking</button></div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-x-10">
+      <div>
+        ${evalBar('Profit target', r.target_progress, 'emerald',
+          `${money(r.net_pnl)} of ${money(r.profit_target)}`)}
+        ${evalBar('Max drawdown used', ddFrac, ddFrac > 0.75 ? 'crimson' : 'amber',
+          `${money(r.max_drawdown_seen)} of ${money(r.max_drawdown_limit)}`)}
+        <div class="text-xs text-muted mt-2">${r.n_trading_days} trading day${r.n_trading_days===1?'':'s'} scored · day ${r.days_elapsed}${r.days_remaining!=null?` · ${r.days_remaining} remaining`:''}
+          ${r.best_day?` · best day ${money(r.best_day.pnl)}`:''}${r.worst_day?` · worst day ${money(r.worst_day.pnl)}`:''}</div>
+      </div>
+      <div>
+        <div class="text-xs text-muted mb-2">Daily-loss limit: ${money(r.daily_loss_limit)} · breaches recorded: ${breaches.length}</div>
+        ${breaches.length ? breaches.slice(-4).map(b=>`
+          <div class="border border-crimson/30 bg-crimson/[0.04] rounded-xl px-4 py-2.5 mb-2 text-xs">
+            <span class="font-medium text-crimson">${b.date}</span>
+            <span class="text-muted"> — realized ${money(b.pnl)}, beyond the ${money(b.limit)} daily limit (scored by exit day)</span>
+          </div>`).join('')
+        : '<div class="text-sm text-muted border border-line rounded-xl px-4 py-3">No daily-loss breaches recorded in this window.</div>'}
+      </div>
+    </div>`;
+  $('evalStop').onclick = async () => {
+    await fetch('/api/coach/eval', {method:'DELETE'}); renderEvalSetup();
+  };
+}
+
+async function loadEval(){
+  const sec = $('eval');
+  if(!isSignedIn(CURRENT)){ sec.classList.add('hidden'); return; }
+  try {
+    const r = await (await fetch('/api/coach/eval')).json();
+    sec.classList.remove('hidden');
+    if(r.configured) renderEvalStatus(r); else renderEvalSetup();
+  } catch(e){ sec.classList.add('hidden'); }
+}
+
+// ---- Email preferences: weekly digest + violation alerts (Plus, opt-in) ----
+async function loadEmailPrefs(){
+  const el = $('emailPrefs');
+  if(!isSignedIn(CURRENT)){ el.classList.add('hidden'); return; }
+  let p;
+  try { p = await (await fetch('/api/coach/prefs')).json(); } catch(e){ return; }
+  if(!p.signed_in){ el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-3">
+      <div class="font-display text-xl">Email updates</div>
+      <a href="/pricing" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Plus</a>
+    </div>
+    <div class="flex flex-wrap items-center gap-4 text-sm">
+      <input id="prefEmail" type="email" placeholder="you@example.com" value="${escHTML(p.digest_email||'')}"
+             class="border border-line rounded-full px-4 py-2 bg-cream/40 w-64">
+      <label class="flex items-center gap-2 text-muted"><input id="prefDigest" type="checkbox" class="accent-emerald w-4 h-4" ${p.email_digest?'checked':''}> weekly digest</label>
+      <label class="flex items-center gap-2 text-muted"><input id="prefAlerts" type="checkbox" class="accent-emerald w-4 h-4" ${p.email_alerts?'checked':''}> rule-violation alerts</label>
+      <button id="prefSave" class="border border-line rounded-full px-4 py-2 text-xs font-medium hover:bg-white transition">Save</button>
+      <span id="prefMsg" class="text-xs text-emerald hidden"></span>
+    </div>
+    <p class="text-xs text-muted mt-2">Strict opt-in. Emails carry counts only — the dollars stay here. One-click unsubscribe in every email.</p>`;
+  $('prefSave').onclick = async () => {
+    const r = await fetch('/api/coach/prefs', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: $('prefEmail').value || null,
+                            email_digest: $('prefDigest').checked,
+                            email_alerts: $('prefAlerts').checked})});
+    const j = await r.json();
+    const m = $('prefMsg');
+    m.textContent = r.ok ? 'Saved.' : (j.error || 'Could not save.');
+    m.className = 'text-xs ' + (r.ok ? 'text-emerald' : 'text-crimson');
+    m.classList.remove('hidden');
+  };
+}
+
 // ---- Weekly in-app digest (the email carries counts only; $ lives here) ----
 async function loadDigest(){
   const el = $('digestCard');
@@ -655,6 +809,16 @@ function renderRules(s){
         ${r.status==='active' ? `<span>· ${r.violations_30d||0} break${(r.violations_30d||0)===1?'':'s'} in 30d</span>
         ${r.last_violation?`<span>· last ${r.last_violation}</span>`:''}` : ''}</div>
     </div>`).join('') || emptyCard;
+  // Upgrade nudge at the wall: the Free plan includes 2 active rules.
+  const activeRules = (s.rules||[]).filter(r => r.status === 'active').length;
+  if (activeRules >= 2) {
+    $('rulesList').innerHTML += `
+      <a href="/pricing" onclick="fetch('/api/coach/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'upgrade_nudge_clicked',metadata:{where:'rules_cap'}})}).catch(()=>{})"
+         class="block border border-emerald/40 bg-emerald/[0.04] rounded-xl px-5 py-3.5 text-sm hover:bg-emerald/[0.08] transition">
+        <span class="text-emerald font-medium">Free includes 2 active rules.</span>
+        <span class="text-muted"> Plus removes the cap — free during the beta; reserve the founding price →</span>
+      </a>`;
+  }
   $('forwardList').innerHTML = (s.forward_validation||[]).map(f => `
     <div class="card p-5">
       <div class="flex items-start justify-between gap-3 mb-1">
@@ -694,7 +858,11 @@ function updateAuthUI(user){
     const name = (user.displayName && user.displayName !== 'trader') ? user.displayName : (user.email || 'Signed in');
     $('accName').textContent = name;
     $('accName').title = user.email || name;
-    $('accTier').textContent = user.tier || 'novice';
+    // The plan, not the internal quota tier — click-through to /pricing.
+    $('accTier').innerHTML = '<a href="/pricing" class="hover:text-emerald transition">…</a>';
+    fetch('/api/account/plan').then(r=>r.json()).then(j=>{
+      $('accTier').innerHTML = `<a href="/pricing" class="hover:text-emerald transition" title="${j.tagline} — see all plans">${j.label}${j.plan==='free'?' plan':''}${j.beta?' · beta':''}</a>`;
+    }).catch(()=>{});
     if (user.photoURL) {
       $('accAvatar').src = user.photoURL;
       $('accAvatar').classList.remove('hidden');
@@ -784,10 +952,12 @@ async function applyJourney(user){
   const signedIn = isSignedIn(user);
   setPretradeMode(signedIn);
   if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false});
-    loadRules(); return; }
+    loadRules(); $('eval').classList.add('hidden'); $('emailPrefs').classList.add('hidden'); return; }
   refreshBrokerStatus();
   loadRules();
   loadDigest();
+  loadEval();
+  loadEmailPrefs();
   const name = firstName(user);
   let latest = null;
   try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
@@ -821,6 +991,42 @@ function renderInsights(ins){
   else cards.push(card('Best trade', money(ins.best_trade.pnl), `${ins.best_trade.symbol} +${ins.best_trade.return_pct}%`, 'trophy', 'emerald'));
   el.innerHTML = cards.join('');
   lucide.createIcons();
+}
+
+function renderCounterfactualCurve(curve){
+  const wrap = $('cfCurveWrap'), el = $('cfCurve');
+  if(!curve || curve.length < 2){ wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  const W=680,H=230,pad=34, n=curve.length;
+  const all = curve.flatMap(p=>[p.actual_cum, p.disciplined_cum]).concat([0]);
+  const lo=Math.min(...all), hi=Math.max(...all), span=(hi-lo)||1;
+  const xs=(i)=> pad + i*(W-2*pad)/(n-1);
+  const ys=(v)=> H-pad-((v-lo)/span)*(H-2*pad);
+  const line=(key)=> curve.map((p,i)=>`${xs(i).toFixed(1)},${ys(p[key]).toFixed(1)}`).join(' ');
+  // Shaded gap between the two paths — the recoverable swing, made visible.
+  const area = curve.map((p,i)=>`${xs(i).toFixed(1)},${ys(p.disciplined_cum).toFixed(1)}`).join(' ')
+    + ' ' + [...curve].reverse().map((p,i)=>`${xs(n-1-i).toFixed(1)},${ys(p.actual_cum).toFixed(1)}`).join(' ');
+  const step=Math.ceil(n/6);
+  const labels = curve.map((p,i)=> (i%step===0)?`<text x="${xs(i).toFixed(1)}" y="${H-8}" font-size="9" fill="#6B6657" text-anchor="middle">${p.month.slice(2)}</text>`:'').join('');
+  const last = curve[n-1], gap = last.disciplined_cum - last.actual_cum;
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-4">
+      <div class="text-sm text-muted">Cumulative realized P&amp;L, month by month — what happened vs the same closed trades re-scored under a median-size cap and a 15% stop.</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:250px">
+      <line x1="${pad}" y1="${ys(0)}" x2="${W-pad}" y2="${ys(0)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
+      <polygon points="${area}" fill="#1F6F54" opacity="0.07"/>
+      <polyline points="${line('actual_cum')}" fill="none" stroke="#B3261E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+      <polyline points="${line('disciplined_cum')}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${labels}
+    </svg>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-1 mt-3 text-xs">
+      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-crimson"></span>
+        <span class="text-muted">as traded</span> <span class="font-medium">${money(last.actual_cum)}</span></span>
+      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-emerald"></span>
+        <span class="text-muted">rules kept</span> <span class="font-medium">${money(last.disciplined_cum)}</span></span>
+      <span class="text-muted">gap <span class="font-medium text-emerald">${money(gap)}</span> — historical attribution, not a forecast</span>
+    </div>`;
 }
 
 function openTailNote(openTail){

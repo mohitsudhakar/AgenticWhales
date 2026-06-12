@@ -238,6 +238,9 @@ COACH_EVENTS = frozenset({
     "demo_viewed", "upload_started", "audit_viewed", "share_card_exported",
     "landing_cta_clicked", "sync_connected", "broker_connected",
     "pricing_viewed", "founding_reserved",
+    # Premium-feature funnel (docs/product/premium-features-spec.md):
+    "eval_configured", "standing_brief_configured", "violation_alert_sent",
+    "upgrade_nudge_clicked",
 })
 
 
@@ -332,9 +335,11 @@ def _persist_rule_events(user_id: str, txns: List[Transaction]) -> None:
         return
     trips = coach.reconstruct_round_trips(txns)
     existing = {e.get("id") for e in auth.list_coach_rule_events(user_id, limit=2000)}
+    fresh: List = []
     for v in rules_mod.detect_violations(rules, trips, user_id=user_id):
         if v.id in existing:
             continue
+        fresh.append(v)
         row = v.to_row(user_id)
         row["created_at"] = auth._ts_iso(time.time())
         auth.insert_coach_rule_event(row)
@@ -349,6 +354,42 @@ def _persist_rule_events(user_id: str, txns: List[Transaction]) -> None:
                 METRICS.coach_rule_violation.labels(rule_kind=v.rule_kind).inc()
         except Exception:  # noqa: BLE001
             pass
+    if fresh:
+        try:
+            _send_violation_alert(user_id, fresh)
+        except Exception as exc:  # noqa: BLE001 — alerts must never break an audit
+            log.warning("violation alert failed for %s: %s", user_id, exc)
+
+
+def _send_violation_alert(user_id: str, violations: List) -> None:
+    """One minimized email per audit when NEW violations land (Plus, opt-in,
+    Resend-gated). Counts + rule labels only — dollars stay in-app, same
+    posture as the weekly digest. The in-app feed is the source of truth."""
+    from web import email_service, entitlements
+    prefs = auth.get_coach_prefs(user_id)
+    if not (prefs.get("email_alerts") and prefs.get("digest_email")):
+        return
+    if not entitlements.check(user_id, "violation_alerts"):
+        return
+    if not email_service.is_configured():
+        return
+    kinds = sorted({str(v.rule_kind).replace("_", " ") for v in violations})
+    n = len(violations)
+    base_url = os.getenv("AGENTICWHALES_PUBLIC_BASE_URL", "").rstrip("/")
+    unsub = (f"{base_url}/api/coach/digest/unsubscribe"
+             f"?token={prefs.get('unsubscribe_token')}"
+             if prefs.get("unsubscribe_token") else None)
+    html = (
+        f"<p>Your latest audit recorded <strong>{n} new rule "
+        f"violation{'s' if n != 1 else ''}</strong> against the rules you adopted:</p>"
+        f"<p>{', '.join(kinds)}</p>"
+        "<p>The details (dates, trades, amounts) are on your coach page.</p>"
+        f'<p><a href="{base_url}/coach#rules">Open your rules</a></p>')
+    email_service.send_email(
+        prefs["digest_email"],
+        f"{n} new rule violation{'s' if n != 1 else ''} recorded",
+        html, unsubscribe_url=unsub)
+    track_event("violation_alert_sent", user_id, {"n": n})
 
 
 def _persist_findings(user_id: str, report_dict: Dict, txns: List[Transaction]) -> None:
@@ -881,6 +922,7 @@ def _valid_email(s: str) -> bool:
 
 class PrefsUpdate(BaseModel):
     email_digest: Optional[bool] = None
+    email_alerts: Optional[bool] = None
     email: Optional[str] = None
 
 
@@ -890,6 +932,7 @@ async def coach_prefs_get(user_id: str = Depends(optional_user_id)):
         return {"signed_in": False}
     p = auth.get_coach_prefs(user_id)
     return {"signed_in": True, "email_digest": bool(p.get("email_digest")),
+            "email_alerts": bool(p.get("email_alerts")),
             "digest_email": p.get("digest_email") or ""}
 
 
@@ -914,9 +957,125 @@ async def coach_prefs_set(p: PrefsUpdate, user_id: str = Depends(optional_user_i
         if p.email_digest and not current.get("unsubscribe_token"):
             import secrets
             fields["unsubscribe_token"] = secrets.token_urlsafe(32)
+    if p.email_alerts is not None:
+        current = auth.get_coach_prefs(user_id)
+        email_on_file = fields.get("digest_email") or current.get("digest_email")
+        if p.email_alerts and not email_on_file:
+            return JSONResponse({"error": "provide an email to enable alerts"},
+                                status_code=400)
+        fields["email_alerts"] = bool(p.email_alerts)
+        if p.email_alerts and not current.get("unsubscribe_token"):
+            import secrets
+            fields["unsubscribe_token"] = secrets.token_urlsafe(32)
     row = auth.upsert_coach_prefs(user_id, fields)
     return {"ok": True, "email_digest": bool(row.get("email_digest")),
+            "email_alerts": bool(row.get("email_alerts")),
             "digest_email": row.get("digest_email") or ""}
+
+
+class EvalPayload(BaseModel):
+    preset: str = "custom"          # ftmo_style | topstep_style | custom
+    account_size: float = 0
+    start_date: str = ""
+    end_date: Optional[str] = None
+    profit_target: Optional[float] = None
+    daily_loss_limit: Optional[float] = None
+    max_drawdown: Optional[float] = None
+
+
+@router.post("/api/coach/eval")
+async def coach_eval_save(p: EvalPayload, user_id: str = Depends(get_current_user_id)):
+    """Create/update the user's prop-firm evaluation tracker (Pro).
+    Scorekeeping over their own realized P&L — never trading instructions."""
+    from agenticwhales import prop_eval
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return JSONResponse({"error": "Sign in to track an evaluation."}, status_code=401)
+    if p.account_size <= 0:
+        return JSONResponse({"error": "account_size must be positive"}, status_code=400)
+    if not p.start_date:
+        return JSONResponse({"error": "start_date required (yyyy-mm-dd)"}, status_code=400)
+    if p.preset not in prop_eval.PRESETS:
+        return JSONResponse({"error": f"unknown preset {p.preset!r}"}, status_code=400)
+    cfg = prop_eval.resolve_config(p.model_dump())
+    auth.upsert_coach_eval(user_id, cfg)
+    track_event("eval_configured", user_id, {"preset": p.preset})
+    return await coach_eval_status(user_id)
+
+
+@router.get("/api/coach/eval")
+async def coach_eval_status(user_id: str = Depends(optional_user_id)):
+    """The active evaluation scored against the user's actual closed trades."""
+    from agenticwhales import prop_eval
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return {"signed_in": False, "configured": False}
+    cfg = auth.get_coach_eval(user_id)
+    if not cfg:
+        return {"signed_in": True, "configured": False,
+                "presets": prop_eval.PRESETS}
+    def _score():
+        trips = coach.reconstruct_round_trips(_latest_user_trades(user_id))
+        return prop_eval.evaluate(cfg, trips)
+    result = await asyncio.get_running_loop().run_in_executor(_UPLOAD_POOL, _score)
+    return {"signed_in": True, "configured": True, **result}
+
+
+@router.delete("/api/coach/eval")
+async def coach_eval_delete(user_id: str = Depends(get_current_user_id)):
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    auth.delete_coach_eval(user_id)
+    return {"ok": True}
+
+
+class StandingBriefPayload(BaseModel):
+    tickers: List[str] = []
+    active: bool = True
+
+
+@router.get("/api/coach/standing-brief")
+async def standing_brief_get(user_id: str = Depends(optional_user_id)):
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return {"signed_in": False, "configured": False}
+    row = auth.get_standing_brief(user_id)
+    if not row:
+        return {"signed_in": True, "configured": False}
+    return {"signed_in": True, "configured": True,
+            "tickers": row.get("tickers") or [], "active": bool(row.get("active")),
+            "cadence": row.get("cadence") or "weekly",
+            "last_run_at": row.get("last_run_at")}
+
+
+@router.post("/api/coach/standing-brief")
+async def standing_brief_save(p: StandingBriefPayload,
+                              user_id: str = Depends(get_current_user_id)):
+    """Configure the weekly standing brief (Pro): the analysts brief you every
+    Monday on your tickers, in brief mode — research synthesis, no verdict."""
+    import re as _re
+    if not user_id or user_id == auth.ANONYMOUS_USER_ID:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    tickers = [t.strip().upper() for t in p.tickers if t.strip()]
+    if p.active and not tickers:
+        return JSONResponse({"error": "Add at least one ticker."}, status_code=400)
+    if len(tickers) > 5:
+        return JSONResponse({"error": "Standing briefs cover up to 5 tickers."},
+                            status_code=400)
+    for t in tickers:
+        if not _re.fullmatch(r"[A-Z.\-]{1,10}", t):
+            return JSONResponse({"error": f"{t!r} doesn't look like a ticker."},
+                                status_code=400)
+    row = auth.upsert_standing_brief(user_id, {"tickers": tickers,
+                                               "active": p.active,
+                                               "cadence": "weekly"})
+    track_event("standing_brief_configured", user_id, {"n": len(tickers)})
+    return {"ok": True, "tickers": row["tickers"], "active": row["active"]}
+
+
+@router.get("/api/account/plan")
+async def account_plan(user_id: str = Depends(optional_user_id)):
+    """The signed-in user's plan + entitlements (guests see the Free plan).
+    Drives the nav plan chip, 'included in Plus/Pro' labels, and nudges."""
+    from web import entitlements
+    return entitlements.plan_summary(user_id or "")
 
 
 @router.get("/api/coach/digests")

@@ -1312,3 +1312,38 @@ create policy "coach_digests: read own"
 drop policy if exists "coach_partners: read own" on public.coach_partners;
 create policy "coach_partners: read own"
   on public.coach_partners for select using (auth.uid() = user_id);
+
+-- ---------- coach_evals + coach_standing_briefs + coach_prefs.email_alerts (2026-06-12) ----------
+create table if not exists public.coach_evals (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz,
+  preset text not null default 'custom',
+  account_size double precision not null default 0,
+  start_date text not null default '',
+  end_date text,
+  profit_target double precision not null default 0,
+  daily_loss_limit double precision not null default 0,
+  max_drawdown double precision not null default 0
+);
+alter table public.coach_evals enable row level security;
+drop policy if exists "coach_evals: read own" on public.coach_evals;
+create policy "coach_evals: read own"
+  on public.coach_evals for select using (auth.uid() = user_id);
+create table if not exists public.coach_standing_briefs (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz,
+  tickers jsonb not null default '[]'::jsonb,
+  cadence text not null default 'weekly',
+  active boolean not null default true,
+  last_run_at timestamptz
+);
+create index if not exists coach_standing_briefs_active_idx
+  on public.coach_standing_briefs (active);
+alter table public.coach_standing_briefs enable row level security;
+drop policy if exists "coach_standing_briefs: read own" on public.coach_standing_briefs;
+create policy "coach_standing_briefs: read own"
+  on public.coach_standing_briefs for select using (auth.uid() = user_id);
+alter table public.coach_prefs
+  add column if not exists email_alerts boolean not null default false;

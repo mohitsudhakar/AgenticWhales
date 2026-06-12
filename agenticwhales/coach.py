@@ -327,6 +327,7 @@ class CoachReport:
     insights: Dict = field(default_factory=dict)
     monthly: List[Dict] = field(default_factory=list)
     open_tail: Optional[Dict] = None  # buys newer than the last closed trade
+    counterfactual_curve: List[Dict] = field(default_factory=list)
     quarterly: List[Dict] = field(default_factory=list)
     # Single coherent counterfactual: P&L under disciplined rules (size cap + stop),
     # and the swing vs. actual. This is the defensible headline number — NOT the sum
@@ -475,6 +476,41 @@ def counterfactual_disciplined(trips: List[RoundTrip], *, stop_pct: float = 0.15
     return disc
 
 
+def discipline_curve(trips: List[RoundTrip], *, stop_pct: float = 0.15) -> List[Dict]:
+    """Cumulative ACTUAL P&L vs cumulative DISCIPLINED P&L, month by month
+    (by exit date) — the same per-trip arithmetic as counterfactual_disciplined
+    with the full-history median notional, so the curve's final gap reconciles
+    exactly with the headline total_quantified_leak.
+
+    Historical attribution only: what happened vs the same trades under the
+    size-cap + stop rules. Never a forecast.
+    """
+    if not trips:
+        return []
+    med = statistics.median(abs(t.qty * t.entry_px) for t in trips) or 1.0
+    from collections import defaultdict
+    monthly_actual: Dict[str, float] = defaultdict(float)
+    monthly_disc: Dict[str, float] = defaultdict(float)
+    for t in trips:
+        d = _d(t.exit_date)
+        if not d:
+            continue
+        month = f"{d.year}-{d.month:02d}"
+        notional = abs(t.qty * t.entry_px) or 1.0
+        scale = min(1.0, med / notional)
+        disciplined = max(t.pnl / notional, -stop_pct) * notional * scale
+        monthly_actual[month] += t.pnl
+        monthly_disc[month] += disciplined
+    out, cum_a, cum_d = [], 0.0, 0.0
+    for month in sorted(monthly_actual):
+        cum_a += monthly_actual[month]
+        cum_d += monthly_disc[month]
+        out.append({"month": month,
+                    "actual_cum": round(cum_a, 2),
+                    "disciplined_cum": round(cum_d, 2)})
+    return out
+
+
 def price_based_leaks(trips: List[RoundTrip], fetch_ohlc, *,
                       stop_pct: float = 0.15, lookahead_days: int = 20) -> List[Leak]:
     """Two leaks that need real price paths (so they're precise, not modeled):
@@ -609,6 +645,7 @@ def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
     report.insights = behavioral_insights(trips, leaks)
     report.monthly = monthly_discipline(trips)
     report.open_tail = open_tail(txns, trips)
+    report.counterfactual_curve = discipline_curve(trips)
     report.quarterly = quarterly_discipline(trips)
     if narrate:
         try:

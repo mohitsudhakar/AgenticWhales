@@ -1052,7 +1052,70 @@ def update_coach_partner(partner_id: str, fields: Dict[str, Any]) -> None:
 # a new table.
 COACH_DATA_TABLES = ("coach_trades", "coach_audits", "coach_findings",
                      "coach_rules", "coach_rule_events", "coach_prefs",
-                     "coach_digests", "coach_partners", "referral_attributions")
+                     "coach_digests", "coach_partners", "referral_attributions",
+                     "coach_evals", "coach_standing_briefs")
+
+
+def get_coach_eval(user_id: str) -> Optional[Dict[str, Any]]:
+    """The user's active prop-firm evaluation config (one per user)."""
+    row = _memstore.get(("coach_evals", user_id))
+    if row is None and _db_writable():
+        rows = _select_columns("coach_evals", filters={"user_id": user_id}, limit=1)
+        if rows:
+            row = rows[0]
+            _memstore[("coach_evals", user_id)] = row
+    return row
+
+
+def upsert_coach_eval(user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+    row = get_coach_eval(user_id) or {"user_id": user_id,
+                                      "created_at": _ts_iso(time.time())}
+    row.update(fields)
+    row["user_id"] = user_id
+    row["updated_at"] = _ts_iso(time.time())
+    _memstore[("coach_evals", user_id)] = row
+    if _db_writable():
+        _upsert_columns("coach_evals", row, on_conflict="user_id")
+    return row
+
+
+def delete_coach_eval(user_id: str) -> None:
+    _memstore.pop(("coach_evals", user_id), None)
+    if _db_writable():
+        _delete_where("coach_evals", {"user_id": user_id})
+
+
+def get_standing_brief(user_id: str) -> Optional[Dict[str, Any]]:
+    """The user's standing-brief config (one per user: tickers + cadence)."""
+    row = _memstore.get(("coach_standing_briefs", user_id))
+    if row is None and _db_writable():
+        rows = _select_columns("coach_standing_briefs",
+                               filters={"user_id": user_id}, limit=1)
+        if rows:
+            row = rows[0]
+            _memstore[("coach_standing_briefs", user_id)] = row
+    return row
+
+
+def upsert_standing_brief(user_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+    row = get_standing_brief(user_id) or {"user_id": user_id,
+                                          "created_at": _ts_iso(time.time())}
+    row.update(fields)
+    row["user_id"] = user_id
+    row["updated_at"] = _ts_iso(time.time())
+    _memstore[("coach_standing_briefs", user_id)] = row
+    if _db_writable():
+        _upsert_columns("coach_standing_briefs", row, on_conflict="user_id")
+    return row
+
+
+def list_active_standing_briefs() -> List[Dict[str, Any]]:
+    """All active standing-brief rows (the weekly cron's worklist)."""
+    if _db_writable():
+        return _select_columns("coach_standing_briefs",
+                               filters={"active": True}, limit=10000)
+    return [r for (t, _), r in _memstore.items()
+            if t == "coach_standing_briefs" and r.get("active")]
 
 
 def delete_coach_data(user_id: str) -> Dict[str, int]:
@@ -1065,6 +1128,8 @@ def delete_coach_data(user_id: str) -> Dict[str, int]:
     _memstore.pop(("coach_trades", user_id), None)
     _memstore.pop(("coach_prefs", user_id), None)
     _memstore.pop(("referral_attributions", user_id), None)
+    _memstore.pop(("coach_evals", user_id), None)
+    _memstore.pop(("coach_standing_briefs", user_id), None)
     for table in ("coach_audits", "coach_findings", "coach_rules",
                   "coach_rule_events", "coach_digests", "coach_partners"):
         for key in [k for k in list(_memstore)

@@ -234,6 +234,16 @@ class RecipeScheduler:
             misfire_grace_time=43_200,
             max_instances=1,
         )
+        # Standing briefs (Pro) — Mondays 13:00 UTC, an hour before the digest
+        # so the week's briefs exist by the time the digest is written.
+        self._scheduler.add_job(
+            self._run_standing_briefs,
+            CronTrigger.from_crontab("0 13 * * 1", timezone="UTC"),
+            id="standing_briefs_weekly",
+            replace_existing=True,
+            misfire_grace_time=43_200,
+            max_instances=1,
+        )
 
     # PR-3: stuck-run reaper. Tunable via env so ops can dial it on a hot
     # incident without a redeploy.
@@ -387,6 +397,54 @@ class RecipeScheduler:
             except Exception as exc:  # noqa: BLE001
                 log.warning("snaptrade_sync cron failure for %s: %s", uid, exc)
         log.info("snaptrade_sync cron complete", users=len(rows), synced=synced)
+
+    def _run_standing_briefs(self) -> None:
+        """Fire the weekly standing briefs (Pro): for each active config whose
+        owner has the entitlement, run one brief-mode session per ticker —
+        same path as the interactive desk, quota-exempt like recipes.
+        Leader-only; skips silently when the default provider has no key."""
+        if not self._is_leader:
+            return
+        import datetime as _dt
+        import time as _time
+        from web import auth as _auth
+        from web import entitlements
+        from web import server as server_mod
+        from web.runner import SessionRunner, build_session
+        if not server_mod.provider_configured(server_mod.DEFAULT_PROVIDER):
+            return
+        today = _dt.date.today().isoformat()
+        fired = 0
+        for row in _auth.list_active_standing_briefs():
+            uid = row.get("user_id")
+            tickers = [t for t in (row.get("tickers") or []) if t][:5]
+            if not uid or not tickers:
+                continue
+            if not entitlements.check(uid, "standing_briefs"):
+                continue
+            # Idempotence: at most one run per config per day (cron retries,
+            # misfire grace, multi-leader races during failover).
+            if str(row.get("last_run_at") or "")[:10] == today:
+                continue
+            try:
+                for ticker in tickers:
+                    session = build_session({
+                        "ticker": ticker, "analysis_date": today,
+                        "llm_provider": server_mod.DEFAULT_PROVIDER,
+                        "quick_think_llm": server_mod.DEFAULT_QUICK_MODEL,
+                        "deep_think_llm": server_mod.DEFAULT_DEEP_MODEL,
+                        "research_depth": 1, "analysts": [],
+                    })
+                    session["user_id"] = uid
+                    session["origin"] = "standing_brief"
+                    SessionRunner(session, None).start()
+                    _auth.save_session(session)
+                    fired += 1
+                _auth.upsert_standing_brief(
+                    uid, {"last_run_at": _auth._ts_iso(_time.time())})
+            except Exception as exc:  # noqa: BLE001
+                log.warning("standing_brief cron failure for %s: %s", uid, exc)
+        log.info("standing_briefs cron complete", fired=fired)
 
     def _run_coach_digest(self) -> None:
         """Write each user's weekly in-app digest (idempotent per user-week)

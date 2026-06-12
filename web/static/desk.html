@@ -191,6 +191,20 @@
     </div>
   </section>
 
+  <!-- Standing briefs (Pro): the analysts brief you every Monday -->
+  <section id="standing" class="hidden max-w-6xl mx-auto px-6 py-14">
+    <div class="flex items-baseline justify-between flex-wrap gap-2">
+      <div>
+        <div class="pill text-muted mb-2">Standing briefs</div>
+        <h2 class="font-display text-4xl mb-2">Your analysts, every Monday</h2>
+      </div>
+      <a href="/pricing" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Pro</a>
+    </div>
+    <p class="text-muted mb-6 max-w-3xl">Pick up to five tickers and the desk runs a fresh research brief on each,
+      every Monday morning — same debate, same synthesis, no ratings. Results land in your past briefs.</p>
+    <div id="standingBody" class="card p-7"></div>
+  </section>
+
   <!-- History -->
   <section id="history" class="max-w-6xl mx-auto px-6 py-14">
     <div class="pill text-muted mb-2">The archive</div>
@@ -545,7 +559,11 @@ function updateAuthUI(user){
       ? user.displayName : (user.email || 'Signed in');
     $('accName').textContent = name;
     $('accName').title = user.email || name;
-    $('accTier').textContent = user.tier || 'novice';
+    // The plan, not the internal quota tier — click-through to /pricing.
+    $('accTier').innerHTML = '<a href="/pricing" class="hover:text-emerald transition">…</a>';
+    fetch('/api/account/plan').then(r=>r.json()).then(j=>{
+      $('accTier').innerHTML = `<a href="/pricing" class="hover:text-emerald transition" title="${j.tagline} — see all plans">${j.label}${j.plan==='free'?' plan':''}${j.beta?' · beta':''}</a>`;
+    }).catch(()=>{});
     if (user.photoURL) {
       $('accAvatar').src = user.photoURL;
       $('accAvatar').classList.remove('hidden');
@@ -562,6 +580,7 @@ function updateAuthUI(user){
     $('signOutBtn').onclick = () => window.AgenticWhalesAuth.signOut();
     $('historyHint').textContent =
       `Briefs run as ${name} are saved here — reopen any of them and audit what each analyst argued, agent by agent.`;
+    loadStandingBrief();
   } else {
     account.classList.add('hidden');
     account.classList.remove('flex');
@@ -569,10 +588,43 @@ function updateAuthUI(user){
     signin.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
     $('historyHint').textContent =
       'Sign in and every brief is saved — reopen any of them and audit what each analyst argued, agent by agent.';
+    $('standing').classList.add('hidden');
   }
   refreshUsagePill(user);
   loadHistory();
   lucide.createIcons();
+}
+
+// ---- Standing briefs (Pro): weekly watchlist coverage ----
+async function loadStandingBrief(){
+  const sec = $('standing'), body = $('standingBody');
+  try {
+    const s = await (await fetch('/api/coach/standing-brief')).json();
+    if (!s.signed_in) { sec.classList.add('hidden'); return; }
+    sec.classList.remove('hidden');
+    const tickers = (s.tickers || []).join(', ');
+    body.innerHTML = `
+      <div class="flex flex-wrap items-center gap-4 text-sm">
+        <input id="sbTickers" value="${tickers}" placeholder="AAPL, NVDA, MSFT (up to 5)"
+               class="border border-line rounded-full px-4 py-2 bg-cream/40 w-72">
+        <label class="flex items-center gap-2 text-muted">
+          <input id="sbActive" type="checkbox" class="accent-emerald w-4 h-4" ${s.configured && s.active ? 'checked' : ''}> every Monday</label>
+        <button id="sbSave" class="bg-ink text-cream rounded-full px-5 py-2 text-xs font-medium hover:opacity-90 transition">Save</button>
+        <span id="sbMsg" class="text-xs hidden"></span>
+        ${s.last_run_at ? `<span class="text-xs text-muted">last run ${String(s.last_run_at).slice(0,10)}</span>` : ''}
+      </div>`;
+    $('sbSave').onclick = async () => {
+      const tickers = $('sbTickers').value.split(',').map(t=>t.trim()).filter(Boolean);
+      const r = await fetch('/api/coach/standing-brief', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({tickers, active: $('sbActive').checked})});
+      const j = await r.json();
+      const m = $('sbMsg');
+      m.textContent = r.ok ? 'Saved — first run next Monday.' : (j.error || 'Could not save.');
+      m.className = 'text-xs ' + (r.ok ? 'text-emerald' : 'text-crimson');
+      m.classList.remove('hidden');
+    };
+  } catch(e){ sec.classList.add('hidden'); }
 }
 
 async function refreshUsagePill(user){

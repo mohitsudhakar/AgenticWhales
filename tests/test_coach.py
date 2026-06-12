@@ -201,3 +201,31 @@ def test_slash_dated_trades_are_scored():
     rep = coach.audit_trades(txns)
     assert rep.n_trades == 1
     assert rep.monthly[0]["month"] == "2026-01"
+
+
+def test_discipline_curve_reconciles_with_headline():
+    """The curve's final gap must equal total_quantified_leak exactly — both
+    derive from the same per-trip arithmetic and full-history median."""
+    txns = []
+    for i, (sym, qty, b, s) in enumerate([("AAPL", 10, 100, 90), ("MSFT", 100, 50, 30),
+                                          ("NVDA", 10, 100, 115), ("AMD", 400, 80, 60)]):
+        txns += [_t(f"2025-0{i+1}-02", "Buy", sym, qty, b),
+                 _t(f"2025-0{i+1}-20", "Sell", sym, qty, s)]
+    rep = coach.audit_trades(txns)
+    curve = rep.counterfactual_curve
+    assert [p["month"] for p in curve] == ["2025-01", "2025-02", "2025-03", "2025-04"]
+    last = curve[-1]
+    assert abs(last["actual_cum"] - rep.total_pnl) < 0.01
+    assert abs((last["disciplined_cum"] - last["actual_cum"]) - rep.total_quantified_leak) < 0.01
+    # Cumulative: monotone month count, each point carries both series.
+    assert all("actual_cum" in p and "disciplined_cum" in p for p in curve)
+    assert coach.discipline_curve([]) == []
+
+
+def test_discipline_curve_copy_carries_no_directives():
+    from agenticwhales import pretrade
+    txns = [_t("2025-01-02", "Buy", "AAPL", 10, 100), _t("2025-01-20", "Sell", "AAPL", 10, 90),
+            _t("2025-02-02", "Buy", "MSFT", 10, 100), _t("2025-02-20", "Sell", "MSFT", 10, 80)]
+    for p in coach.audit_trades(txns).counterfactual_curve:
+        for v in p.values():
+            assert not pretrade.contains_directive(str(v))
