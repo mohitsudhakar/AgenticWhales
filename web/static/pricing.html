@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — Pricing</title>
+  <meta name="description" content="The discipline audit is free. Reserve a founding price for the coaching plans — free during beta, no commitment, no card." />
+  <meta property="og:title" content="AgenticWhales pricing — the audit is free" />
+  <meta property="og:description" content="Free discipline audits forever. Founding prices on the coaching plans, reservable now — everything stays free during the beta." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Lora:wght@600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54', amber: '#B45309', crimson: '#B3261E' },
+      fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+    }}}
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px;
+            box-shadow: 0 1px 2px rgba(26,26,23,0.03), 0 8px 30px rgba(26,26,23,0.04); }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    .tier-featured { border-color: #1F6F54; box-shadow: 0 1px 2px rgba(31,111,84,0.06), 0 10px 36px rgba(31,111,84,0.10); }
+  </style>
+</head>
+<body>
+
+  <nav class="border-b border-line sticky top-0 bg-cream/90 backdrop-blur z-40">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <span class="text-xl">🐋</span><span class="font-logo text-xl">AgenticWhales</span>
+        <span class="hidden sm:inline pill text-muted ml-2 border-l border-line pl-3">Discipline Coach</span>
+      </a>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="/learn" class="hidden sm:inline hover:text-ink transition">Learn</a>
+        <a href="/methodology" class="hidden sm:inline hover:text-ink transition">Methodology</a>
+        <a href="/coach" class="hover:text-ink transition">Open the coach</a>
+        <a href="/signin" class="border border-line rounded-full px-4 py-1.5 hover:bg-white transition">Sign in</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="max-w-6xl mx-auto px-6 pt-20 pb-10">
+    <div class="max-w-3xl">
+      <div class="pill text-emerald mb-5">Free during the beta · founding prices reservable now</div>
+      <h1 class="font-display text-5xl sm:text-6xl leading-[1.05] mb-6">The audit is free. <span class="italic">Forever.</span></h1>
+      <p class="text-lg text-muted leading-relaxed max-w-2xl">
+        Every plan below is <span class="text-ink font-medium">free while we're in beta</span>.
+        Reserving a founding price costs nothing, isn't a commitment, and never asks for a card —
+        it locks the founding rate for your first 12 months once billing launches, and it tells us
+        which plan to build first.
+      </p>
+    </div>
+  </header>
+
+  <!-- Tiers -->
+  <section class="max-w-6xl mx-auto px-6 pb-14">
+    <div class="grid md:grid-cols-3 gap-5 items-stretch">
+
+      <div class="card p-8 flex flex-col">
+        <div class="pill text-muted mb-3">Audit</div>
+        <div class="font-display text-5xl mb-1">$0</div>
+        <p class="text-sm text-muted mb-6">No signup to try. The audit is the ad.</p>
+        <ul class="text-sm text-muted space-y-2.5 mb-8 flex-1">
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Screenshot, CSV, or PDF statement audits (3 a day)</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Dollar-quantified behavioral leaks, past tense</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Discipline score + sample pre-trade check</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Share card, anonymized by default</li>
+        </ul>
+        <a href="/" class="border border-line rounded-full px-6 py-3 text-sm font-medium text-center hover:bg-white transition">Run a free audit</a>
+      </div>
+
+      <div class="card tier-featured p-8 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div class="pill text-emerald">Plus</div>
+          <span class="pill text-emerald border border-emerald/30 rounded-full px-2.5 py-1">Founding price</span>
+        </div>
+        <div class="font-display text-5xl mb-1">$9<span class="text-2xl text-muted">/mo</span></div>
+        <p class="text-sm text-muted mb-6">$19/mo after launch · free during beta</p>
+        <ul class="text-sm text-muted space-y-2.5 mb-8 flex-1">
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Everything in Audit</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Saved audit history + discipline score trend</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Rule book — flagged patterns re-tested on your later trades</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Weekly discipline digest</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Accountability partner</li>
+        </ul>
+        <button data-reserve="plus" class="bg-ink text-cream rounded-full px-6 py-3 text-sm font-medium hover:opacity-90 transition">Reserve the founding price</button>
+      </div>
+
+      <div class="card p-8 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div class="pill text-muted">Pro</div>
+          <span class="pill text-muted border border-line rounded-full px-2.5 py-1">Founding price</span>
+        </div>
+        <div class="font-display text-5xl mb-1">$29<span class="text-2xl text-muted">/mo</span></div>
+        <p class="text-sm text-muted mb-6">$49/mo after launch · free during beta</p>
+        <ul class="text-sm text-muted space-y-2.5 mb-8 flex-1">
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Everything in Plus</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Read-only brokerage auto-sync — audits refresh themselves</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Pre-trade discipline check against your full history</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Priority statement parsing (OCR + PDF)</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Quarterly deep-dive report</li>
+        </ul>
+        <button data-reserve="pro" class="border border-line rounded-full px-6 py-3 text-sm font-medium hover:bg-white transition">Reserve the founding price</button>
+      </div>
+    </div>
+    <p class="text-sm text-muted mt-6 max-w-3xl">Nothing that is free today becomes paywalled during the beta.
+      When billing launches, reservation holders choose whether to subscribe — a reservation is interest, not a contract.</p>
+  </section>
+
+  <!-- The evaluation-trader wedge -->
+  <section class="max-w-6xl mx-auto px-6 py-14">
+    <div class="card p-10">
+      <div class="pill text-emerald mb-2">Built first for evaluation traders</div>
+      <h2 class="font-display text-4xl mb-3">Funded-account resets are a discipline tax with a receipt</h2>
+      <p class="text-muted leading-relaxed max-w-3xl mb-4">
+        Most blown prop-firm evaluations end in a rules breach — a daily-loss cap or trailing
+        drawdown hit on a tilt day — not a bad thesis. The audit reads your own fills and shows
+        which rule you actually broke, how often, and what each breach cost, past tense.
+        For comparison: a single evaluation reset fee typically costs more than a year of Plus
+        at the founding price. That's a fee-to-fee comparison, not a promise about results.
+      </p>
+      <p class="text-sm text-muted">Day and swing traders in their own accounts get the same audit —
+        revenge trades, size creep after losses, losers held past the stop — itemized in dollars from your history.</p>
+    </div>
+  </section>
+
+  <!-- Reserve form -->
+  <section id="reserve" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="card p-10 max-w-2xl mx-auto">
+      <h2 class="font-display text-4xl mb-2 text-center">Reserve a founding price</h2>
+      <p class="text-muted mb-8 text-center">Free, non-binding, no card. We'll email you when billing
+        launches and the founding rate is yours for 12 months.</p>
+      <form id="reserveForm" class="space-y-4">
+        <div class="flex gap-3 justify-center" role="radiogroup" aria-label="Plan">
+          <label class="cursor-pointer">
+            <input type="radio" name="plan" value="plus" class="peer sr-only" checked>
+            <span class="inline-block border border-line peer-checked:border-emerald peer-checked:text-emerald rounded-full px-5 py-2 text-sm font-medium">Plus — $9/mo founding</span>
+          </label>
+          <label class="cursor-pointer">
+            <input type="radio" name="plan" value="pro" class="peer sr-only">
+            <span class="inline-block border border-line peer-checked:border-emerald peer-checked:text-emerald rounded-full px-5 py-2 text-sm font-medium">Pro — $29/mo founding</span>
+          </label>
+        </div>
+        <select id="rsSegment" class="w-full border border-line rounded-full px-5 py-3 text-sm bg-white/70 text-muted">
+          <option value="">What kind of trader are you? (optional)</option>
+          <option value="prop">Prop-firm evaluation trader</option>
+          <option value="day-swing">Day / swing trader (own account)</option>
+          <option value="options">Options trader</option>
+          <option value="investor">Long-term investor</option>
+          <option value="other">Other</option>
+        </select>
+        <div class="flex flex-wrap gap-3 justify-center">
+          <input id="rsEmail" type="email" required placeholder="you@example.com"
+                 class="border border-line rounded-full px-5 py-3 text-sm bg-white/70 w-72">
+          <button type="submit" class="bg-ink text-cream px-6 py-3 rounded-full text-sm font-medium hover:opacity-90 transition">Reserve</button>
+        </div>
+      </form>
+      <p id="rsMsg" class="text-sm text-emerald mt-4 text-center hidden"></p>
+    </div>
+  </section>
+
+  <footer class="max-w-6xl mx-auto px-6 py-12 border-t border-line text-sm text-muted">
+    <p class="max-w-3xl mb-2"><span class="text-ink font-medium">Educational, not investment advice.</span>
+    Every figure is historical attribution computed from a trader's own fills — what happened, not what will.
+    AgenticWhales never places orders or moves money. Nothing here is a recommendation to buy or sell anything.</p>
+    <p><a href="/methodology" class="underline underline-offset-2 hover:text-ink">Methodology</a> ·
+       <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a> ·
+       <a href="/learn" class="underline underline-offset-2 hover:text-ink">Learn</a> ·
+       <a href="/signin" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
+  </footer>
+
+<script>
+const $id = (x) => document.getElementById(x);
+
+// Funnel instrumentation: views and reservations through the allowlisted
+// event sink. Best-effort — analytics must never block the page.
+const track = (event, metadata) => fetch('/api/coach/events', {method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({event, metadata: metadata || {}})}).catch(() => {});
+track('pricing_viewed');
+
+// Tier buttons preselect the plan and scroll to the form.
+document.querySelectorAll('[data-reserve]').forEach(btn => {
+  btn.onclick = () => {
+    const plan = btn.getAttribute('data-reserve');
+    document.querySelector(`input[name="plan"][value="${plan}"]`).checked = true;
+    $id('reserve').scrollIntoView({behavior:'smooth'});
+    $id('rsEmail').focus({preventScroll:true});
+  };
+});
+
+$id('reserveForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const plan = document.querySelector('input[name="plan"]:checked').value;
+  const seg = $id('rsSegment').value;
+  const m = $id('rsMsg');
+  try {
+    const r = await fetch('/api/waitlist', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: $id('rsEmail').value,
+                            source: 'pricing-' + plan,
+                            note: seg ? 'seg=' + seg : ''})});
+    const j = await r.json();
+    if (r.ok) {
+      track('founding_reserved', {plan, seg});
+      m.textContent = "Reserved — we'll email you when billing launches. Everything stays free until then.";
+      $id('rsEmail').value = '';
+    } else {
+      m.textContent = j.detail || j.error || 'Could not record the reservation.';
+    }
+    m.classList.remove('hidden');
+  } catch(err){ m.textContent = 'Reservation failed: ' + err; m.classList.remove('hidden'); }
+};
+
+lucide.createIcons();
+</script>
+</body>
+</html>

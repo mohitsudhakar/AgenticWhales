@@ -99,7 +99,24 @@ counts land on the admin dashboard. Pay per deliverable, not per signup
 - Leak resolution rate ("not detected forward" ÷ resolved) — the proof metric.
 - Referral counts by code (channel ROI).
 
-## 8. Explicitly out of scope until billing lands
+## 8. Market validation without billing (the pricing smoke test)
+
+Billing itself stays deferred, but willingness to pay is now **measured**, not
+assumed — see [icp-and-pricing.md](icp-and-pricing.md) for the full thesis:
+
+- `/pricing` shows real tiers (Audit free / Plus $9 founding / Pro $29
+  founding) and captures free, non-binding founding-price reservations into
+  the existing waitlist store (`source=pricing-<plan>`, `note=seg=<segment>`).
+- The beachhead ICP is **prop-firm evaluation traders** ("your reset fees are
+  your discipline tax, itemized"); the landing page's "Who it's for" section
+  and the segment question on both forms track segment mix.
+- Funnel events `pricing_viewed` → `founding_reserved` quantify conversion.
+- Billing gets built when the validation gates in that doc are hit (e.g.
+  ≥50 reservations), not before.
+
+## 9. Explicitly out of scope until billing lands
 
 Paid acquisition, monetary referral rewards, the Leak Guarantee and discipline-
-dividend pricing mechanics (designed, parked), affiliate revenue shares.
+dividend pricing mechanics (designed, parked), affiliate revenue shares, and
+any payment processing or feature gating (a reservation never paywalls
+anything that is free today).
