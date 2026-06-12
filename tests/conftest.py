@@ -73,6 +73,7 @@ def _reset_guest_upload_caps():
     try:
         import web.coach_api as _coach_api
         _coach_api._GUEST_UPLOADS.clear()
+        _coach_api._LATEST_REPORT_CACHE.clear()
     except Exception:  # noqa: BLE001 — web extras may be absent in minimal envs
         pass
     yield

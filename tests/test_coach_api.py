@@ -307,3 +307,40 @@ def test_extract_concurrency_matches_sequential(monkeypatch):
                                   on_progress=lambda d, n: prog.append((d, n)))
     assert len(par) == len(seq) and len(par) > 1          # parallel == sequential, multi-chunk
     assert prog[-1][0] == prog[-1][1] == len(prog)        # progress reported once per chunk, to completion
+
+
+def test_latest_report_cached_until_trades_change(client, monkeypatch):
+    """/api/coach/latest recomputes only when the trade set changes — the
+    price-aware audit is seconds of work cold, and reloads must be instant."""
+    import web.coach_api as capi
+    server.app.dependency_overrides[coach_api.optional_user_id] = lambda: "cache-user-1"
+    calls = {"n": 0}
+    real = capi.coach.audit_trades
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(capi.coach, "audit_trades", counting)
+    try:
+        client.post("/api/coach/audit", json={"use_demo": True})
+        n0 = calls["n"]
+        r1 = client.get("/api/coach/latest").json()
+        assert calls["n"] == n0 + 1
+        r2 = client.get("/api/coach/latest").json()
+        assert calls["n"] == n0 + 1                      # second load: cache hit
+        assert r2["report"] == r1["report"]
+        client.post("/api/coach/audit", json={"use_demo": True})  # same rows, deduped
+        client.post("/api/coach/audit", json={
+            "transactions": [
+                {"date": "2026-01-05", "type": "Buy", "symbol": "ZZZQ",
+                 "quantity": 5, "price": 10, "amount": -50},
+                {"date": "2026-01-09", "type": "Sell", "symbol": "ZZZQ",
+                 "quantity": 5, "price": 12, "amount": 60},
+            ]})
+        n1 = calls["n"]
+        r3 = client.get("/api/coach/latest").json()
+        assert calls["n"] == n1 + 1                      # trades changed: recompute
+        assert r3["report"]["n_transactions"] == r1["report"]["n_transactions"] + 2
+    finally:
+        server.app.dependency_overrides.clear()

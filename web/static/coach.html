@@ -56,9 +56,19 @@
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
         <a href="#overlay" class="hidden sm:inline hover:text-ink transition">Overlay</a>
         <a href="/analyze" class="hover:text-ink transition">Analyst Desk</a>
-        <span id="authUser" class="hidden text-ink font-medium"></span>
-        <button id="settingsBtn" class="hidden text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
-        <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
+        <div id="account" class="hidden items-center gap-2.5 pl-2 border-l border-line">
+          <img id="accAvatar" class="hidden w-8 h-8 rounded-full border border-line" alt="" referrerpolicy="no-referrer">
+          <span id="accInitial" class="hidden w-8 h-8 rounded-full bg-emerald/10 text-emerald text-sm font-semibold items-center justify-center"></span>
+          <span class="leading-tight text-left hidden sm:block">
+            <span id="accName" class="block text-ink text-[13px] font-medium max-w-[150px] truncate"></span>
+            <span id="accTier" class="block pill text-muted"></span>
+          </span>
+          <button id="settingsBtn" class="text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
+          <button id="signOutBtn" title="Sign out"
+                  class="border border-line rounded-full px-3.5 py-1.5 text-xs hover:bg-white transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Sign out</span></button>
+        </div>
+        <button id="authBtn" class="hidden bg-ink text-cream rounded-full px-4 py-1.5 hover:opacity-90 transition">Sign in</button>
       </div>
       <div id="settingsPanel" class="hidden absolute right-6 top-full mt-2 z-50 card p-4 w-72 text-sm shadow-lg">
         <div class="font-medium mb-1">Settings</div>
@@ -678,11 +688,26 @@ const isSignedIn = (u) => !!(u && !u.isGuest && (u.email || u.displayName));
 
 function updateAuthUI(user){
   CURRENT = user;
-  const b = $('authBtn'), u = $('authUser'); b.classList.remove('hidden');
+  const b = $('authBtn'), account = $('account');
   if(isSignedIn(user)){
-    u.textContent = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
-    u.classList.remove('hidden');
-    b.textContent = 'Sign out'; b.onclick = () => window.AgenticWhalesAuth.signOut();
+    // Same account chip as the Analyst Desk: avatar (or initial), name, tier.
+    const name = (user.displayName && user.displayName !== 'trader') ? user.displayName : (user.email || 'Signed in');
+    $('accName').textContent = name;
+    $('accName').title = user.email || name;
+    $('accTier').textContent = user.tier || 'novice';
+    if (user.photoURL) {
+      $('accAvatar').src = user.photoURL;
+      $('accAvatar').classList.remove('hidden');
+      $('accInitial').classList.add('hidden');
+    } else {
+      $('accInitial').textContent = (name[0] || '?').toUpperCase();
+      $('accInitial').classList.remove('hidden');
+      $('accInitial').classList.add('flex');
+      $('accAvatar').classList.add('hidden');
+    }
+    account.classList.remove('hidden'); account.classList.add('flex');
+    b.classList.add('hidden');
+    $('signOutBtn').onclick = () => window.AgenticWhalesAuth.signOut();
     // One-time first-touch referral claim (?ref= captured in localStorage).
     try {
       const code = localStorage.getItem('aw_ref');
@@ -693,10 +718,10 @@ function updateAuthUI(user){
       }
     } catch(e){}
   } else {
-    u.classList.add('hidden'); u.textContent = '';
+    account.classList.add('hidden'); account.classList.remove('flex');
+    b.classList.remove('hidden');
     b.textContent = 'Sign in'; b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
   }
-  $('settingsBtn').classList.toggle('hidden', !isSignedIn(user));
   $('loadDemo').classList.toggle('hidden', isSignedIn(user));  // signed-in users see their own data
   applyJourney(user);
 }

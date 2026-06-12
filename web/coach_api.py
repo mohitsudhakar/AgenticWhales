@@ -7,6 +7,7 @@ All deterministic and read-only — no orders, ever. Mounted on the main app via
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 import logging
@@ -1096,6 +1097,21 @@ async def coach_data_delete(user_id: str = Depends(optional_user_id)):
     return {"ok": True, **res}
 
 
+# The /latest recompute is price-aware (yfinance per symbol), which is seconds
+# of work cold. The report only changes when the trades change, so cache it
+# per user keyed by a fingerprint of the trade rows — reloads are instant,
+# and any upload/sync/delete changes the fingerprint and invalidates naturally.
+_LATEST_REPORT_CACHE: Dict[str, tuple] = {}  # user_id -> (fingerprint, report)
+_LATEST_REPORT_CACHE_MAX = 256
+
+
+def _trades_fingerprint(txns: List[Transaction]) -> str:
+    h = hashlib.sha256()
+    for t in txns:
+        h.update(f"{t.date}|{t.type}|{t.symbol}|{t.quantity}|{t.price};".encode())
+    return h.hexdigest()
+
+
 @router.get("/api/coach/latest")
 async def coach_latest(user_id: str = Depends(optional_user_id)):
     """The signed-in user's latest audit, recomputed from their persisted trades.
@@ -1107,6 +1123,11 @@ async def coach_latest(user_id: str = Depends(optional_user_id)):
     if not row or not txns:
         return {"signed_in": True, "has_audit": False}
     track_event("audit_viewed", user_id)
+
+    fp = _trades_fingerprint(txns)
+    cached = _LATEST_REPORT_CACHE.get(user_id)
+    if cached and cached[0] == fp:
+        return {"signed_in": True, "has_audit": True, "report": cached[1]}
 
     def _recompute():
         # Same price-aware path as upload/sync audits — a price-blind recompute
@@ -1121,6 +1142,9 @@ async def coach_latest(user_id: str = Depends(optional_user_id)):
         return out
 
     out = await asyncio.get_running_loop().run_in_executor(_UPLOAD_POOL, _recompute)
+    if len(_LATEST_REPORT_CACHE) >= _LATEST_REPORT_CACHE_MAX:
+        _LATEST_REPORT_CACHE.pop(next(iter(_LATEST_REPORT_CACHE)))
+    _LATEST_REPORT_CACHE[user_id] = (fp, out)
     return {"signed_in": True, "has_audit": True, "report": out}
 
 

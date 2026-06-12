@@ -31,7 +31,7 @@ from __future__ import annotations
 import datetime as _dt
 import statistics
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from .transactions.models import Transaction
 
@@ -487,23 +487,39 @@ def price_based_leaks(trips: List[RoundTrip], fetch_ohlc, *,
     `fetch_ohlc(symbol, start, end)` returns a date-indexed OHLC frame (or None).
     """
     from collections import defaultdict
+    from concurrent.futures import ThreadPoolExecutor
     by_sym: Dict[str, List[RoundTrip]] = defaultdict(list)
     for t in trips:
         by_sym[t.symbol].append(t)
+
+    # One price window per symbol. Fetch them concurrently — a long history
+    # spans 100+ symbols, and sequential network fetches turn a page load
+    # into multiple seconds. Failures degrade to "no data for that symbol".
+    windows: Dict[str, Tuple[str, str]] = {}
+    for sym, ts in by_sym.items():
+        eds = [_d(t.entry_date) for t in ts if _d(t.entry_date)]
+        xds = [_d(t.exit_date) for t in ts if _d(t.exit_date)]
+        if eds and xds:
+            windows[sym] = (min(eds).isoformat(),
+                            (max(xds) + _dt.timedelta(days=lookahead_days + 5)).isoformat())
+
+    def _safe_fetch(sym: str):
+        start, end = windows[sym]
+        try:
+            return sym, fetch_ohlc(sym, start, end)
+        except Exception:  # noqa: BLE001
+            return sym, None
+
+    frames: Dict[str, object] = {}
+    if windows:
+        with ThreadPoolExecutor(max_workers=min(8, len(windows))) as pool:
+            frames = dict(pool.map(_safe_fetch, windows))
 
     stop_saved = 0.0
     left_on_table = 0.0
     n_stop = n_left = 0
     for sym, ts in by_sym.items():
-        eds = [_d(t.entry_date) for t in ts if _d(t.entry_date)]
-        xds = [_d(t.exit_date) for t in ts if _d(t.exit_date)]
-        if not eds or not xds:
-            continue
-        try:
-            df = fetch_ohlc(sym, min(eds).isoformat(),
-                            (max(xds) + _dt.timedelta(days=lookahead_days + 5)).isoformat())
-        except Exception:  # noqa: BLE001
-            df = None
+        df = frames.get(sym)
         if df is None or len(df) == 0:
             continue
         dates = df.index.date
