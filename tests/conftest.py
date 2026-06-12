@@ -28,7 +28,10 @@ _API_KEY_ENV_VARS = (
 @pytest.fixture(autouse=True)
 def _dummy_api_keys(monkeypatch):
     for env_var in _API_KEY_ENV_VARS:
-        monkeypatch.setenv(env_var, os.environ.get(env_var, "placeholder"))
+        # `or` (not a get-default): a .env scaffolded from the template carries
+        # EMPTY values, which load_dotenv puts into os.environ as "" — that must
+        # still fall back to the placeholder or key-gated tests get flaky.
+        monkeypatch.setenv(env_var, os.environ.get(env_var) or "placeholder")
 
 
 # Unit tests must never hit the real Supabase. The integration suite under
@@ -49,6 +52,19 @@ def _force_offline_supabase(monkeypatch, request):
         return  # the integration suite manages its own DB lifecycle
     for env_var in _FORCE_OFFLINE_ENV_VARS:
         monkeypatch.delenv(env_var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _offline_price_fetcher(monkeypatch, request):
+    """Unit tests must never hit yfinance. Endpoints that audit with the
+    price-aware path (/api/coach/latest, sync, uploads) degrade to the
+    price-free leak set when the fetcher returns None — same as a network
+    failure in production. Tests that want price-path coverage inject their
+    own fake fetcher explicitly."""
+    if "integration" in request.keywords:
+        return
+    import agenticwhales.prices as _prices
+    monkeypatch.setattr(_prices, "fetch_ohlc", lambda *a, **k: None)
 
 
 @pytest.fixture(autouse=True)

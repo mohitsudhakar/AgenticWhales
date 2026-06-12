@@ -6,12 +6,18 @@
 > cross-sectional selection skill** (IC ≈ 0, market-neutral Sharpe ≈ 0) — its only
 > "wins" were market beta captured worse than buy-and-hold. Full writeup:
 > [docs/reviews/2026-06-07-edge-probe-findings.md](docs/reviews/2026-06-07-edge-probe-findings.md).
-> The product pivoted to the **Trading Discipline Coach** (`/coach`), which monetizes
-> *discipline*, not a predictive edge. The original vision and the honest "what
+> The product pivoted to **the trading back office** — three surfaces, one rule:
+> *nobody here trades for you*. The **Trading Discipline Coach** (`/coach`)
+> monetizes *discipline*, not a predictive edge. The **Analyst Desk** (`/analyze`,
+> repositioned 2026-06-11) monetizes *analyst labor* — the multi-agent debate ends
+> at a research synthesis with no rating, sizing, or decision; the probe killed
+> the debate as a decision policy, not as a research synthesizer, and the desk now
+> sells exactly the part that survived. The **defensive overlay** monetizes
+> validated risk-premia structure. The original vision and the honest "what
 > 'intelligent' must mean here" framework are kept below as the **record of why we
 > pivoted** — the bar for intelligent autonomous trading is real, and we measured
 > ourselves short of it. The autonomous-fund track is paused pending a reason to
-> believe an edge exists.
+> believe an edge exists (the standing re-entry test is the edge probe itself).
 
 > **The vision (original — now reframed; see the banner above).** A *truly
 > intelligent agentic hedge fund in your pocket*: an

@@ -235,6 +235,29 @@ def behavioral_insights(trips: List[RoundTrip], leaks: List[Leak]) -> Dict:
     }
 
 
+def open_tail(txns: Sequence[Transaction], trips: List[RoundTrip]) -> Optional[Dict]:
+    """Eligible buys dated after the last closed round-trip — positions still
+    open. They carry no realized P&L, so monthly_discipline can't bucket them;
+    the UI uses this to say why the chart ends where it does instead of
+    leaving the user to wonder whether a sync failed."""
+    if not trips:
+        return None
+    last_exit = max((d for d in (_d(t.exit_date) for t in trips) if d), default=None)
+    if not last_exit:
+        return None
+    tail_dates = sorted(
+        d for t in txns
+        if t.symbol and not _is_option(t) and t.quantity > 0 and t.price > 0
+        and t.type.lower() == "buy"
+        for d in [_d(t.date)] if d and d > last_exit)
+    if not tail_dates:
+        return None
+    return {"last_close": last_exit.isoformat(),
+            "n_open_buys": len(tail_dates),
+            "first": tail_dates[0].isoformat(),
+            "last": tail_dates[-1].isoformat()}
+
+
 def monthly_discipline(trips: List[RoundTrip]) -> List[Dict]:
     """Discipline score per calendar month (by exit date) — the behaviour-over-time
     series that accumulates across uploads/syncs without re-uploading old data."""
@@ -303,6 +326,7 @@ class CoachReport:
     leaks: List[Leak] = field(default_factory=list)
     insights: Dict = field(default_factory=dict)
     monthly: List[Dict] = field(default_factory=list)
+    open_tail: Optional[Dict] = None  # buys newer than the last closed trade
     quarterly: List[Dict] = field(default_factory=list)
     # Single coherent counterfactual: P&L under disciplined rules (size cap + stop),
     # and the swing vs. actual. This is the defensible headline number — NOT the sum
@@ -568,6 +592,7 @@ def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
     report.discipline_score = _discipline_score(trips, leaks, abs(total_pnl))
     report.insights = behavioral_insights(trips, leaks)
     report.monthly = monthly_discipline(trips)
+    report.open_tail = open_tail(txns, trips)
     report.quarterly = quarterly_discipline(trips)
     if narrate:
         try:

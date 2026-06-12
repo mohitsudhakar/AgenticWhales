@@ -37,12 +37,53 @@ def _require_user(user_id: str) -> Optional[JSONResponse]:
     return None
 
 
+def _sync_status(user_id: str) -> dict:
+    """Ingestion transparency: when the last sync ran, what date range the
+    stored history covers, and how many rows we hold. All derived — no new
+    tables. `last_synced_at` needs the coach_audits.origin column
+    (docs/migrations/2026-06-10_coach_audit_origin.sql); until that migration
+    runs it degrades to null rather than breaking the endpoint."""
+    from agenticwhales.transactions.models import normalize_date
+    txns = auth.get_coach_trades(user_id)
+    # Raw dict reads bypass the Transaction model's date normalization, and a
+    # lexicographic min/max over mixed formats ('01/02/2025' vs '2024-…')
+    # would report a nonsense window — normalize and keep ISO-shaped only.
+    dates = sorted(d for t in txns if t.get("date")
+                   for d in [normalize_date(str(t.get("date", "")))[:10]]
+                   if len(d) == 10 and d[:4].isdigit() and d[4] == "-")
+    last_synced = None
+    try:
+        if auth._db_writable():
+            rows = auth._select_columns(
+                "coach_audits", filters={"user_id": user_id},
+                select="created_at,origin", order="created_at.desc", limit=100)
+        else:
+            rows = sorted((r for (t, _), r in auth._memstore.items()
+                           if t == "coach_audits" and r.get("user_id") == user_id),
+                          key=lambda r: r.get("created_at") or "", reverse=True)
+        for r in rows:
+            if str(r.get("origin") or "").startswith("sync"):
+                last_synced = r.get("created_at")
+                break
+    except Exception as exc:  # noqa: BLE001 — status must never 500
+        log.warning("sync status derivation failed: %s", exc)
+    return {
+        "last_synced_at": last_synced,
+        "history_start": dates[0] if dates else None,
+        "history_end": dates[-1] if dates else None,
+        "n_transactions": len(txns),
+    }
+
+
 @router.get("/api/snaptrade/status")
 async def snaptrade_status(user_id: str = Depends(optional_user_id)):
     configured = snaptrade_client.from_env() is not None
     connected = bool(configured and user_id and user_id != auth.ANONYMOUS_USER_ID
                      and auth.get_snaptrade_user(user_id))
-    return {"configured": configured, "connected": connected}
+    out = {"configured": configured, "connected": connected}
+    if connected:
+        out["sync"] = _sync_status(user_id)
+    return out
 
 
 class ConnectPayload(BaseModel):
@@ -91,11 +132,15 @@ def _sync_core(user_id: str, client, rec, *, lookback_days: int = 365 * 3,
     txns = snaptrade_normalize.normalize_activities(activities)
     if not txns:
         return None
+    before = len(auth.get_coach_trades(user_id))
     audit_txns = _merge_user_trades(user_id, txns)  # accumulate the timeline
     report = coach.audit_trades(audit_txns, price_fetcher=prices.fetch_ohlc)
     out = report.to_dict()
     out["n_transactions"] = len(audit_txns)
-    out["new_transactions"] = len(txns)
+    # "new" = rows the merge actually ADDED after dedupe — a full 3-year re-pull
+    # of unchanged history is 0 new, and the UI says so honestly.
+    out["new_transactions"] = max(0, len(audit_txns) - before)
+    out["pulled_transactions"] = len(txns)
     out["source"] = "snaptrade"
     _persist_audit(user_id, out, audit_txns, origin=origin)
     # "broker connected" means data actually flowed, not that a portal URL was

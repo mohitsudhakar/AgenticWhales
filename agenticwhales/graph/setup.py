@@ -63,7 +63,9 @@ class GraphSetup:
         self.blind_first_round = blind_first_round
 
     def setup_graph(
-        self, selected_analysts=["market", "quant", "social", "news", "fundamentals"]
+        self,
+        selected_analysts=["market", "quant", "social", "news", "fundamentals"],
+        stop_after_research: bool = False,
     ):
         """Set up and compile the agent workflow graph.
 
@@ -74,6 +76,11 @@ class GraphSetup:
                 - "social": Social media analyst
                 - "news": News analyst
                 - "fundamentals": Fundamentals analyst
+            stop_after_research: Analyst Desk ("brief") mode — the graph ends at
+                the Research Manager's synthesis. The Trader / risk-debate /
+                Portfolio Manager nodes are not even added, so a brief can never
+                produce a rating, sizing, or order. The full tail remains for
+                recipe-fired (lab) sessions.
         """
         if len(selected_analysts) == 0:
             raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
@@ -131,23 +138,26 @@ class GraphSetup:
         bear_researcher_node = create_bear_researcher(
             self.bear_llm, blind_first_round=self.blind_first_round
         )
-        research_manager_node = create_research_manager(self.research_manager_llm)
-        trader_node = create_trader(self.quick_thinking_llm)
+        research_manager_node = create_research_manager(
+            self.research_manager_llm, brief=stop_after_research
+        )
 
-        # Create risk analysis nodes. Each debater gets its own bound LLM
-        # so the three perspectives are sourced from different model
+        # Trading tail (full mode only). Each risk debater gets its own bound
+        # LLM so the three perspectives are sourced from different model
         # families; the Portfolio Manager synthesizes from a fourth
         # (architecturally distinct) family.
-        aggressive_analyst = create_aggressive_debator(
-            self.aggressive_llm, blind_first_round=self.blind_first_round
-        )
-        neutral_analyst = create_neutral_debator(
-            self.neutral_llm, blind_first_round=self.blind_first_round
-        )
-        conservative_analyst = create_conservative_debator(
-            self.conservative_llm, blind_first_round=self.blind_first_round
-        )
-        portfolio_manager_node = create_portfolio_manager(self.portfolio_manager_llm)
+        if not stop_after_research:
+            trader_node = create_trader(self.quick_thinking_llm)
+            aggressive_analyst = create_aggressive_debator(
+                self.aggressive_llm, blind_first_round=self.blind_first_round
+            )
+            neutral_analyst = create_neutral_debator(
+                self.neutral_llm, blind_first_round=self.blind_first_round
+            )
+            conservative_analyst = create_conservative_debator(
+                self.conservative_llm, blind_first_round=self.blind_first_round
+            )
+            portfolio_manager_node = create_portfolio_manager(self.portfolio_manager_llm)
 
         # Create workflow
         workflow = StateGraph(AgentState)
@@ -164,11 +174,12 @@ class GraphSetup:
         workflow.add_node("Bull Researcher", bull_researcher_node)
         workflow.add_node("Bear Researcher", bear_researcher_node)
         workflow.add_node("Research Manager", research_manager_node)
-        workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
-        workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        if not stop_after_research:
+            workflow.add_node("Trader", trader_node)
+            workflow.add_node("Aggressive Analyst", aggressive_analyst)
+            workflow.add_node("Neutral Analyst", neutral_analyst)
+            workflow.add_node("Conservative Analyst", conservative_analyst)
+            workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
         # Define edges
         # Start with the first analyst
@@ -213,6 +224,11 @@ class GraphSetup:
                 "Research Manager": "Research Manager",
             },
         )
+        if stop_after_research:
+            # Analyst Desk brief: synthesis is the terminal output.
+            workflow.add_edge("Research Manager", END)
+            return workflow
+
         workflow.add_edge("Research Manager", "Trader")
         workflow.add_edge("Trader", "Aggressive Analyst")
         workflow.add_conditional_edges(

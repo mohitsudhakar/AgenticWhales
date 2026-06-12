@@ -76,14 +76,60 @@ class SnapTradeClient:
         return self._request("GET", "/accounts",
                              query={"userId": user_id, "userSecret": user_secret})
 
-    def get_activities(self, user_id: str, user_secret: str, *,
-                       start: Optional[str] = None, end: Optional[str] = None) -> List[Dict]:
-        q = {"userId": user_id, "userSecret": user_secret}
+    def get_account_activities(self, user_id: str, user_secret: str,
+                               account_id: str, *, start: Optional[str] = None,
+                               end: Optional[str] = None) -> List[Dict]:
+        """Paged activities for ONE account (the endpoint SnapTrade kept).
+        Handles both the paginated ``{"data": [...], "pagination": {...}}``
+        shape and a bare list, defensively."""
+        q: Dict[str, str] = {"userId": user_id, "userSecret": user_secret,
+                             "limit": "500"}
         if start:
             q["startDate"] = start
         if end:
             q["endDate"] = end
-        return self._request("GET", "/activities", query=q)
+        out: List[Dict] = []
+        offset = 0
+        while True:
+            page = self._request("GET", f"/accounts/{account_id}/activities",
+                                 query={**q, "offset": str(offset)})
+            rows = page.get("data") if isinstance(page, dict) else page
+            if not isinstance(rows, list):
+                rows = []
+            out.extend(rows)
+            pagination = page.get("pagination") if isinstance(page, dict) else None
+            total = (pagination or {}).get("total")
+            if not rows or total is None or offset + len(rows) >= int(total):
+                break
+            offset += len(rows)
+            if offset > 100_000:   # hard stop against a misbehaving API
+                break
+        return out
+
+    def get_activities(self, user_id: str, user_secret: str, *,
+                       start: Optional[str] = None, end: Optional[str] = None) -> List[Dict]:
+        """All activities across the user's connected accounts.
+
+        SnapTrade RETIRED the global ``GET /activities`` endpoint (it returns
+        410 Gone as of 2026); activities are per-account now. Same public
+        signature as before: list accounts, fan out, concatenate. One broken
+        account doesn't sink the others — we only raise if every account
+        failed and nothing was retrieved."""
+        accounts = self.list_accounts(user_id, user_secret) or []
+        out: List[Dict] = []
+        first_error: Optional[Exception] = None
+        for account in accounts:
+            account_id = account.get("id")
+            if not account_id:
+                continue
+            try:
+                out.extend(self.get_account_activities(
+                    user_id, user_secret, account_id, start=start, end=end))
+            except Exception as exc:  # noqa: BLE001 — isolate per-account failures
+                first_error = first_error or exc
+        if first_error is not None and not out:
+            raise first_error
+        return out
 
 
 def from_env() -> Optional[SnapTradeClient]:

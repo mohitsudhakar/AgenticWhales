@@ -51,6 +51,37 @@ PROVIDERS = [
     # {"key": "ollama", "label": "Ollama", "url": "http://localhost:11434/v1"},
 ]
 
+# Which env var(s) make a provider usable. A provider with no configured key is
+# still listed in /api/config (so the UI can explain) but flagged
+# `configured: false`, and session/batch creation fails FAST with a clear 400 —
+# never a mid-run pydantic error after the user's quota slot is spent.
+_PROVIDER_KEY_ENVS: Dict[str, List[str]] = {
+    "openai": ["OPENAI_API_KEY"],
+    "google": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+    "anthropic": ["ANTHROPIC_API_KEY"],
+    "xai": ["XAI_API_KEY"],
+    "deepseek": ["DEEPSEEK_API_KEY"],
+    "qwen": ["DASHSCOPE_API_KEY"],
+    "glm": ["ZHIPU_API_KEY"],
+    "ollama": [],   # local — no key needed
+}
+
+
+def provider_configured(key: str) -> bool:
+    envs = _PROVIDER_KEY_ENVS.get((key or "").lower())
+    if envs is None:
+        return False
+    return not envs or any(os.getenv(e) for e in envs)
+
+
+def _require_provider(provider: str) -> None:
+    if not provider_configured(provider):
+        envs = _PROVIDER_KEY_ENVS.get((provider or "").lower(), [])
+        hint = f" — set {envs[0]} in .env and restart" if envs else ""
+        raise HTTPException(
+            400, f"The '{provider}' provider isn't configured on this server{hint}, "
+                 "or pick a configured provider.")
+
 LANGUAGES = [
     "English", "Chinese", "Japanese", "Korean", "Hindi", "Spanish",
     "Portuguese", "French", "German", "Arabic", "Russian",
@@ -178,14 +209,13 @@ async def root_page() -> HTMLResponse:
     return _render_html("home.html")
 
 
-@app.get("/signin", response_class=HTMLResponse)
-async def signin_page() -> HTMLResponse:
-    """Sign-in / disclaimer gate. landing.js does the conditional redirect to
-    /fund once Supabase reports a signed-in user — and Google OAuth returns to
-    THIS path (redirectTo = origin + pathname), so it must be a stable URL that
-    serves landing.html. Must NOT be a server-side 307 (it would race against
-    /fund's own 'redirect to /signin when signed out' gate → reload loop)."""
-    return _render_html("landing.html")
+@app.get("/signin")
+async def signin_page() -> RedirectResponse:
+    """The fund-era sign-in gate is retired (it bounced signed-in users to
+    /fund). /coach handles both auth states, so every legacy /signin link —
+    old bookmarks, fund.js's signed-out gate — lands somewhere sensible.
+    No redirect loop is possible: /coach never redirects signed-out users."""
+    return RedirectResponse("/coach", status_code=307)
 
 
 @app.get("/fund", response_class=HTMLResponse)
@@ -196,8 +226,10 @@ async def fund_page() -> HTMLResponse:
 
 @app.get("/analyze", response_class=HTMLResponse)
 async def analyze_page() -> HTMLResponse:
-    """Power-user surface: one-shot analyses + batches with full model picker."""
-    return _render_html("index.html")
+    """The Analyst Desk: multi-agent research briefs (debate → synthesis, no
+    ratings) + baskets. Redesigned 2026-06-11 in the coach UI language; the
+    fund-era dark SPA (index.html/app.js) was retired with it."""
+    return _render_html("desk.html")
 
 
 @app.get("/coach", response_class=HTMLResponse)
@@ -440,7 +472,8 @@ async def get_config() -> Dict[str, Any]:
     ]
     teams.extend({"name": name, "agents": list(agents)} for name, agents in FIXED_TEAMS)
     return {
-        "providers": PROVIDERS,
+        "providers": [{**p, "configured": provider_configured(p["key"])}
+                      for p in PROVIDERS],
         "models": MODEL_OPTIONS,
         "analysts": [{"key": a, "label": ANALYST_AGENT_NAMES[a]} for a in ANALYST_ORDER],
         "teams": teams,
@@ -460,6 +493,12 @@ def _summary(s: Dict[str, Any]) -> Dict[str, Any]:
     # Activity tables can render the verdict / price target without an N+1
     # round-trip per row. The full session is still fetched on demand for
     # the detail view.
+    #
+    # Analyst Desk briefs (session_type == "brief") end at the research
+    # synthesis by construction — no rating/sizing exists, and the API
+    # contract guarantees none ever appears (masked defensively here so
+    # legacy/merged rows can't leak one either).
+    brief = s.get("session_type") == "brief"
     return {
         "id": s["id"],
         "ticker": s["ticker"],
@@ -467,9 +506,26 @@ def _summary(s: Dict[str, Any]) -> Dict[str, Any]:
         "status": s["status"],
         "created_at": s["created_at"],
         "completed_at": s.get("completed_at"),
-        "pm_decision": s.get("pm_decision") or s.get("portfolio_decision"),
+        "session_type": s.get("session_type", "full"),
+        "pm_decision": None if brief
+        else (s.get("pm_decision") or s.get("portfolio_decision")),
         "failure_reason": s.get("failure_reason"),
     }
+
+
+def _mask_brief(s: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip decision artifacts from a brief session's detail payload."""
+    if s.get("session_type") != "brief":
+        return s
+    s = dict(s)
+    s.pop("pm_decision", None)
+    s.pop("portfolio_decision", None)
+    sections = s.get("report_sections")
+    if isinstance(sections, dict) and "final_trade_decision" in sections:
+        sections = dict(sections)
+        sections.pop("final_trade_decision", None)
+        s["report_sections"] = sections
+    return s
 
 
 @app.get("/api/sessions")
@@ -546,6 +602,17 @@ async def create_session(
             summary["cached"] = True
             return summary
 
+    # Fail fast on an unconfigured provider — before quota, before any work.
+    _require_provider(payload.llm_provider)
+
+    # Server-side quota — the browser check is UX, this is the enforcement.
+    # (Cache hits above deliberately don't burn quota, matching the client.)
+    allowed, quota = auth.check_analysis_quota(user_id, units=1)
+    if not allowed:
+        raise HTTPException(
+            429, f"Daily analysis limit reached ({quota['used']}/{quota['cap']} "
+                 f"on the {quota['tier']} tier). Resets at midnight UTC.")
+
     session = build_session(payload.model_dump())
     session["user_id"] = user_id
     # Stamp the signature so future cache lookups can match it back.
@@ -571,10 +638,10 @@ async def get_session(sid: str, user_id: str = Depends(get_current_user_id)) -> 
     runner = _runners.get(sid)
     if runner:
         _ensure_owner(runner.session, user_id)
-        return runner.snapshot()
+        return _mask_brief(runner.snapshot())
     s = storage.load(sid)
     _ensure_owner(s, user_id)
-    return s
+    return _mask_brief(s)
 
 
 @app.delete("/api/sessions/{sid}")
@@ -686,6 +753,15 @@ async def create_batch(
     payload: CreateBatchPayload,
     user_id: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
+    _require_provider(payload.llm_provider)
+    # A basket consumes one quota unit per ticker (mirrors the client).
+    n_tickers = len([t for t in (payload.tickers or []) if t and t.strip()])
+    allowed, quota = auth.check_analysis_quota(user_id, units=max(1, n_tickers))
+    if not allowed:
+        raise HTTPException(
+            429, f"This basket needs {max(1, n_tickers)} analyses but you've "
+                 f"used {quota['used']}/{quota['cap']} on the {quota['tier']} "
+                 f"tier today. Resets at midnight UTC.")
     batch = build_batch(payload.model_dump())
     batch["user_id"] = user_id
     batch_storage.save(batch)

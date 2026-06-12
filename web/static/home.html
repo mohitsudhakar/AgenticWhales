@@ -12,6 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Lora:wght@600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script type="module" src="/static/supabase-client.js"></script>
   <script>
     tailwind.config = { theme: { extend: {
       colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2', emerald: '#1F6F54', amber: '#B45309', crimson: '#B3261E' },
@@ -39,9 +40,10 @@
       <div class="flex items-center gap-5 text-sm text-muted">
         <a href="/learn" class="hidden sm:inline hover:text-ink transition">Learn</a>
         <a href="/methodology" class="hidden sm:inline hover:text-ink transition">Methodology</a>
+        <a href="/analyze" class="hidden sm:inline hover:text-ink transition">Analyst desk</a>
         <a href="/pricing" class="hover:text-ink transition">Pricing</a>
         <a href="/coach" class="hover:text-ink transition">Open the coach</a>
-        <a href="/signin" class="border border-line rounded-full px-4 py-1.5 hover:bg-white transition">Sign in</a>
+        <button id="homeSignIn" class="border border-line rounded-full px-4 py-1.5 hover:bg-white transition">Sign in</button>
       </div>
     </div>
   </nav>
@@ -163,7 +165,7 @@
        <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a> ·
        <a href="/learn" class="underline underline-offset-2 hover:text-ink">Learn</a> ·
        <a href="/pricing" class="underline underline-offset-2 hover:text-ink">Pricing</a> ·
-       <a href="/signin" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
+       <a href="/coach" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
   </footer>
 
 <script>
@@ -175,6 +177,25 @@ try {
   const ref = new URLSearchParams(location.search).get('ref');
   if (ref && !localStorage.getItem('aw_ref')) localStorage.setItem('aw_ref', ref);
 } catch (e) {}
+
+// ---- Auth: the landing is for prospects. Direct Google sign-in from here,
+// and anyone ALREADY signed in goes straight to their coach — no marketing
+// page for people who are past it.
+const isSignedIn = (u) => !!(u && !u.isGuest && (u.email || u.displayName));
+function watchAuth(n = 0){
+  const auth = window.AgenticWhalesAuth;
+  if (!auth) { if (n < 40) setTimeout(() => watchAuth(n + 1), 150); return; }
+  $id('homeSignIn').onclick = () => auth.signInWithGoogle?.();
+  auth.onChange((u) => { if (isSignedIn(u)) window.location.replace('/coach'); });
+  // OAuth-return race: SIGNED_IN can fire before onChange attaches.
+  let tries = 0;
+  const settle = setInterval(() => {
+    const u = auth.getUser && auth.getUser();
+    if (isSignedIn(u)) { clearInterval(settle); window.location.replace('/coach'); }
+    else if (++tries > 15) clearInterval(settle);
+  }, 400);
+}
+watchAuth();
 
 // ---- The activation path: files -> upload_async -> /coach#job=<id> ----
 async function homeUpload(fileList){

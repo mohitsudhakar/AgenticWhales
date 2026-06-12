@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgenticWhales — Analyst Desk</title>
+  <meta name="description" content="A pod of AI analysts reads the filings, the tape and the news, debates it bull vs bear, and writes you the research brief. No ratings, no recommendations — you decide." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <script type="module" src="/static/supabase-client.js"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: { cream: '#FAF6EE', ink: '#1A1A17', muted: '#6B6657', line: '#E7E0D2',
+                  emerald: '#1F6F54', amber: '#B45309', crimson: '#B3261E' },
+        fontFamily: { sans: ['Inter','sans-serif'], display: ['Instrument Serif','Georgia','serif'] },
+      }}
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    /* Sticky-nav clearance for anchored sections. */
+    section[id], header[id] { scroll-margin-top: 96px; }
+    body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
+    .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
+    .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
+    .glass { background: rgba(255,255,255,0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+             border: 1px solid rgba(231,224,210,0.9); }
+    .card { background: #FFFDF9; border: 1px solid #E7E0D2; border-radius: 18px;
+            box-shadow: 0 1px 2px rgba(26,26,23,0.03), 0 8px 30px rgba(26,26,23,0.04); }
+    .pill { font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    .fade-in { animation: fade .5s ease both; } @keyframes fade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .dot { width:8px; height:8px; border-radius:99px; display:inline-block; }
+    .dot.pending { background:#E7E0D2; } .dot.in_progress { background:#B45309; animation:pulse 1.2s ease-in-out infinite; }
+    .dot.completed { background:#1F6F54; }
+    @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+    .markdown h1,.markdown h2,.markdown h3 { font-family:'Instrument Serif',Georgia,serif; margin:1em 0 .4em; font-size:1.35em; }
+    .markdown p { margin:.55em 0; line-height:1.65; }
+    .markdown ul,.markdown ol { padding-left:1.3em; margin:.55em 0; line-height:1.6; }
+    .markdown li { margin:.25em 0; list-style:disc; }
+    .markdown strong { color:#1A1A17; }
+    .markdown table { border-collapse:collapse; margin:.7em 0; font-size:.92em; }
+    .markdown th,.markdown td { border:1px solid #E7E0D2; padding:5px 10px; }
+    .markdown code { background:rgba(26,26,23,.05); border-radius:5px; padding:1px 5px; font-size:.9em; }
+    .markdown pre { background:rgba(26,26,23,.05); border-radius:10px; padding:12px; overflow:auto; }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="sticky top-0 z-40 glass">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <a href="/" class="flex items-center gap-2.5"><span class="text-xl">🐋</span>
+          <span class="font-logo text-xl">AgenticWhales</span></a>
+        <span class="hidden sm:inline pill text-muted ml-2 border-l border-line pl-3">Analyst Desk</span>
+      </div>
+      <div class="flex items-center gap-5 text-sm text-muted">
+        <a href="#new" class="hover:text-ink transition">New brief</a>
+        <a href="#history" class="hidden sm:inline hover:text-ink transition">Past briefs</a>
+        <a href="/coach" class="hover:text-ink transition">Coach</a>
+        <a href="/pricing" class="hidden sm:inline hover:text-ink transition">Pricing</a>
+        <span id="usagePill" class="hidden pill text-muted border border-line rounded-full px-2.5 py-1"></span>
+        <div id="account" class="hidden items-center gap-2.5 pl-2 border-l border-line">
+          <img id="accAvatar" class="hidden w-8 h-8 rounded-full border border-line" alt="" referrerpolicy="no-referrer">
+          <span id="accInitial" class="hidden w-8 h-8 rounded-full bg-emerald/10 text-emerald text-sm font-semibold items-center justify-center"></span>
+          <span class="leading-tight text-left hidden sm:block">
+            <span id="accName" class="block text-ink text-[13px] font-medium max-w-[150px] truncate"></span>
+            <span id="accTier" class="block pill text-muted"></span>
+          </span>
+          <button id="signOutBtn" title="Sign out"
+                  class="border border-line rounded-full px-3.5 py-1.5 text-xs hover:bg-white transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Sign out</span></button>
+        </div>
+        <button id="authBtn" class="hidden bg-ink text-cream rounded-full px-4 py-1.5 hover:opacity-90 transition">Sign in</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Persistent compliance strip -->
+  <div class="border-b border-line bg-cream">
+    <div class="max-w-6xl mx-auto px-6 py-1.5 text-[11px] text-muted flex flex-wrap gap-x-5 gap-y-0.5">
+      <span><span class="text-ink font-medium">Research synthesis, not investment advice.</span>
+        Briefs end at analysis — no ratings, no price targets, no trade decisions. You decide.</span>
+      <span class="hidden lg:inline"><a href="/methodology" class="underline underline-offset-2 hover:text-ink">Methodology</a>
+        · <a href="/security" class="underline underline-offset-2 hover:text-ink">Your data</a></span>
+    </div>
+  </div>
+
+  <!-- Hero + new brief -->
+  <header id="new" class="max-w-6xl mx-auto px-6 pt-16 pb-10">
+    <div class="max-w-3xl mb-8">
+      <div class="pill text-emerald mb-5">They analyze. You decide.</div>
+      <h1 class="font-display text-5xl sm:text-6xl leading-[1.05] mb-5">Put your <span class="italic">analysts</span> on it.</h1>
+      <p class="text-lg text-muted leading-relaxed max-w-2xl">Name a ticker and a pod of AI analysts reads the tape,
+        the news, the filings and the sentiment — argues it bull vs. bear — and writes you the brief a human desk
+        would. Watch them work, audit every word.</p>
+    </div>
+
+    <div class="card p-7">
+      <div class="grid sm:grid-cols-[1fr_auto_auto] gap-4 items-end">
+        <label class="flex flex-col gap-1.5 text-sm"><span class="text-muted">Ticker — or several, for a basket</span>
+          <input id="f-ticker" placeholder="NVDA — or: SPY QQQ TLT" autocomplete="off"
+                 class="border border-line rounded-lg px-3 py-2.5 bg-cream/40 text-base"></label>
+        <label class="flex flex-col gap-1.5 text-sm"><span class="text-muted">As of</span>
+          <input id="f-date" type="date" class="border border-line rounded-lg px-3 py-2.5 bg-cream/40"></label>
+        <button id="goBtn" class="bg-ink text-cream px-7 py-2.5 rounded-full text-sm font-medium hover:opacity-90 transition flex items-center gap-2">
+          <i data-lucide="pen-line" class="w-4 h-4"></i> <span id="goLabel">Brief me</span></button>
+      </div>
+      <div class="mt-5 flex flex-wrap items-center gap-2 text-sm">
+        <span class="text-muted mr-1">Desks:</span>
+        <div id="f-analysts" class="flex flex-wrap gap-2"></div>
+        <span class="text-muted ml-4 mr-1">Debate depth:</span>
+        <select id="f-depth" class="border border-line rounded-lg px-2.5 py-1.5 bg-cream/40 text-sm">
+          <option value="1" selected>1 round — quick read</option>
+          <option value="2">2 rounds — standard</option>
+          <option value="3">3 rounds — thorough</option>
+        </select>
+      </div>
+      <details class="mt-4 text-sm">
+        <summary class="text-muted cursor-pointer hover:text-ink transition">Advanced — models &amp; language</summary>
+        <div class="grid sm:grid-cols-4 gap-4 mt-3">
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Provider</span>
+            <select id="f-provider" class="border border-line rounded-lg px-2.5 py-2 bg-cream/40"></select></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Analyst model (quick)</span>
+            <select id="f-quick" class="border border-line rounded-lg px-2.5 py-2 bg-cream/40"></select></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Synthesis model (deep)</span>
+            <select id="f-deep" class="border border-line rounded-lg px-2.5 py-2 bg-cream/40"></select></label>
+          <label class="flex flex-col gap-1.5"><span class="text-muted">Language</span>
+            <select id="f-language" class="border border-line rounded-lg px-2.5 py-2 bg-cream/40"></select></label>
+        </div>
+      </details>
+      <p id="formError" class="hidden text-sm text-crimson mt-4"></p>
+    </div>
+  </header>
+
+  <!-- Live brief -->
+  <section id="brief" class="max-w-6xl mx-auto px-6 py-10 hidden">
+    <div class="flex items-end justify-between mb-6 flex-wrap gap-3">
+      <div>
+        <div class="pill text-muted mb-2">The brief</div>
+        <h2 class="font-display text-4xl"><span id="b-ticker">—</span>
+          <span id="b-date" class="text-2xl text-muted"></span></h2>
+        <p id="b-stats" class="text-xs text-muted mt-1"></p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="b-status" class="pill text-amber border border-line rounded-full px-3 py-1">pending</span>
+        <button id="b-cancel" class="hidden text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition">Cancel</button>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-[300px_1fr] gap-6 items-start">
+      <div class="card p-6">
+        <div class="pill text-muted mb-4">Your desk</div>
+        <div id="b-agents" class="space-y-4"></div>
+      </div>
+      <div class="card p-7">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-display text-2xl">Research synthesis</h3>
+          <span id="b-final-tag" class="pill text-muted border border-line rounded-full px-2.5 py-1">awaiting</span>
+        </div>
+        <div id="b-final" class="text-[15px] text-muted">The Research Manager will synthesize the debate once it concludes…</div>
+        <p class="text-[11px] text-muted mt-5 pt-4 border-t border-line">Research synthesis for education — where the
+          evidence converges, where the analysts disagree, and what would change their minds. No rating, no
+          recommendation; the decision is yours.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Basket view -->
+  <section id="basket" class="max-w-6xl mx-auto px-6 py-10 hidden">
+    <div class="flex items-end justify-between mb-6 flex-wrap gap-3">
+      <div>
+        <div class="pill text-muted mb-2">The basket</div>
+        <h2 class="font-display text-4xl"><span id="k-count">—</span> tickers
+          <span id="k-date" class="text-2xl text-muted"></span></h2>
+      </div>
+      <span id="k-status" class="pill text-amber border border-line rounded-full px-3 py-1">pending</span>
+    </div>
+    <div class="card p-6">
+      <table class="w-full text-sm">
+        <thead><tr class="text-muted pill text-left">
+          <th class="font-normal pb-2">Ticker</th><th class="font-normal pb-2">Status</th>
+          <th class="font-normal pb-2 text-right">Brief</th></tr></thead>
+        <tbody id="k-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- History -->
+  <section id="history" class="max-w-6xl mx-auto px-6 py-14">
+    <div class="pill text-muted mb-2">The archive</div>
+    <h2 class="font-display text-4xl mb-2">Past briefs</h2>
+    <p id="historyHint" class="text-muted mb-8 max-w-2xl">Sign in and every brief is saved — reopen any of them and
+      audit what each analyst argued, agent by agent.</p>
+    <div class="grid md:grid-cols-2 gap-6 items-start">
+      <div>
+        <h3 class="font-display text-2xl mb-3">Briefs</h3>
+        <div id="sessionsList" class="space-y-2.5"></div>
+      </div>
+      <div>
+        <h3 class="font-display text-2xl mb-3">Baskets</h3>
+        <div id="batchesList" class="space-y-2.5"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="max-w-6xl mx-auto px-6 py-12 mt-8 border-t border-line text-sm text-muted">
+    <p class="max-w-3xl mb-3"><span class="text-ink font-medium">Research synthesis, not investment advice.</span>
+    Your analysts read, debate and summarize; they deliberately produce no rating, recommendation, or price target,
+    and nothing here places trades. Part of your trading back office: the
+    <a href="/coach" class="underline underline-offset-2 hover:text-ink">coach</a> disciplines you, the analysts brief
+    you — nobody trades for you.</p>
+    <p class="max-w-3xl"><a href="/methodology" class="underline underline-offset-2 hover:text-ink">How it works</a>
+    · <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a>
+    · <a href="/pricing" class="underline underline-offset-2 hover:text-ink">Pricing</a></p>
+  </footer>
+
+  <!-- Agent report modal -->
+  <div id="agentModal" class="hidden fixed inset-0 z-50 bg-ink/30 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8">
+    <div class="card max-w-3xl w-full max-h-[85vh] flex flex-col">
+      <div class="flex items-start justify-between gap-4 p-6 border-b border-line">
+        <div>
+          <div id="m-team" class="pill text-muted mb-1"></div>
+          <h3 id="m-title" class="font-display text-3xl">Agent</h3>
+        </div>
+        <button onclick="closeAgentModal()" class="text-muted hover:text-ink transition text-xl leading-none">✕</button>
+      </div>
+      <div id="m-body" class="p-6 overflow-y-auto text-[15px]"></div>
+    </div>
+  </div>
+
+<script>
+// Auto-attach the Supabase bearer token to every /api/* call (mirrors coach.html).
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function(input, init){
+  const url = typeof input === 'string' ? input : (input?.url || '');
+  if (url.startsWith('/api/')) {
+    const token = window.AgenticWhalesAuth?.getAccessToken?.();
+    if (token) { init = init ? {...init} : {}; const h = new Headers(init.headers || (typeof input!=='string'?input.headers:undefined));
+      if(!h.has('Authorization')) h.set('Authorization', `Bearer ${token}`); init.headers = h; }
+  }
+  return _origFetch(input, init);
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const md = (s) => (typeof marked !== 'undefined') ? marked.parse(s || '') : `<pre>${esc(s)}</pre>`;
+
+const state = { config: null, session: null, ws: null, batch: null, batchTimer: null, analysts: ['market','quant','news'] };
+
+// ---- config + form ----
+async function loadConfig(){
+  state.config = await (await fetch('/api/config')).json();
+  const c = state.config;
+  // providers: [{key, label, url, configured}] — unconfigured ones stay
+  // visible but disabled so a missing server key is self-explanatory.
+  const configured = c.providers.filter(p => p.configured);
+  const preferred = configured.some(p => p.key === c.defaults.provider)
+    ? c.defaults.provider : (configured[0]?.key || c.defaults.provider);
+  $('f-provider').innerHTML = c.providers.map(p =>
+    `<option value="${esc(p.key)}" ${p.configured ? '' : 'disabled'} ${p.key===preferred?'selected':''}>
+       ${esc(p.label || p.key)}${p.configured ? '' : ' — no key on server'}</option>`).join('');
+  if (!configured.length) {
+    formError('No LLM provider is configured on this server — add GOOGLE_API_KEY or ' +
+              'DEEPSEEK_API_KEY to .env and restart it, then your analysts can work.');
+  }
+  $('f-language').innerHTML = c.languages.map(l => `<option>${esc(l)}</option>`).join('');
+  renderAnalystChips();
+  populateModels();
+  $('f-provider').onchange = populateModels;
+}
+
+function populateModels(){
+  const c = state.config, p = $('f-provider').value;
+  const m = (c.models || {})[p] || {quick: [], deep: []};
+  const opts = (list, preferred) => (list || []).map(([label, id]) =>
+    `<option value="${esc(id)}" ${id===preferred?'selected':''}>${esc(label)}</option>`).join('');
+  $('f-quick').innerHTML = opts(m.quick, c.defaults.quick_model);
+  $('f-deep').innerHTML = opts(m.deep, c.defaults.deep_model);
+}
+
+function renderAnalystChips(){
+  $('f-analysts').innerHTML = state.config.analysts.map(a => `
+    <button data-analyst="${a.key}" class="chip border rounded-full px-3 py-1 text-xs transition ${
+      state.analysts.includes(a.key) ? 'border-emerald text-emerald bg-emerald/5' : 'border-line text-muted hover:text-ink'}">
+      ${esc(a.label.replace(' Analyst',''))}</button>`).join('');
+  document.querySelectorAll('#f-analysts .chip').forEach(b => b.onclick = () => {
+    const k = b.dataset.analyst;
+    state.analysts = state.analysts.includes(k) ? state.analysts.filter(x => x !== k) : [...state.analysts, k];
+    if (!state.analysts.length) state.analysts = [k];   // never empty
+    renderAnalystChips();
+  });
+}
+
+function formError(msg){
+  const el = $('formError');
+  if (!msg) { el.classList.add('hidden'); return; }
+  el.innerHTML = msg;
+  el.classList.remove('hidden');
+}
+
+// ---- create brief / basket ----
+$('goBtn').onclick = async () => {
+  formError(null);
+  const tickers = ($('f-ticker').value || '').toUpperCase().split(/[\s,;]+/).filter(Boolean);
+  if (!tickers.length) { formError('Name at least one ticker.'); return; }
+  const base = {
+    analysis_date: $('f-date').value,
+    llm_provider: $('f-provider').value,
+    quick_think_llm: $('f-quick').value,
+    deep_think_llm: $('f-deep').value,
+    research_depth: parseInt($('f-depth').value, 10),
+    analysts: state.analysts,
+    output_language: $('f-language').value,
+  };
+  $('goBtn').disabled = true; $('goLabel').textContent = 'Dispatching…';
+  try {
+    if (tickers.length === 1) {
+      const r = await fetch('/api/sessions', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({...base, ticker: tickers[0]})});
+      const j = await r.json();
+      if (!r.ok) throw {status: r.status, detail: j.detail};
+      openSession(j.id, !!j.cached);
+    } else {
+      const r = await fetch('/api/batches', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({...base, tickers})});
+      const j = await r.json();
+      if (!r.ok) throw {status: r.status, detail: j.detail};
+      openBatch(j.id);
+    }
+    loadHistory();
+  } catch (e) {
+    if (e.status === 429) {
+      formError(`${esc(e.detail || 'Daily limit reached.')} <a class="underline" href="/pricing">See plans</a>.`);
+    } else if (e.status === 401) {
+      formError('Sign in (top right) to put your analysts to work.');
+    } else {
+      formError(esc(e.detail || e.message || 'Could not start the brief.'));
+    }
+  } finally {
+    $('goBtn').disabled = false; $('goLabel').textContent = 'Brief me';
+  }
+};
+
+// ---- live brief view ----
+const RESEARCH_TEAM = ['Bull Researcher', 'Bear Researcher', 'Research Manager'];
+
+function teamsFor(s){
+  const labels = Object.fromEntries(state.config.analysts.map(a => [a.key, a.label]));
+  const selected = (s.config?.analysts || []).map(k => labels[k]).filter(Boolean);
+  const inStatus = Object.keys(s.agent_status || {});
+  return [
+    ['Analyst Team', (selected.length ? selected : inStatus.filter(a => !RESEARCH_TEAM.includes(a)))],
+    ['Research Team', RESEARCH_TEAM.filter(a => inStatus.includes(a) || true)],
+  ];
+}
+
+function renderBrief(){
+  const s = state.session;
+  if (!s) return;
+  $('brief').classList.remove('hidden');
+  $('basket').classList.add('hidden');
+  $('b-ticker').textContent = s.ticker || '—';
+  $('b-date').textContent = s.analysis_date ? ` · ${s.analysis_date}` : '';
+  const st = s.status || 'pending';
+  const stEl = $('b-status');
+  stEl.textContent = st.replace('_', ' ');
+  stEl.className = `pill border border-line rounded-full px-3 py-1 ${
+    st === 'completed' ? 'text-emerald' : st === 'failed' || st === 'cancelled' ? 'text-crimson' : 'text-amber'}`;
+  $('b-cancel').classList.toggle('hidden', !(st === 'running' || st === 'pending'));
+  const stats = s.stats || {};
+  $('b-stats').textContent = (stats.llm_calls ? `${stats.llm_calls} model calls · ${stats.tool_calls || 0} tool calls` : '');
+
+  $('b-agents').innerHTML = teamsFor(s).map(([team, agents]) => `
+    <div>
+      <div class="pill text-muted mb-2">${esc(team)}</div>
+      ${agents.map(a => {
+        const status = (s.agent_status || {})[a] || 'pending';
+        const section = sectionFor(a);
+        const has = section && s.report_sections?.[section];
+        return `<button ${has ? `onclick="openAgentModal('${esc(a)}','${esc(team)}')"` : ''}
+          class="w-full flex items-center justify-between gap-2 py-1.5 text-sm ${has ? 'hover:text-emerald cursor-pointer' : 'cursor-default'}">
+          <span class="flex items-center gap-2"><span class="dot ${esc(status)}"></span>${esc(a)}</span>
+          ${has ? '<i data-lucide="file-text" class="w-3.5 h-3.5 text-muted"></i>' : ''}</button>`;
+      }).join('')}
+    </div>`).join('');
+
+  const synthesis = s.report_sections?.investment_plan;
+  const tag = $('b-final-tag');
+  if (synthesis) {
+    $('b-final').innerHTML = `<div class="markdown text-ink">${md(synthesis)}</div>`;
+    tag.textContent = 'synthesis'; tag.className = 'pill text-emerald border border-line rounded-full px-2.5 py-1';
+  } else if (st === 'failed') {
+    $('b-final').textContent = `The brief failed: ${s.error || 'unknown error'}`;
+    tag.textContent = 'failed'; tag.className = 'pill text-crimson border border-line rounded-full px-2.5 py-1';
+  } else if (st === 'cancelled') {
+    $('b-final').textContent = 'Cancelled before the synthesis was written.';
+    tag.textContent = 'cancelled'; tag.className = 'pill text-muted border border-line rounded-full px-2.5 py-1';
+  } else {
+    $('b-final').textContent = st === 'running'
+      ? 'Your analysts are working — reports appear on the left as they finish…'
+      : 'The Research Manager will synthesize the debate once it concludes…';
+    tag.textContent = st === 'running' ? 'in progress' : 'awaiting';
+    tag.className = 'pill text-amber border border-line rounded-full px-2.5 py-1';
+  }
+  lucide.createIcons();
+}
+
+function sectionFor(agent){
+  const map = state.config?.section_agent || {};
+  for (const [section, owner] of Object.entries(map)) if (owner === agent) return section;
+  return null;
+}
+
+async function openSession(id, fromCache){
+  closeWs();
+  stopBatchPoll();
+  const r = await fetch(`/api/sessions/${id}`);
+  if (!r.ok) return;
+  state.session = await r.json();
+  renderBrief();
+  document.getElementById('brief').scrollIntoView({behavior: 'smooth'});
+  if (!fromCache && ['pending', 'running'].includes(state.session.status)) openWs(id);
+}
+
+function openWs(id){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const token = window.AgenticWhalesAuth?.getAccessToken?.();
+  const ws = new WebSocket(`${proto}://${location.host}/api/sessions/${id}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+  state.ws = ws;
+  ws.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    const s = state.session;
+    if (!s) return;
+    if (ev.type === 'session') state.session = ev.session;
+    else if (ev.type === 'agent_status') (s.agent_status ||= {})[ev.agent] = ev.status;
+    else if (ev.type === 'report') (s.report_sections ||= {})[ev.section] = ev.content;
+    else if (ev.type === 'stats') s.stats = ev.stats;
+    renderBrief();
+    if (['completed', 'failed', 'cancelled'].includes(state.session?.status)) { closeWs(); loadHistory(); }
+  };
+  ws.onclose = () => { if (state.ws === ws) state.ws = null; };
+}
+
+function closeWs(){ try { state.ws?.close(); } catch(e){} state.ws = null; }
+
+$('b-cancel').onclick = async () => {
+  if (!state.session) return;
+  await fetch(`/api/sessions/${state.session.id}/cancel`, {method: 'POST'});
+};
+
+// ---- agent modal ----
+function openAgentModal(agent, team){
+  const s = state.session;
+  const section = sectionFor(agent);
+  const content = section ? s?.report_sections?.[section] : null;
+  $('m-title').textContent = agent;
+  $('m-team').textContent = team;
+  $('m-body').innerHTML = content
+    ? `<div class="markdown">${md(content)}</div>`
+    : '<p class="text-muted">No output yet.</p>';
+  $('agentModal').classList.remove('hidden');
+}
+function closeAgentModal(){ $('agentModal').classList.add('hidden'); }
+$('agentModal').onclick = (e) => { if (e.target === $('agentModal')) closeAgentModal(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAgentModal(); });
+
+// ---- basket view (polled — simple and robust) ----
+async function openBatch(id){
+  closeWs();
+  $('brief').classList.add('hidden');
+  $('basket').classList.remove('hidden');
+  document.getElementById('basket').scrollIntoView({behavior: 'smooth'});
+  const poll = async () => {
+    const r = await fetch(`/api/batches/${id}`);
+    if (!r.ok) { stopBatchPoll(); return; }
+    state.batch = await r.json();
+    renderBatch();
+    if (['completed', 'failed', 'cancelled'].includes(state.batch.status)) { stopBatchPoll(); loadHistory(); }
+  };
+  stopBatchPoll();
+  await poll();
+  state.batchTimer = setInterval(poll, 2500);
+}
+
+function stopBatchPoll(){ if (state.batchTimer) { clearInterval(state.batchTimer); state.batchTimer = null; } }
+
+function renderBatch(){
+  const b = state.batch;
+  if (!b) return;
+  const items = b.items || [];
+  $('k-count').textContent = items.length;
+  $('k-date').textContent = b.analysis_date ? ` · ${b.analysis_date}` : '';
+  const st = b.status || 'pending';
+  const el = $('k-status');
+  el.textContent = st.replace('_', ' ');
+  el.className = `pill border border-line rounded-full px-3 py-1 ${
+    st === 'completed' ? 'text-emerald' : st === 'failed' ? 'text-crimson' : 'text-amber'}`;
+  $('k-rows').innerHTML = items.map(it => `
+    <tr class="border-t border-line">
+      <td class="py-2 font-medium">${esc(it.ticker)}</td>
+      <td class="py-2"><span class="flex items-center gap-2"><span class="dot ${esc(it.status === 'completed' ? 'completed' : it.status === 'running' ? 'in_progress' : 'pending')}"></span>
+        <span class="text-muted">${esc((it.status || 'pending').replace('_', ' '))}</span></span></td>
+      <td class="py-2 text-right">${it.session_id
+        ? `<button onclick="openSession('${esc(it.session_id)}')" class="text-xs border border-line rounded-full px-3 py-1 hover:bg-white transition">Read the brief</button>`
+        : '<span class="text-muted text-xs">—</span>'}</td>
+    </tr>`).join('');
+}
+
+// ---- history ----
+async function loadHistory(){
+  try {
+    const sessions = await (await fetch('/api/sessions')).json();
+    $('sessionsList').innerHTML = sessions.slice(0, 12).map(s => `
+      <button onclick="openSession('${esc(s.id)}')" class="card w-full text-left px-5 py-3.5 hover:bg-white transition flex items-center justify-between gap-3">
+        <span><span class="font-medium">${esc(s.ticker)}</span>
+          <span class="text-muted text-sm ml-2">${esc(s.analysis_date || '')}</span></span>
+        <span class="pill ${s.status === 'completed' ? 'text-emerald' : s.status === 'failed' ? 'text-crimson' : 'text-amber'}">${esc(s.status)}</span>
+      </button>`).join('') ||
+      '<div class="card px-5 py-4 text-sm text-muted">No briefs yet — dispatch your first above.</div>';
+  } catch(e){ $('sessionsList').innerHTML = '<div class="card px-5 py-4 text-sm text-muted">Sign in to keep an archive of your briefs.</div>'; }
+  try {
+    const batches = await (await fetch('/api/batches')).json();
+    $('batchesList').innerHTML = (batches || []).slice(0, 12).map(b => `
+      <button onclick="openBatch('${esc(b.id)}')" class="card w-full text-left px-5 py-3.5 hover:bg-white transition flex items-center justify-between gap-3">
+        <span><span class="font-medium">${b.ticker_count ?? (b.items || []).length} tickers</span>
+          <span class="text-muted text-sm ml-2">${esc(b.analysis_date || '')}</span></span>
+        <span class="pill ${b.status === 'completed' ? 'text-emerald' : b.status === 'failed' ? 'text-crimson' : 'text-amber'}">${esc(b.status)}</span>
+      </button>`).join('') ||
+      '<div class="card px-5 py-4 text-sm text-muted">No baskets yet — name several tickers at once to brief a basket.</div>';
+  } catch(e){ $('batchesList').innerHTML = ''; }
+}
+
+// ---- auth: a real account presence, not just a button ----
+function updateAuthUI(user){
+  const signedIn = !!(user && !user.isGuest && (user.email || user.displayName));
+  const account = $('account'), signin = $('authBtn');
+  if (signedIn) {
+    const name = (user.displayName && user.displayName !== 'trader')
+      ? user.displayName : (user.email || 'Signed in');
+    $('accName').textContent = name;
+    $('accName').title = user.email || name;
+    $('accTier').textContent = user.tier || 'novice';
+    if (user.photoURL) {
+      $('accAvatar').src = user.photoURL;
+      $('accAvatar').classList.remove('hidden');
+      $('accInitial').classList.add('hidden');
+    } else {
+      $('accInitial').textContent = (name[0] || '?').toUpperCase();
+      $('accInitial').classList.remove('hidden');
+      $('accInitial').classList.add('flex');
+      $('accAvatar').classList.add('hidden');
+    }
+    account.classList.remove('hidden');
+    account.classList.add('flex');
+    signin.classList.add('hidden');
+    $('signOutBtn').onclick = () => window.AgenticWhalesAuth.signOut();
+    $('historyHint').textContent =
+      `Briefs run as ${name} are saved here — reopen any of them and audit what each analyst argued, agent by agent.`;
+  } else {
+    account.classList.add('hidden');
+    account.classList.remove('flex');
+    signin.classList.remove('hidden');
+    signin.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
+    $('historyHint').textContent =
+      'Sign in and every brief is saved — reopen any of them and audit what each analyst argued, agent by agent.';
+  }
+  refreshUsagePill(user);
+  loadHistory();
+  lucide.createIcons();
+}
+
+async function refreshUsagePill(user){
+  try {
+    const auth = window.AgenticWhalesAuth;
+    if (!auth?.dailyLimitFor) return;
+    const tier = user?.tier || 'novice';
+    const limit = auth.dailyLimitFor(tier);
+    const used = await auth.getUsageToday?.();
+    const pill = $('usagePill');
+    if (used != null) {
+      pill.textContent = Number.isFinite(limit) ? `${used}/${limit} briefs today` : `${used} briefs today`;
+      pill.title = `${tier} tier — daily analysis allowance`;
+      pill.classList.remove('hidden');
+    }
+  } catch(e){ /* pill is a nicety */ }
+}
+
+function whenAuthReady(cb, n = 0){
+  if (window.AgenticWhalesAuth) cb();
+  else if (n < 40) setTimeout(() => whenAuthReady(cb, n + 1), 150);
+}
+
+// ---- boot ----
+(async () => {
+  $('f-date').value = new Date().toISOString().slice(0, 10);
+  try { await loadConfig(); } catch(e){ formError('Could not load the desk configuration — is the server running?'); }
+  loadHistory();
+  lucide.createIcons();
+  whenAuthReady(() => {
+    window.AgenticWhalesAuth.onChange(updateAuthUI);
+    // OAuth-redirect race (same fix as coach.html): after Google returns,
+    // Supabase can emit SIGNED_IN before this listener attaches — poll
+    // getUser() briefly and render the instant a signed-in user appears.
+    let tries = 0;
+    const isIn = (u) => !!(u && !u.isGuest && (u.email || u.displayName));
+    const settle = setInterval(() => {
+      const u = window.AgenticWhalesAuth.getUser && window.AgenticWhalesAuth.getUser();
+      if (isIn(u)) updateAuthUI(u);
+      if (isIn(u) || ++tries > 15) clearInterval(settle);   // ~6s window
+    }, 400);
+  });
+})();
+</script>
+</body>
+</html>

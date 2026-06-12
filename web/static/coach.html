@@ -23,6 +23,9 @@
   </script>
   <style>
     html { scroll-behavior: smooth; }
+    /* Sticky-nav clearance: anchored sections must land BELOW the 64px glass
+       nav, not underneath it (the strip adds ~24px more). */
+    section[id], header[id], div[id^="view-"] { scroll-margin-top: 96px; }
     body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
     .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
     .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
@@ -41,7 +44,7 @@
 
   <!-- Nav -->
   <nav class="sticky top-0 z-40 glass">
-    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="max-w-6xl mx-auto px-6 h-16 relative flex items-center justify-between">
       <div class="flex items-center gap-2.5">
         <span class="text-xl">🐋</span>
         <span class="font-logo text-xl">AgenticWhales</span>
@@ -52,16 +55,17 @@
         <a href="#rules" class="hidden sm:inline hover:text-ink transition">Rules</a>
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
         <a href="#overlay" class="hidden sm:inline hover:text-ink transition">Overlay</a>
+        <a href="/analyze" class="hover:text-ink transition">Analyst Desk</a>
         <span id="authUser" class="hidden text-ink font-medium"></span>
         <button id="settingsBtn" class="hidden text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
         <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
       </div>
-    </div>
-    <div id="settingsPanel" class="hidden absolute right-6 top-[60px] z-50 card p-4 w-72 text-sm">
-      <div class="font-medium mb-1">Settings</div>
-      <p class="text-muted text-xs mb-3">Your uploaded trades and discipline history are private to you.</p>
-      <button id="deleteDataBtn" class="text-crimson text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition flex items-center gap-1.5">
-        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete all my data</button>
+      <div id="settingsPanel" class="hidden absolute right-6 top-full mt-2 z-50 card p-4 w-72 text-sm shadow-lg">
+        <div class="font-medium mb-1">Settings</div>
+        <p class="text-muted text-xs mb-3">Your uploaded trades and discipline history are private to you.</p>
+        <button id="deleteDataBtn" class="text-crimson text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition flex items-center gap-1.5">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete all my data</button>
+      </div>
     </div>
   </nav>
 
@@ -118,6 +122,9 @@
       </div>
     </div>
 
+    <p id="brokerStatus" class="hidden text-xs text-muted -mt-3 mb-4 flex items-center gap-1.5">
+      <i data-lucide="plug-zap" class="w-3.5 h-3.5"></i><span id="brokerStatusText"></span></p>
+
     <div id="scorecard" class="grid lg:grid-cols-3 gap-5">
       <!-- filled by JS -->
       <div class="card p-8 lg:col-span-3 text-center text-muted">Loading a sample audit…</div>
@@ -139,8 +146,8 @@
     <div id="trendBody" class="card p-8"></div>
   </section>
 
-  <!-- Your rules: the enforcement loop (signed-in only) -->
-  <section id="rules" class="max-w-6xl mx-auto px-6 py-14 hidden">
+  <!-- Your rules: the enforcement loop -->
+  <section id="rules" class="max-w-6xl mx-auto px-6 py-14">
     <div class="pill text-muted mb-2">Your rules</div>
     <h2 class="font-display text-4xl mb-2">The rules you adopted — and what happened after</h2>
     <p class="text-muted mb-8 max-w-3xl">Each flagged leak suggests a process rule. Adopt the ones you choose; trades
@@ -360,9 +367,13 @@ function showProgress(pct, msg){
   $('progressBar').style.width = pct + '%';
   $('progressPct').textContent = Math.round(pct) + '%';
 }
+const escHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 function showProgressError(msg){
   PROCESSING = false;
-  $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${msg||'Something went wrong.'}</p></div>`;
+  // escHTML: server/API error strings are arbitrary text (e.g. raw URLs with
+  // &timestamp=…) — injecting them unescaped mangles them into entities.
+  $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${escHTML(msg)||'Something went wrong.'}</p></div>`;
   $('leaks').innerHTML = ''; lucide.createIcons();
 }
 
@@ -407,7 +418,7 @@ function followJob(jid){
       const r = d.report || {};
       renderAudit(r);
       if(r.warnings && r.warnings.length) console.warn('warnings:', r.warnings);
-      if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly); }
+      if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly, r.open_tail); }
     }
   };
   es.onerror = () => { es.close(); showProgressError('Lost connection to the server. Please retry.'); };
@@ -573,11 +584,12 @@ async function loadDigest(){
 }
 
 // ---- Your rules: rule book + forward validation + violations ----
+const EMPTY_RULES = {rules: [], forward_validation: [], recent_violations: [], streak: {}};
+
 async function loadRules(){
-  const section = $('rules');
   try {
     const s = await (await fetch('/api/coach/rules/summary')).json();
-    if(!s.signed_in){ section.classList.add('hidden'); return; }
+    if(!s.signed_in){ renderRules({...EMPTY_RULES, guest: true}); return; }
     // Seed suggestions (idempotent), then re-pull the summary if empty.
     if(!(s.rules||[]).length){
       await fetch('/api/coach/rules');
@@ -585,7 +597,7 @@ async function loadRules(){
       if((s2.rules||[]).length) return renderRules(s2);
     }
     renderRules(s);
-  } catch(e){ section.classList.add('hidden'); }
+  } catch(e){ renderRules({...EMPTY_RULES, guest: true}); }
 }
 
 async function setRuleStatus(id, status){
@@ -595,11 +607,6 @@ async function setRuleStatus(id, status){
 }
 
 function renderRules(s){
-  const section = $('rules');
-  if(!(s.rules||[]).length && !(s.forward_validation||[]).length){
-    section.classList.add('hidden'); return;
-  }
-  section.classList.remove('hidden');
   const streak = s.streak || {};
   $('rulesStreak').innerHTML = streak.weeks > 0
     ? `<div class="card p-5 inline-flex items-center gap-3"><i data-lucide="flame" class="w-5 h-5 text-emerald"></i>
@@ -617,6 +624,16 @@ function renderRules(s){
   const actions = (r) => r.status === 'active'
     ? `<button onclick="setRuleStatus('${r.id}','paused')" class="text-xs border border-line rounded-full px-3 py-1 hover:bg-white transition">Pause</button>`
     : `<button onclick="setRuleStatus('${r.id}','active')" class="text-xs bg-ink text-cream rounded-full px-3 py-1 hover:opacity-90 transition">Adopt</button>`;
+  const emptyCard = s.guest
+    ? `<div class="card p-6">
+        <p class="text-sm text-muted mb-4">Your rule book builds itself: every leak the audit flags suggests a concrete
+        process rule — a cooldown after losses, a size cap, a required stop. Adopt the ones you choose, and every new
+        upload or sync is checked against them.</p>
+        <button onclick="window.AgenticWhalesAuth?.signInWithGoogle?.()"
+          class="bg-ink text-cream px-5 py-2.5 rounded-full text-sm font-medium hover:opacity-90 transition">
+          Sign in to start your rule book</button>
+      </div>`
+    : '<div class="card p-5 text-muted text-sm">Run an audit and rule suggestions will appear here.</div>';
   $('rulesList').innerHTML = (s.rules||[]).map(r => `
     <div class="card p-5">
       <div class="flex items-start justify-between gap-3 mb-1">
@@ -627,7 +644,7 @@ function renderRules(s){
       <div class="flex items-center gap-3 text-xs text-muted">${checkBadge(r)}
         ${r.status==='active' ? `<span>· ${r.violations_30d||0} break${(r.violations_30d||0)===1?'':'s'} in 30d</span>
         ${r.last_violation?`<span>· last ${r.last_violation}</span>`:''}` : ''}</div>
-    </div>`).join('') || '<div class="card p-5 text-muted text-sm">Run an audit and rule suggestions will appear here.</div>';
+    </div>`).join('') || emptyCard;
   $('forwardList').innerHTML = (s.forward_validation||[]).map(f => `
     <div class="card p-5">
       <div class="flex items-start justify-between gap-3 mb-1">
@@ -742,7 +759,7 @@ async function applyJourney(user){
   const signedIn = isSignedIn(user);
   setPretradeMode(signedIn);
   if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false});
-    $('rules').classList.add('hidden'); return; }
+    loadRules(); return; }
   refreshBrokerStatus();
   loadRules();
   loadDigest();
@@ -750,7 +767,7 @@ async function applyJourney(user){
   let latest = null;
   try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
   if(latest && latest.has_audit){
-    renderHero('returning', name); renderAudit(latest.report); renderMonthlyTrend(latest.report.monthly);
+    renderHero('returning', name); renderAudit(latest.report); renderMonthlyTrend(latest.report.monthly, latest.report.open_tail);
   } else {
     renderHero('new', name); renderEmptyAudit(); renderMonthlyTrend([]);
   }
@@ -769,8 +786,10 @@ function renderInsights(ins){
   const cards = [];
   cards.push(card('Activity', `${ins.n_trades} trades`, `${ins.period.start} → ${ins.period.end} · ${ins.period.label}`, 'calendar-days'));
   cards.push(card('Win rate', `${Math.round(ins.win_rate*100)}%`, 'of round-trips were green', 'target'));
-  const ratio = ins.hold_ratio;
-  cards.push(card('Holding discipline', ratio>1.2?`${ratio}× longer`:'balanced',
+  const ratio = ins.hold_ratio;   // losers-held ÷ winners-held
+  const holdLabel = ratio > 1.2 ? `${ratio}× longer`
+    : (ratio > 0 && ratio < 0.8) ? 'losers cut fast' : 'balanced';
+  cards.push(card('Holding discipline', holdLabel,
     ratio>1.2?`you hold losers ${ratio}× longer than winners`:`winners ${ins.hold_winners_days}d · losers ${ins.hold_losers_days}d`,
     'hourglass', ratio>1.2?'crimson':'emerald'));
   if(ins.top_fix) cards.push(card('Fix this week', money(ins.top_fix.dollars), ins.top_fix.fix, 'wrench', 'emerald'));
@@ -779,7 +798,16 @@ function renderInsights(ins){
   lucide.createIcons();
 }
 
-function renderMonthlyTrend(monthly){
+function openTailNote(openTail){
+  // Honest "why does the chart stop here": buys newer than the last closed
+  // trade have no realized P&L yet, so they can't be scored into a month.
+  if(!openTail || !openTail.n_open_buys) return '';
+  const n = openTail.n_open_buys;
+  return `<p class="text-xs text-muted mt-3 flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5"></i>
+    <span>The chart scores <em>closed</em> trades by their exit date. ${n} buy${n===1?'':'s'} since ${openTail.last_close} (latest ${openTail.last}) ${n===1?'is':'are'} still open — those months appear once the positions close.</span></p>`;
+}
+
+function renderMonthlyTrend(monthly, openTail){
   const el = $('trendBody');
   if(!monthly || monthly.length===0){
     el.innerHTML = `<p class="text-muted text-center py-6">Upload more history (or connect a brokerage) and your month-by-month discipline will chart here automatically.</p>`;
@@ -789,7 +817,8 @@ function renderMonthlyTrend(monthly){
     const m = monthly[0];
     el.innerHTML = `<div class="text-center py-6"><span class="font-display text-4xl text-emerald">${Math.round(m.score)}</span>
       <p class="text-muted">discipline score for ${m.month} · ${m.n_trades} trades</p>
-      <p class="text-xs text-muted mt-2">Add another month — or connect a brokerage to keep it updating itself.</p></div>`;
+      <p class="text-xs text-muted mt-2">Add another month — or connect a brokerage to keep it updating itself.</p></div>${openTailNote(openTail)}`;
+    lucide.createIcons();
     return;
   }
   const W=680,H=170,pad=26, step=Math.ceil(monthly.length/6);
@@ -806,7 +835,8 @@ function renderMonthlyTrend(monthly){
       <line x1="${pad}" y1="${ys(50)}" x2="${W-pad}" y2="${ys(50)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
       <polyline points="${pts}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       ${dots}${labels}
-    </svg>`;
+    </svg>${openTailNote(openTail)}`;
+  lucide.createIcons();
 }
 
 async function loadHistory(){
@@ -815,7 +845,30 @@ async function loadHistory(){
 }
 
 // ---- SnapTrade brokerage connect ----
-async function refreshBrokerStatus(){
+function fmtSyncTime(iso){
+  if(!iso) return 'not yet recorded';
+  const d = new Date(iso);
+  if(isNaN(d)) return iso;
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if(mins < 2) return 'just now';
+  if(mins < 60) return `${mins} min ago`;
+  if(mins < 48 * 60) return `${Math.round(mins / 60)}h ago`;
+  return d.toISOString().slice(0, 10);
+}
+
+function renderBrokerStatus(sync, flash){
+  const wrap = $('brokerStatus'), text = $('brokerStatusText');
+  if(!sync){ wrap.classList.add('hidden'); return; }
+  const window_ = (sync.history_start && sync.history_end)
+    ? `history ${sync.history_start} → ${sync.history_end}` : 'no trades stored yet';
+  text.textContent =
+    `${flash ? flash + ' · ' : ''}Brokerage synced ${fmtSyncTime(sync.last_synced_at)} · ` +
+    `${window_} · ${sync.n_transactions} transactions on file`;
+  wrap.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+async function refreshBrokerStatus(flash){
   const b = $('connectBroker'); if(!b) return;
   try {
     const s = await (await fetch('/api/snaptrade/status')).json();
@@ -825,6 +878,7 @@ async function refreshBrokerStatus(){
     b.innerHTML = s.connected
       ? '<i data-lucide="refresh-cw" class="w-4 h-4"></i> Sync brokerage'
       : '<i data-lucide="link" class="w-4 h-4"></i> Connect brokerage';
+    renderBrokerStatus(s.sync, flash);
     lucide.createIcons();
   } catch(e){ b.classList.add('hidden'); }
 }
@@ -841,6 +895,11 @@ $('connectBroker').onclick = async () => {
       if(r.error){ showProgressError(r.error); return; }
       PROCESSING = false;
       renderAudit(r); renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly);
+      // Ingestion transparency: say exactly what this sync brought in.
+      const fresh = r.new_transactions ?? 0;
+      refreshBrokerStatus(fresh > 0
+        ? `Sync complete — ${fresh} new transaction${fresh === 1 ? '' : 's'}`
+        : 'Sync complete — no new transactions (your broker reported nothing newer)');
     } catch(err){ showProgressError('Sync failed: ' + err); }
   } else {
     try {
@@ -883,6 +942,33 @@ function renderTrend(r){
     </svg>`;
 }
 
+// A Supabase session token in localStorage means this is almost certainly a
+// signed-in user mid-auth-load — show skeletons, not guest copy + demo numbers
+// that would flash and then get replaced by their real dashboard.
+function likelySignedIn(){
+  try {
+    return Object.keys(localStorage).some(k =>
+      k.startsWith('sb-') && k.endsWith('-auth-token') && localStorage.getItem(k));
+  } catch(e){ return false; }
+}
+
+function renderSkeletons(){
+  const bar = (w, h='h-4') => `<div class="${h} ${w} rounded-full bg-ink/[0.07] animate-pulse"></div>`;
+  $('heroPill').innerHTML = bar('w-64','h-3');
+  $('heroTitle').innerHTML = `<div class="space-y-3 py-2">${bar('w-3/4','h-10')}${bar('w-1/2','h-10')}</div>`;
+  $('heroSub').innerHTML = `<div class="space-y-2.5">${bar('w-2/3')}${bar('w-1/2')}</div>`;
+  $('heroCtas').innerHTML = bar('w-48','h-11') + bar('w-40','h-11');
+  $('scorecard').innerHTML = [1,2,3].map(() => `<div class="card p-7">
+    <div class="flex flex-col items-center gap-4 py-6">
+      <div class="w-24 h-24 rounded-full bg-ink/[0.07] animate-pulse"></div>${bar('w-28','h-3')}
+    </div></div>`).join('');
+  $('insightHeadline').innerHTML = `<div class="card p-5">${bar('w-2/3','h-6')}</div>`;
+  $('insights').innerHTML = [1,2,3,4].map(() => `<div class="card p-5 space-y-3">
+    ${bar('w-16','h-3')}${bar('w-24','h-7')}${bar('w-20','h-3')}</div>`).join('');
+  $('trendBody').innerHTML = `<div class="space-y-4">${bar('w-40','h-8')}
+    <div class="h-36 rounded-2xl bg-ink/[0.07] animate-pulse"></div></div>`;
+}
+
 function whenAuthReady(cb, n=0){
   if(window.AgenticWhalesAuth){ cb(); }
   else if(n<40){ setTimeout(()=>whenAuthReady(cb, n+1), 150); }
@@ -907,7 +993,9 @@ if (_jobHandoff) {
   followJob(_jobHandoff);
 }
 
-applyJourney(null); // optimistic guest render so the page isn't blank during auth load
+// Likely-signed-in users get skeletons until their real dashboard loads;
+// everyone else gets the guest journey immediately so the page isn't blank.
+if (likelySignedIn()) renderSkeletons(); else applyJourney(null);
 whenAuthReady(() => {
   window.AgenticWhalesAuth.onChange(updateAuthUI);
   // OAuth-redirect race: after Google sends the user back, Supabase establishes

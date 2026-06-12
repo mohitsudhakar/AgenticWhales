@@ -487,6 +487,74 @@ def delete_batch(batch_id: str) -> bool:
 
 
 # ------------------------------------------------------------------
+# Server-side analysis quota (Analyst Desk). The novice/intermediate/
+# master daily limits were historically enforced only in the browser
+# (supabase-client.js) — trivially bypassable with a raw POST. These
+# helpers make POST /api/sessions and /api/batches the enforcement
+# point; the client check remains as UX.
+# ------------------------------------------------------------------
+
+ANALYSIS_TIER_QUOTAS: Dict[str, Optional[int]] = {
+    "novice": 3,
+    "intermediate": 50,
+    "master": None,        # unlimited
+}
+
+
+def get_user_tier(user_id: str) -> str:
+    """The user's tier from `profiles` (service-role read); 'novice' default."""
+    if _db_writable():
+        rows = _select_columns("profiles", filters={"id": user_id},
+                               select="tier", limit=1)
+        if rows:
+            return (rows[0].get("tier") or "novice").lower()
+    row = _memstore.get(("profiles", user_id))
+    return ((row or {}).get("tier") or "novice").lower()
+
+
+def _epoch_of(v: Any) -> float:
+    if v is None:
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    ts = _parse_iso_ts(v)
+    return ts.timestamp() if ts else 0.0
+
+
+def count_user_analyses_today(user_id: str) -> int:
+    """Units consumed today (UTC): one per interactive session (recipe-fired
+    sessions are excluded — recipes have their own budget gates) plus one per
+    basket ticker (the same accounting the desk UI shows the user)."""
+    now = datetime.now(tz=timezone.utc)
+    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp()
+    units = 0
+    for s in list_sessions(user_id):
+        if _epoch_of(s.get("created_at")) >= midnight and not s.get("recipe_id"):
+            units += 1
+    for b in list_batches(user_id):
+        if _epoch_of(b.get("created_at")) >= midnight:
+            units += len(b.get("tickers") or b.get("items") or []) or 1
+    return units
+
+
+def check_analysis_quota(user_id: str, units: int = 1) -> tuple:
+    """(allowed, info) for creating `units` more analyses today.
+
+    The anonymous user (Supabase unconfigured — local dev) is exempt; when
+    Supabase IS configured, anonymous requests never reach the endpoints
+    (get_current_user_id 401s first), so sign-in + quota are both enforced
+    exactly when running with real auth."""
+    if not user_id or user_id == ANONYMOUS_USER_ID:
+        return True, {"tier": "anonymous", "cap": None, "used": 0}
+    tier = get_user_tier(user_id)
+    cap = ANALYSIS_TIER_QUOTAS.get(tier, ANALYSIS_TIER_QUOTAS["novice"])
+    if cap is None:
+        return True, {"tier": tier, "cap": None, "used": 0}
+    used = count_user_analyses_today(user_id)
+    return (used + units <= cap), {"tier": tier, "cap": cap, "used": used}
+
+
+# ------------------------------------------------------------------
 # Admin-scope reads — used by the usage dashboard only. Service-role
 # bypasses RLS so we deliberately keep these behind require_admin.
 # ------------------------------------------------------------------

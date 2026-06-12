@@ -1109,7 +1109,11 @@ async def coach_latest(user_id: str = Depends(optional_user_id)):
     track_event("audit_viewed", user_id)
 
     def _recompute():
-        report = coach.audit_trades(txns)  # deterministic recompute; no network
+        # Same price-aware path as upload/sync audits — a price-blind recompute
+        # here would show a different discipline score on reload than the one
+        # the user just saw. fetch_ohlc is cached in-process; failures degrade
+        # to the price-free leak set inside audit_trades.
+        report = coach.audit_trades(txns, price_fetcher=prices.fetch_ohlc)
         out = report.to_dict()
         out["created_at"] = row.get("created_at")
         out["n_transactions"] = len(txns)
