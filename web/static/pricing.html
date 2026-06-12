@@ -39,8 +39,9 @@
       <div class="flex items-center gap-5 text-sm text-muted">
         <a href="/learn" class="hidden sm:inline hover:text-ink transition">Learn</a>
         <a href="/methodology" class="hidden sm:inline hover:text-ink transition">Methodology</a>
-        <a href="/coach" class="hover:text-ink transition">Open the coach</a>
-        <a href="/signin" class="border border-line rounded-full px-4 py-1.5 hover:bg-white transition">Sign in</a>
+        <a href="/analyze" class="hidden sm:inline hover:text-ink transition">Analyst Desk</a>
+        <span id="planChip" class="hidden pill text-emerald border border-emerald/30 rounded-full px-2.5 py-1"></span>
+        <a href="/coach" class="bg-ink text-cream rounded-full px-4 py-1.5 hover:opacity-90 transition">Join the Coach</a>
       </div>
     </div>
   </nav>
@@ -62,55 +63,85 @@
   <section class="max-w-6xl mx-auto px-6 pb-14">
     <div class="grid md:grid-cols-3 gap-5 items-stretch">
 
-      <div class="card p-8 flex flex-col">
-        <div class="pill text-muted mb-3">Audit</div>
+      <div id="tier-free" class="card p-8 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div class="pill text-muted">Free</div>
+          <span data-current-badge class="hidden pill text-emerald border border-emerald/30 rounded-full px-2.5 py-1">Your plan</span>
+        </div>
         <div class="font-display text-5xl mb-1">$0</div>
-        <p class="text-sm text-muted mb-6">No signup to try. The audit is the ad.</p>
+        <p class="text-sm text-muted mb-6">Know your leaks. The audit is the ad — no signup to try it.</p>
         <ul class="text-sm text-muted space-y-2.5 mb-8 flex-1">
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Screenshot, CSV, or PDF statement audits (3 a day)</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Dollar-quantified behavioral leaks, past tense</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Discipline score + sample pre-trade check</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Share card, anonymized by default</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Screenshot, CSV, or PDF statement audits — dollar-quantified leaks, past tense</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Discipline score + share card (anonymized by default)</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Pre-trade check — 5 a day</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>2 active discipline rules</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>1 brokerage connection, manual sync</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Analyst Desk — 3 research briefs a day (bull-vs-bear debate + synthesis; no ratings, ever)</li>
         </ul>
         <a href="/" class="border border-line rounded-full px-6 py-3 text-sm font-medium text-center hover:bg-white transition">Run a free audit</a>
       </div>
 
-      <div class="card tier-featured p-8 flex flex-col">
+      <div id="tier-plus" class="card tier-featured p-8 flex flex-col">
         <div class="flex items-center justify-between mb-3">
           <div class="pill text-emerald">Plus</div>
+          <span data-current-badge class="hidden pill text-emerald border border-emerald/30 rounded-full px-2.5 py-1">Your plan</span>
           <span class="pill text-emerald border border-emerald/30 rounded-full px-2.5 py-1">Founding price</span>
         </div>
         <div class="font-display text-5xl mb-1">$9<span class="text-2xl text-muted">/mo</span></div>
-        <p class="text-sm text-muted mb-6">$19/mo after launch · free during beta</p>
+        <p class="text-sm text-muted mb-6">$19/mo after launch · free during beta · fix them</p>
         <ul class="text-sm text-muted space-y-2.5 mb-8 flex-1">
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Everything in Audit</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Saved audit history + discipline score trend</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Rule book — flagged patterns re-tested on your later trades</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Weekly discipline digest</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Accountability partner</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Everything in Free</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i><span><span class="text-ink font-medium">The counterfactual curve</span> — your cumulative P&amp;L vs the same trades with your rules kept, month by month</span></li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Unlimited rules + streaks, unlimited pre-trade checks</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Violation alerts — email when a sync records a break of your adopted rules</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Nightly brokerage auto-sync — audits refresh themselves</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Weekly email digest + accountability partner</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Cohort percentile on your score</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Analyst Desk — 50 research briefs a day</li>
         </ul>
         <button data-reserve="plus" class="bg-ink text-cream rounded-full px-6 py-3 text-sm font-medium hover:opacity-90 transition">Reserve the founding price</button>
       </div>
 
-      <div class="card p-8 flex flex-col">
+      <div id="tier-pro" class="card p-8 flex flex-col">
         <div class="flex items-center justify-between mb-3">
           <div class="pill text-muted">Pro</div>
+          <span data-current-badge class="hidden pill text-emerald border border-emerald/30 rounded-full px-2.5 py-1">Your plan</span>
           <span class="pill text-muted border border-line rounded-full px-2.5 py-1">Founding price</span>
         </div>
         <div class="font-display text-5xl mb-1">$29<span class="text-2xl text-muted">/mo</span></div>
-        <p class="text-sm text-muted mb-6">$49/mo after launch · free during beta</p>
+        <p class="text-sm text-muted mb-6">$49/mo after launch · free during beta · your trading back office</p>
         <ul class="text-sm text-muted space-y-2.5 mb-8 flex-1">
           <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Everything in Plus</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Read-only brokerage auto-sync — audits refresh themselves</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Pre-trade discipline check against your full history</li>
-          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Priority statement parsing (OCR + PDF)</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i><span><span class="text-ink font-medium">Evaluation mode</span> — your prop-firm challenge scored from your own fills: target progress, daily-loss breaches, drawdown proximity</span></li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i><span><span class="text-ink font-medium">Standing briefs</span> — the analysts brief you every Monday on your watchlist</span></li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Analyst Desk — unlimited research briefs</li>
           <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Quarterly deep-dive report</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald shrink-0 mt-0.5"></i>Priority statement parsing (OCR + PDF)</li>
         </ul>
         <button data-reserve="pro" class="border border-line rounded-full px-6 py-3 text-sm font-medium hover:bg-white transition">Reserve the founding price</button>
       </div>
     </div>
     <p class="text-sm text-muted mt-6 max-w-3xl">Nothing that is free today becomes paywalled during the beta.
       When billing launches, reservation holders choose whether to subscribe — a reservation is interest, not a contract.</p>
+  </section>
+
+  <!-- The Leak Guarantee -->
+  <section class="max-w-6xl mx-auto px-6 pb-2">
+    <div class="card p-10 border-emerald/40" style="border-color:#1F6F5466">
+      <div class="flex items-start gap-4">
+        <i data-lucide="shield-check" class="w-8 h-8 text-emerald shrink-0 mt-1"></i>
+        <div>
+          <h2 class="font-display text-3xl mb-2">The Leak Guarantee</h2>
+          <p class="text-muted leading-relaxed max-w-3xl">
+            When billing launches: if a full quarter of audits doesn't surface quantified
+            behavioral leaks at least equal to what you paid that quarter, your next month is free.
+            Adjudicated from your own quarterly audit numbers — the same deterministic arithmetic
+            shown on your coach page, so you can check it yourself.
+            <span class="text-ink font-medium">A promise about our fee, not a promise about results.</span>
+          </p>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- The evaluation-trader wedge -->
@@ -172,7 +203,7 @@
     <p><a href="/methodology" class="underline underline-offset-2 hover:text-ink">Methodology</a> ·
        <a href="/security" class="underline underline-offset-2 hover:text-ink">Security &amp; your data</a> ·
        <a href="/learn" class="underline underline-offset-2 hover:text-ink">Learn</a> ·
-       <a href="/signin" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
+       <a href="/coach" class="underline underline-offset-2 hover:text-ink">Sign in</a></p>
   </footer>
 
 <script>
@@ -218,6 +249,27 @@ $id('reserveForm').onsubmit = async (e) => {
 };
 
 lucide.createIcons();
+
+// Plan awareness: signed-in visitors see their current plan in the nav and a
+// "Your plan" badge on the matching tier card. Guests see nothing extra.
+(async () => {
+  for (let i = 0; i < 40 && !window.AgenticWhalesAuth; i++)
+    await new Promise(r => setTimeout(r, 150));
+  const A = window.AgenticWhalesAuth;
+  if (!A || !A.getUser || !A.getUser()) return;
+  try {
+    const token = await A.getAccessToken();
+    const r = await fetch('/api/account/plan',
+      {headers: token ? {Authorization: 'Bearer ' + token} : {}});
+    const j = await r.json();
+    const chip = $id('planChip');
+    chip.textContent = 'Your plan: ' + j.label + (j.beta ? ' · beta' : '');
+    chip.classList.remove('hidden');
+    const card = document.getElementById('tier-' + j.plan);
+    if (card) card.querySelector('[data-current-badge]').classList.remove('hidden');
+  } catch (e) { /* plan chip is decoration — never block the page */ }
+})();
 </script>
+<script type="module" src="/static/supabase-client.js"></script>
 </body>
 </html>

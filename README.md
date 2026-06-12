@@ -13,10 +13,16 @@
 > ([edge-probe findings](docs/reviews/2026-06-07-edge-probe-findings.md)): the LLM
 > debate showed **zero cross-sectional selection skill** (market-neutral Sharpe ≈ 0);
 > its only "wins" were market beta captured *worse* than buy-and-hold. So we stopped
-> selling alpha we don't have and started selling **discipline**, which is real. The
-> multi-agent framework below still powers analysis and the pre-trade read.
+> selling alpha we don't have and started selling **discipline**, which is real.
+>
+> **The narrative that holds the surfaces together: your trading back office.**
+> The **Analyst Desk** (`/analyze`) briefs you — a multi-agent bull-vs-bear
+> debate ending in a research *synthesis* (no rating, no sizing, no trade
+> decision; the trading tail of the graph doesn't even run for interactive
+> sessions). The **Coach** (`/coach`) disciplines you. The **defensive overlay**
+> defends you. Nobody here trades for you.
 
-Multi-agent LLM debate over a ticker → structured decision → paper-trading sandbox → cognitive journal. Web surfaces: **`/coach`** (the product — dollar-quantified discipline audit + pre-trade check), **`/fund`** (autonomy spine, risk guards, paper trading, journal), and **`/analyze`** (legacy one-shot analyses + batches). The same `agenticwhales` Python package + CLI works headless.
+Multi-agent LLM debate over a ticker → research synthesis (Analyst Desk) → cognitive journal + discipline coach. Web surfaces: **`/coach`** (the product front door — dollar-quantified discipline audit + pre-trade check), **`/analyze`** (the Analyst Desk — research briefs, sign-in-gated with server-side daily quotas by tier), and **`/fund`** (the research lab: autonomy spine, risk guards, paper trading — recipe-fired lab sessions still run the full decision graph). The same `agenticwhales` Python package + CLI works headless.
 
 ---
 
@@ -71,7 +77,7 @@ Open the app:
 |---|---|
 | http://localhost:8765/ | 307-redirects to `/fund` |
 | http://localhost:8765/fund | The product: hero session-launcher, theses, decisions, journal, backtest, risk |
-| http://localhost:8765/analyze | Legacy power-user surface: one-shot analyses + batches with full model picker |
+| http://localhost:8765/analyze | Analyst Desk: multi-agent research briefs (debate → synthesis, no ratings) + baskets, metered per tier |
 | http://localhost:8765/healthz | Liveness — always 200 if the process is up |
 | http://localhost:8765/readyz | Readiness — 200 only when DB is reachable + leader heartbeat is fresh |
 | http://localhost:8765/metrics | Prometheus exposition (gate with `AGENTICWHALES_METRICS_TOKEN`) |

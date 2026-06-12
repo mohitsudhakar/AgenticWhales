@@ -285,3 +285,24 @@ def test_coach_data_tables_cover_all_coach_migrations():
     created = set(_re.findall(r"create table if not exists public\.((?:coach|referral)\w*)", sql))
     assert created <= set(auth.COACH_DATA_TABLES), (
         f"tables missing from delete_coach_data: {created - set(auth.COACH_DATA_TABLES)}")
+
+def test_baseline_schema_includes_every_migration_table():
+    """docs/supabase-schema.sql is the one-paste setup for a fresh Supabase
+    project (there is no ORM/migration runner). Every table created by a
+    docs/migrations file must therefore also exist in the baseline, or fresh
+    environments silently degrade to memstore for that table."""
+    import pathlib
+    import re as _re
+    migrations = " ".join(p.read_text() for p in
+                          pathlib.Path("docs/migrations").glob("*.sql"))
+    baseline = pathlib.Path("docs/supabase-schema.sql").read_text()
+    migrated = set(_re.findall(r"create table if not exists public\.(\w+)", migrations))
+    in_baseline = set(_re.findall(r"create table if not exists public\.(\w+)", baseline))
+    assert migrated <= in_baseline, (
+        f"tables in docs/migrations missing from docs/supabase-schema.sql: "
+        f"{migrated - in_baseline}")
+    # Columns added by ALTER migrations must be folded forward too.
+    altered = set(_re.findall(r"add column if not exists (\w+)", migrations))
+    for col in altered:
+        assert f"add column if not exists {col}" in baseline, (
+            f"column '{col}' added in a migration but absent from the baseline schema")

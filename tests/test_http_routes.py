@@ -40,31 +40,34 @@ class TestRouting:
         assert "Join the waitlist" in r.text     # primary CTA copy
         assert "data-waitlist" in r.text         # modal trigger hook
         assert "/api/waitlist" in r.text         # signup endpoint wired
-        assert "/signin" in r.text               # sign-in gate still linked
+        assert "homeSignIn" in r.text            # direct Google sign-in button
 
     def test_welcome_alias_matches_root(self, client):
         """/welcome is an alias of the marketing page (back-compat for any
         previously-shared links)."""
         assert client.get("/welcome").text == client.get("/").text
 
-    def test_signin_serves_auth_gate(self, client):
-        """/signin serves the sign-in landing (Google + disclaimer). Google
-        OAuth returns to this exact path, so it must be a stable 200 HTML page
-        that loads landing.js."""
+    def test_signin_redirects_to_coach(self, client):
+        """The fund-era /signin gate is retired; legacy links land on /coach,
+        which handles both auth states (and never redirects back — no loop)."""
         r = client.get("/signin")
-        assert r.status_code == 200
-        assert "landing.js" in r.text
+        assert r.status_code == 307
+        assert r.headers["location"] == "/coach"
 
     def test_fund_page_serves(self, client):
         r = client.get("/fund")
         assert r.status_code == 200
         assert "Agentic Whales · Fund" in r.text or 'data-section="overview"' in r.text
 
-    def test_analyze_page_serves_legacy_bundle(self, client):
+    def test_analyze_page_serves_analyst_desk(self, client):
         r = client.get("/analyze")
         assert r.status_code == 200
-        # The legacy bundle has the "Let's go" copy on its Go button.
-        assert "Let's go" in r.text or "f-ticker" in r.text
+        assert "Analyst Desk" in r.text
+        assert "f-ticker" in r.text                       # the brief form
+        # The fund-era welcome modal is gone for good.
+        assert "Welcome aboard the trading floor" not in r.text
+        # The research posture is on the page, persistently.
+        assert "Research synthesis, not investment advice" in r.text
 
 
 class TestHealthz:

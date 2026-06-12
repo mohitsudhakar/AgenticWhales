@@ -23,6 +23,9 @@
   </script>
   <style>
     html { scroll-behavior: smooth; }
+    /* Sticky-nav clearance: anchored sections must land BELOW the 64px glass
+       nav, not underneath it (the strip adds ~24px more). */
+    section[id], header[id], div[id^="view-"] { scroll-margin-top: 96px; }
     body { font-family: 'Inter', sans-serif; background: #FAF6EE; color: #1A1A17; }
     .font-display { font-family: 'Instrument Serif', Georgia, serif; letter-spacing: -0.015em; }
     .font-logo { font-family: 'Lora', Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
@@ -41,7 +44,7 @@
 
   <!-- Nav -->
   <nav class="sticky top-0 z-40 glass">
-    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="max-w-6xl mx-auto px-6 h-16 relative flex items-center justify-between">
       <div class="flex items-center gap-2.5">
         <span class="text-xl">🐋</span>
         <span class="font-logo text-xl">AgenticWhales</span>
@@ -52,16 +55,28 @@
         <a href="#rules" class="hidden sm:inline hover:text-ink transition">Rules</a>
         <a href="#check" class="hover:text-ink transition">Pre-trade check</a>
         <a href="#overlay" class="hidden sm:inline hover:text-ink transition">Overlay</a>
-        <span id="authUser" class="hidden text-ink font-medium"></span>
-        <button id="settingsBtn" class="hidden text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
-        <button id="authBtn" class="hidden border border-line rounded-full px-4 py-1.5 hover:bg-white transition"></button>
+        <a href="/analyze" class="hover:text-ink transition">Analyst Desk</a>
+        <a href="/pricing" class="hidden sm:inline hover:text-ink transition">Pricing</a>
+        <div id="account" class="hidden items-center gap-2.5 pl-2 border-l border-line">
+          <img id="accAvatar" class="hidden w-8 h-8 rounded-full border border-line" alt="" referrerpolicy="no-referrer">
+          <span id="accInitial" class="hidden w-8 h-8 rounded-full bg-emerald/10 text-emerald text-sm font-semibold items-center justify-center"></span>
+          <span class="leading-tight text-left hidden sm:block">
+            <span id="accName" class="block text-ink text-[13px] font-medium max-w-[150px] truncate"></span>
+            <span id="accTier" class="block pill text-muted"></span>
+          </span>
+          <button id="settingsBtn" class="text-muted hover:text-ink transition" title="Settings"><i data-lucide="settings" class="w-[18px] h-[18px]"></i></button>
+          <button id="signOutBtn" title="Sign out"
+                  class="border border-line rounded-full px-3.5 py-1.5 text-xs hover:bg-white transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Sign out</span></button>
+        </div>
+        <button id="authBtn" class="hidden bg-ink text-cream rounded-full px-4 py-1.5 hover:opacity-90 transition">Sign in</button>
       </div>
-    </div>
-    <div id="settingsPanel" class="hidden absolute right-6 top-[60px] z-50 card p-4 w-72 text-sm">
-      <div class="font-medium mb-1">Settings</div>
-      <p class="text-muted text-xs mb-3">Your uploaded trades and discipline history are private to you.</p>
-      <button id="deleteDataBtn" class="text-crimson text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition flex items-center gap-1.5">
-        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete all my data</button>
+      <div id="settingsPanel" class="hidden absolute right-6 top-full mt-2 z-50 card p-4 w-72 text-sm shadow-lg">
+        <div class="font-medium mb-1">Settings</div>
+        <p class="text-muted text-xs mb-3">Your uploaded trades and discipline history are private to you.</p>
+        <button id="deleteDataBtn" class="text-crimson text-xs border border-line rounded-full px-3 py-1.5 hover:bg-white transition flex items-center gap-1.5">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete all my data</button>
+      </div>
     </div>
   </nav>
 
@@ -118,6 +133,9 @@
       </div>
     </div>
 
+    <p id="brokerStatus" class="hidden text-xs text-muted -mt-3 mb-4 flex items-center gap-1.5">
+      <i data-lucide="plug-zap" class="w-3.5 h-3.5"></i><span id="brokerStatusText"></span></p>
+
     <div id="scorecard" class="grid lg:grid-cols-3 gap-5">
       <!-- filled by JS -->
       <div class="card p-8 lg:col-span-3 text-center text-muted">Loading a sample audit…</div>
@@ -129,6 +147,15 @@
 
     <h3 id="leaksTitle" class="font-display text-2xl mt-10 mb-4 hidden">Where your edge leaks</h3>
     <div id="leaks" class="grid md:grid-cols-2 gap-5"></div>
+
+    <!-- Counterfactual discipline curve (Plus): cumulative actual vs disciplined P&L -->
+    <div id="cfCurveWrap" class="hidden mt-10">
+      <div class="flex items-baseline justify-between flex-wrap gap-2 mb-4">
+        <h3 class="font-display text-2xl">The same trades, with your rules kept</h3>
+        <a href="/pricing" id="cfPlanChip" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Plus</a>
+      </div>
+      <div id="cfCurve" class="card p-8"></div>
+    </div>
   </section>
 
   <!-- Discipline over time -->
@@ -137,10 +164,11 @@
     <h2 class="font-display text-4xl mb-6">Discipline over time</h2>
     <div id="digestCard" class="hidden"></div>
     <div id="trendBody" class="card p-8"></div>
+    <div id="emailPrefs" class="hidden card p-6 mt-5"></div>
   </section>
 
-  <!-- Your rules: the enforcement loop (signed-in only) -->
-  <section id="rules" class="max-w-6xl mx-auto px-6 py-14 hidden">
+  <!-- Your rules: the enforcement loop -->
+  <section id="rules" class="max-w-6xl mx-auto px-6 py-14">
     <div class="pill text-muted mb-2">Your rules</div>
     <h2 class="font-display text-4xl mb-2">The rules you adopted — and what happened after</h2>
     <p class="text-muted mb-8 max-w-3xl">Each flagged leak suggests a process rule. Adopt the ones you choose; trades
@@ -159,6 +187,21 @@
         <div id="violationsList" class="space-y-3"></div>
       </div>
     </div>
+  </section>
+
+  <!-- Evaluation mode (Pro): prop-firm challenge scorekeeping -->
+  <section id="eval" class="hidden max-w-6xl mx-auto px-6 py-14">
+    <div class="flex items-baseline justify-between flex-wrap gap-2">
+      <div>
+        <div class="pill text-muted mb-2">Evaluation mode</div>
+        <h2 class="font-display text-4xl mb-2">Your evaluation, scored from your own fills</h2>
+      </div>
+      <a href="/pricing" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Pro</a>
+    </div>
+    <p class="text-muted mb-8 max-w-3xl">Pick your challenge thresholds and the coach keeps score against your realized
+    P&amp;L — profit-target progress, daily-loss breaches, drawdown proximity. Scorekeeping by exit day, past tense;
+    your prop firm's dashboard remains the official ledger. It never tells you to trade or to stop.</p>
+    <div id="evalBody" class="card p-8"></div>
   </section>
 
   <!-- Pre-trade check -->
@@ -321,6 +364,7 @@ function renderAudit(r){
       </div>
     </div>`;
   renderInsights(r.insights || {});
+  renderCounterfactualCurve(r.counterfactual_curve);
   $('leaksTitle').classList.toggle('hidden', !(r.leaks||[]).length);
   $('leaks').innerHTML = (r.leaks||[]).map((l,i)=>`
     <div class="card p-6 fade-in" style="animation-delay:${i*60}ms">
@@ -360,9 +404,13 @@ function showProgress(pct, msg){
   $('progressBar').style.width = pct + '%';
   $('progressPct').textContent = Math.round(pct) + '%';
 }
+const escHTML = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 function showProgressError(msg){
   PROCESSING = false;
-  $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${msg||'Something went wrong.'}</p></div>`;
+  // escHTML: server/API error strings are arbitrary text (e.g. raw URLs with
+  // &timestamp=…) — injecting them unescaped mangles them into entities.
+  $('scorecard').innerHTML = `<div class="card p-8 lg:col-span-3"><div class="flex items-center gap-2 text-crimson mb-1"><i data-lucide="alert-triangle" class="w-5 h-5"></i><span class="font-medium">Couldn't process that file</span></div><p class="text-muted text-sm mt-1">${escHTML(msg)||'Something went wrong.'}</p></div>`;
   $('leaks').innerHTML = ''; lucide.createIcons();
 }
 
@@ -407,7 +455,7 @@ function followJob(jid){
       const r = d.report || {};
       renderAudit(r);
       if(r.warnings && r.warnings.length) console.warn('warnings:', r.warnings);
-      if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly); }
+      if(isSignedIn(CURRENT)){ renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly, r.open_tail); }
     }
   };
   es.onerror = () => { es.close(); showProgressError('Lost connection to the server. Please retry.'); };
@@ -554,6 +602,133 @@ function renderOverlay(r){
 $('ovLev').onchange = loadOverlay;
 loadOverlay();
 
+// ---- Evaluation mode (Pro): prop-firm challenge scorekeeping ----
+const EVAL_PRESETS = {
+  ftmo_style:    {label:'FTMO-style', target:'10%', daily:'5%', dd:'10%'},
+  topstep_style: {label:'Topstep-style', target:'6%', daily:'2%', dd:'4%'},
+  custom:        {label:'Custom', target:'8%', daily:'4%', dd:'8%'},
+};
+
+function evalBar(label, frac, color, note){
+  const pct = Math.max(0, Math.min(100, Math.round(frac*100)));
+  return `<div class="mb-4">
+    <div class="flex justify-between text-xs mb-1"><span class="text-muted">${label}</span><span class="font-medium">${note}</span></div>
+    <div class="h-2.5 rounded-full bg-ink/[0.06] overflow-hidden"><div class="h-full rounded-full bg-${color}" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+function renderEvalSetup(){
+  $('evalBody').innerHTML = `
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+      <label class="flex flex-col gap-1.5"><span class="text-muted">Challenge style</span>
+        <select id="ev_preset" class="border border-line rounded-lg px-3 py-2 bg-cream/40">
+          ${Object.entries(EVAL_PRESETS).map(([k,p])=>`<option value="${k}">${p.label} — target ${p.target} · daily ${p.daily} · DD ${p.dd}</option>`).join('')}
+        </select></label>
+      <label class="flex flex-col gap-1.5"><span class="text-muted">Account size ($)</span>
+        <input id="ev_size" type="number" value="100000" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+      <label class="flex flex-col gap-1.5"><span class="text-muted">Start date</span>
+        <input id="ev_start" type="date" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+      <label class="flex flex-col gap-1.5"><span class="text-muted">End date (optional)</span>
+        <input id="ev_end" type="date" class="border border-line rounded-lg px-3 py-2 bg-cream/40"></label>
+    </div>
+    <button id="evalSave" class="mt-5 bg-ink text-cream px-6 py-2.5 rounded-full text-sm font-medium hover:opacity-90 transition">Start keeping score</button>
+    <p id="evalMsg" class="text-xs text-crimson mt-2 hidden"></p>`;
+  $('ev_start').valueAsDate = new Date();
+  $('evalSave').onclick = async () => {
+    const body = {preset: $('ev_preset').value, account_size: +$('ev_size').value,
+                  start_date: $('ev_start').value, end_date: $('ev_end').value || null};
+    const r = await fetch('/api/coach/eval', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const j = await r.json();
+    if(!r.ok){ const m=$('evalMsg'); m.textContent = j.error || 'Could not save.'; m.classList.remove('hidden'); return; }
+    renderEvalStatus(j);
+  };
+}
+
+function renderEvalStatus(r){
+  const cfg = r.config || {};
+  const breaches = r.daily_breaches || [];
+  const statusPill = r.status === 'target_reached'
+    ? '<span class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1">target reached</span>'
+    : (r.status === 'thresholds_breached'
+      ? '<span class="pill text-crimson border border-crimson/40 rounded-full px-2.5 py-1">thresholds breached</span>'
+      : '<span class="pill text-muted border border-line rounded-full px-2.5 py-1">in progress</span>');
+  const ddFrac = r.max_drawdown_limit > 0 ? r.max_drawdown_seen / r.max_drawdown_limit : 0;
+  $('evalBody').innerHTML = `
+    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-6">
+      <div class="font-display text-2xl">${EVAL_PRESETS[cfg.preset]?.label || 'Custom'} · ${money(cfg.account_size)} account</div>
+      <div class="flex items-center gap-3">${statusPill}
+        <button id="evalStop" class="text-xs text-muted underline underline-offset-2 hover:text-ink">stop tracking</button></div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-x-10">
+      <div>
+        ${evalBar('Profit target', r.target_progress, 'emerald',
+          `${money(r.net_pnl)} of ${money(r.profit_target)}`)}
+        ${evalBar('Max drawdown used', ddFrac, ddFrac > 0.75 ? 'crimson' : 'amber',
+          `${money(r.max_drawdown_seen)} of ${money(r.max_drawdown_limit)}`)}
+        <div class="text-xs text-muted mt-2">${r.n_trading_days} trading day${r.n_trading_days===1?'':'s'} scored · day ${r.days_elapsed}${r.days_remaining!=null?` · ${r.days_remaining} remaining`:''}
+          ${r.best_day?` · best day ${money(r.best_day.pnl)}`:''}${r.worst_day?` · worst day ${money(r.worst_day.pnl)}`:''}</div>
+      </div>
+      <div>
+        <div class="text-xs text-muted mb-2">Daily-loss limit: ${money(r.daily_loss_limit)} · breaches recorded: ${breaches.length}</div>
+        ${breaches.length ? breaches.slice(-4).map(b=>`
+          <div class="border border-crimson/30 bg-crimson/[0.04] rounded-xl px-4 py-2.5 mb-2 text-xs">
+            <span class="font-medium text-crimson">${b.date}</span>
+            <span class="text-muted"> — realized ${money(b.pnl)}, beyond the ${money(b.limit)} daily limit (scored by exit day)</span>
+          </div>`).join('')
+        : '<div class="text-sm text-muted border border-line rounded-xl px-4 py-3">No daily-loss breaches recorded in this window.</div>'}
+      </div>
+    </div>`;
+  $('evalStop').onclick = async () => {
+    await fetch('/api/coach/eval', {method:'DELETE'}); renderEvalSetup();
+  };
+}
+
+async function loadEval(){
+  const sec = $('eval');
+  if(!isSignedIn(CURRENT)){ sec.classList.add('hidden'); return; }
+  try {
+    const r = await (await fetch('/api/coach/eval')).json();
+    sec.classList.remove('hidden');
+    if(r.configured) renderEvalStatus(r); else renderEvalSetup();
+  } catch(e){ sec.classList.add('hidden'); }
+}
+
+// ---- Email preferences: weekly digest + violation alerts (Plus, opt-in) ----
+async function loadEmailPrefs(){
+  const el = $('emailPrefs');
+  if(!isSignedIn(CURRENT)){ el.classList.add('hidden'); return; }
+  let p;
+  try { p = await (await fetch('/api/coach/prefs')).json(); } catch(e){ return; }
+  if(!p.signed_in){ el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-3">
+      <div class="font-display text-xl">Email updates</div>
+      <a href="/pricing" class="pill text-emerald border border-emerald/40 rounded-full px-2.5 py-1 hover:bg-white transition">Included in Plus</a>
+    </div>
+    <div class="flex flex-wrap items-center gap-4 text-sm">
+      <input id="prefEmail" type="email" placeholder="you@example.com" value="${escHTML(p.digest_email||'')}"
+             class="border border-line rounded-full px-4 py-2 bg-cream/40 w-64">
+      <label class="flex items-center gap-2 text-muted"><input id="prefDigest" type="checkbox" class="accent-emerald w-4 h-4" ${p.email_digest?'checked':''}> weekly digest</label>
+      <label class="flex items-center gap-2 text-muted"><input id="prefAlerts" type="checkbox" class="accent-emerald w-4 h-4" ${p.email_alerts?'checked':''}> rule-violation alerts</label>
+      <button id="prefSave" class="border border-line rounded-full px-4 py-2 text-xs font-medium hover:bg-white transition">Save</button>
+      <span id="prefMsg" class="text-xs text-emerald hidden"></span>
+    </div>
+    <p class="text-xs text-muted mt-2">Strict opt-in. Emails carry counts only — the dollars stay here. One-click unsubscribe in every email.</p>`;
+  $('prefSave').onclick = async () => {
+    const r = await fetch('/api/coach/prefs', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email: $('prefEmail').value || null,
+                            email_digest: $('prefDigest').checked,
+                            email_alerts: $('prefAlerts').checked})});
+    const j = await r.json();
+    const m = $('prefMsg');
+    m.textContent = r.ok ? 'Saved.' : (j.error || 'Could not save.');
+    m.className = 'text-xs ' + (r.ok ? 'text-emerald' : 'text-crimson');
+    m.classList.remove('hidden');
+  };
+}
+
 // ---- Weekly in-app digest (the email carries counts only; $ lives here) ----
 async function loadDigest(){
   const el = $('digestCard');
@@ -573,11 +748,12 @@ async function loadDigest(){
 }
 
 // ---- Your rules: rule book + forward validation + violations ----
+const EMPTY_RULES = {rules: [], forward_validation: [], recent_violations: [], streak: {}};
+
 async function loadRules(){
-  const section = $('rules');
   try {
     const s = await (await fetch('/api/coach/rules/summary')).json();
-    if(!s.signed_in){ section.classList.add('hidden'); return; }
+    if(!s.signed_in){ renderRules({...EMPTY_RULES, guest: true}); return; }
     // Seed suggestions (idempotent), then re-pull the summary if empty.
     if(!(s.rules||[]).length){
       await fetch('/api/coach/rules');
@@ -585,7 +761,7 @@ async function loadRules(){
       if((s2.rules||[]).length) return renderRules(s2);
     }
     renderRules(s);
-  } catch(e){ section.classList.add('hidden'); }
+  } catch(e){ renderRules({...EMPTY_RULES, guest: true}); }
 }
 
 async function setRuleStatus(id, status){
@@ -595,11 +771,6 @@ async function setRuleStatus(id, status){
 }
 
 function renderRules(s){
-  const section = $('rules');
-  if(!(s.rules||[]).length && !(s.forward_validation||[]).length){
-    section.classList.add('hidden'); return;
-  }
-  section.classList.remove('hidden');
   const streak = s.streak || {};
   $('rulesStreak').innerHTML = streak.weeks > 0
     ? `<div class="card p-5 inline-flex items-center gap-3"><i data-lucide="flame" class="w-5 h-5 text-emerald"></i>
@@ -617,6 +788,16 @@ function renderRules(s){
   const actions = (r) => r.status === 'active'
     ? `<button onclick="setRuleStatus('${r.id}','paused')" class="text-xs border border-line rounded-full px-3 py-1 hover:bg-white transition">Pause</button>`
     : `<button onclick="setRuleStatus('${r.id}','active')" class="text-xs bg-ink text-cream rounded-full px-3 py-1 hover:opacity-90 transition">Adopt</button>`;
+  const emptyCard = s.guest
+    ? `<div class="card p-6">
+        <p class="text-sm text-muted mb-4">Your rule book builds itself: every leak the audit flags suggests a concrete
+        process rule — a cooldown after losses, a size cap, a required stop. Adopt the ones you choose, and every new
+        upload or sync is checked against them.</p>
+        <button onclick="window.AgenticWhalesAuth?.signInWithGoogle?.()"
+          class="bg-ink text-cream px-5 py-2.5 rounded-full text-sm font-medium hover:opacity-90 transition">
+          Sign in to start your rule book</button>
+      </div>`
+    : '<div class="card p-5 text-muted text-sm">Run an audit and rule suggestions will appear here.</div>';
   $('rulesList').innerHTML = (s.rules||[]).map(r => `
     <div class="card p-5">
       <div class="flex items-start justify-between gap-3 mb-1">
@@ -627,7 +808,17 @@ function renderRules(s){
       <div class="flex items-center gap-3 text-xs text-muted">${checkBadge(r)}
         ${r.status==='active' ? `<span>· ${r.violations_30d||0} break${(r.violations_30d||0)===1?'':'s'} in 30d</span>
         ${r.last_violation?`<span>· last ${r.last_violation}</span>`:''}` : ''}</div>
-    </div>`).join('') || '<div class="card p-5 text-muted text-sm">Run an audit and rule suggestions will appear here.</div>';
+    </div>`).join('') || emptyCard;
+  // Upgrade nudge at the wall: the Free plan includes 2 active rules.
+  const activeRules = (s.rules||[]).filter(r => r.status === 'active').length;
+  if (activeRules >= 2) {
+    $('rulesList').innerHTML += `
+      <a href="/pricing" onclick="fetch('/api/coach/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'upgrade_nudge_clicked',metadata:{where:'rules_cap'}})}).catch(()=>{})"
+         class="block border border-emerald/40 bg-emerald/[0.04] rounded-xl px-5 py-3.5 text-sm hover:bg-emerald/[0.08] transition">
+        <span class="text-emerald font-medium">Free includes 2 active rules.</span>
+        <span class="text-muted"> Plus removes the cap — free during the beta; reserve the founding price →</span>
+      </a>`;
+  }
   $('forwardList').innerHTML = (s.forward_validation||[]).map(f => `
     <div class="card p-5">
       <div class="flex items-start justify-between gap-3 mb-1">
@@ -661,11 +852,30 @@ const isSignedIn = (u) => !!(u && !u.isGuest && (u.email || u.displayName));
 
 function updateAuthUI(user){
   CURRENT = user;
-  const b = $('authBtn'), u = $('authUser'); b.classList.remove('hidden');
+  const b = $('authBtn'), account = $('account');
   if(isSignedIn(user)){
-    u.textContent = (user.displayName && user.displayName !== 'trader') ? user.displayName : user.email;
-    u.classList.remove('hidden');
-    b.textContent = 'Sign out'; b.onclick = () => window.AgenticWhalesAuth.signOut();
+    // Same account chip as the Analyst Desk: avatar (or initial), name, tier.
+    const name = (user.displayName && user.displayName !== 'trader') ? user.displayName : (user.email || 'Signed in');
+    $('accName').textContent = name;
+    $('accName').title = user.email || name;
+    // The plan, not the internal quota tier — click-through to /pricing.
+    $('accTier').innerHTML = '<a href="/pricing" class="hover:text-emerald transition">…</a>';
+    fetch('/api/account/plan').then(r=>r.json()).then(j=>{
+      $('accTier').innerHTML = `<a href="/pricing" class="hover:text-emerald transition" title="${j.tagline} — see all plans">${j.label}${j.plan==='free'?' plan':''}${j.beta?' · beta':''}</a>`;
+    }).catch(()=>{});
+    if (user.photoURL) {
+      $('accAvatar').src = user.photoURL;
+      $('accAvatar').classList.remove('hidden');
+      $('accInitial').classList.add('hidden');
+    } else {
+      $('accInitial').textContent = (name[0] || '?').toUpperCase();
+      $('accInitial').classList.remove('hidden');
+      $('accInitial').classList.add('flex');
+      $('accAvatar').classList.add('hidden');
+    }
+    account.classList.remove('hidden'); account.classList.add('flex');
+    b.classList.add('hidden');
+    $('signOutBtn').onclick = () => window.AgenticWhalesAuth.signOut();
     // One-time first-touch referral claim (?ref= captured in localStorage).
     try {
       const code = localStorage.getItem('aw_ref');
@@ -676,10 +886,10 @@ function updateAuthUI(user){
       }
     } catch(e){}
   } else {
-    u.classList.add('hidden'); u.textContent = '';
+    account.classList.add('hidden'); account.classList.remove('flex');
+    b.classList.remove('hidden');
     b.textContent = 'Sign in'; b.onclick = () => window.AgenticWhalesAuth?.signInWithGoogle?.();
   }
-  $('settingsBtn').classList.toggle('hidden', !isSignedIn(user));
   $('loadDemo').classList.toggle('hidden', isSignedIn(user));  // signed-in users see their own data
   applyJourney(user);
 }
@@ -742,15 +952,17 @@ async function applyJourney(user){
   const signedIn = isSignedIn(user);
   setPretradeMode(signedIn);
   if(!signedIn){ renderHero('guest'); loadDemo(); renderTrend({signed_in:false});
-    $('rules').classList.add('hidden'); return; }
+    loadRules(); $('eval').classList.add('hidden'); $('emailPrefs').classList.add('hidden'); return; }
   refreshBrokerStatus();
   loadRules();
   loadDigest();
+  loadEval();
+  loadEmailPrefs();
   const name = firstName(user);
   let latest = null;
   try { latest = await (await fetch('/api/coach/latest')).json(); } catch(e){}
   if(latest && latest.has_audit){
-    renderHero('returning', name); renderAudit(latest.report); renderMonthlyTrend(latest.report.monthly);
+    renderHero('returning', name); renderAudit(latest.report); renderMonthlyTrend(latest.report.monthly, latest.report.open_tail);
   } else {
     renderHero('new', name); renderEmptyAudit(); renderMonthlyTrend([]);
   }
@@ -769,8 +981,10 @@ function renderInsights(ins){
   const cards = [];
   cards.push(card('Activity', `${ins.n_trades} trades`, `${ins.period.start} → ${ins.period.end} · ${ins.period.label}`, 'calendar-days'));
   cards.push(card('Win rate', `${Math.round(ins.win_rate*100)}%`, 'of round-trips were green', 'target'));
-  const ratio = ins.hold_ratio;
-  cards.push(card('Holding discipline', ratio>1.2?`${ratio}× longer`:'balanced',
+  const ratio = ins.hold_ratio;   // losers-held ÷ winners-held
+  const holdLabel = ratio > 1.2 ? `${ratio}× longer`
+    : (ratio > 0 && ratio < 0.8) ? 'losers cut fast' : 'balanced';
+  cards.push(card('Holding discipline', holdLabel,
     ratio>1.2?`you hold losers ${ratio}× longer than winners`:`winners ${ins.hold_winners_days}d · losers ${ins.hold_losers_days}d`,
     'hourglass', ratio>1.2?'crimson':'emerald'));
   if(ins.top_fix) cards.push(card('Fix this week', money(ins.top_fix.dollars), ins.top_fix.fix, 'wrench', 'emerald'));
@@ -779,7 +993,52 @@ function renderInsights(ins){
   lucide.createIcons();
 }
 
-function renderMonthlyTrend(monthly){
+function renderCounterfactualCurve(curve){
+  const wrap = $('cfCurveWrap'), el = $('cfCurve');
+  if(!curve || curve.length < 2){ wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  const W=680,H=230,pad=34, n=curve.length;
+  const all = curve.flatMap(p=>[p.actual_cum, p.disciplined_cum]).concat([0]);
+  const lo=Math.min(...all), hi=Math.max(...all), span=(hi-lo)||1;
+  const xs=(i)=> pad + i*(W-2*pad)/(n-1);
+  const ys=(v)=> H-pad-((v-lo)/span)*(H-2*pad);
+  const line=(key)=> curve.map((p,i)=>`${xs(i).toFixed(1)},${ys(p[key]).toFixed(1)}`).join(' ');
+  // Shaded gap between the two paths — the recoverable swing, made visible.
+  const area = curve.map((p,i)=>`${xs(i).toFixed(1)},${ys(p.disciplined_cum).toFixed(1)}`).join(' ')
+    + ' ' + [...curve].reverse().map((p,i)=>`${xs(n-1-i).toFixed(1)},${ys(p.actual_cum).toFixed(1)}`).join(' ');
+  const step=Math.ceil(n/6);
+  const labels = curve.map((p,i)=> (i%step===0)?`<text x="${xs(i).toFixed(1)}" y="${H-8}" font-size="9" fill="#6B6657" text-anchor="middle">${p.month.slice(2)}</text>`:'').join('');
+  const last = curve[n-1], gap = last.disciplined_cum - last.actual_cum;
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-4">
+      <div class="text-sm text-muted">Cumulative realized P&amp;L, month by month — what happened vs the same closed trades re-scored under a median-size cap and a 15% stop.</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:250px">
+      <line x1="${pad}" y1="${ys(0)}" x2="${W-pad}" y2="${ys(0)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
+      <polygon points="${area}" fill="#1F6F54" opacity="0.07"/>
+      <polyline points="${line('actual_cum')}" fill="none" stroke="#B3261E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+      <polyline points="${line('disciplined_cum')}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${labels}
+    </svg>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-1 mt-3 text-xs">
+      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-crimson"></span>
+        <span class="text-muted">as traded</span> <span class="font-medium">${money(last.actual_cum)}</span></span>
+      <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5 bg-emerald"></span>
+        <span class="text-muted">rules kept</span> <span class="font-medium">${money(last.disciplined_cum)}</span></span>
+      <span class="text-muted">gap <span class="font-medium text-emerald">${money(gap)}</span> — historical attribution, not a forecast</span>
+    </div>`;
+}
+
+function openTailNote(openTail){
+  // Honest "why does the chart stop here": buys newer than the last closed
+  // trade have no realized P&L yet, so they can't be scored into a month.
+  if(!openTail || !openTail.n_open_buys) return '';
+  const n = openTail.n_open_buys;
+  return `<p class="text-xs text-muted mt-3 flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5"></i>
+    <span>The chart scores <em>closed</em> trades by their exit date. ${n} buy${n===1?'':'s'} since ${openTail.last_close} (latest ${openTail.last}) ${n===1?'is':'are'} still open — those months appear once the positions close.</span></p>`;
+}
+
+function renderMonthlyTrend(monthly, openTail){
   const el = $('trendBody');
   if(!monthly || monthly.length===0){
     el.innerHTML = `<p class="text-muted text-center py-6">Upload more history (or connect a brokerage) and your month-by-month discipline will chart here automatically.</p>`;
@@ -789,7 +1048,8 @@ function renderMonthlyTrend(monthly){
     const m = monthly[0];
     el.innerHTML = `<div class="text-center py-6"><span class="font-display text-4xl text-emerald">${Math.round(m.score)}</span>
       <p class="text-muted">discipline score for ${m.month} · ${m.n_trades} trades</p>
-      <p class="text-xs text-muted mt-2">Add another month — or connect a brokerage to keep it updating itself.</p></div>`;
+      <p class="text-xs text-muted mt-2">Add another month — or connect a brokerage to keep it updating itself.</p></div>${openTailNote(openTail)}`;
+    lucide.createIcons();
     return;
   }
   const W=680,H=170,pad=26, step=Math.ceil(monthly.length/6);
@@ -806,7 +1066,8 @@ function renderMonthlyTrend(monthly){
       <line x1="${pad}" y1="${ys(50)}" x2="${W-pad}" y2="${ys(50)}" stroke="#E7E0D2" stroke-dasharray="3 3"/>
       <polyline points="${pts}" fill="none" stroke="#1F6F54" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       ${dots}${labels}
-    </svg>`;
+    </svg>${openTailNote(openTail)}`;
+  lucide.createIcons();
 }
 
 async function loadHistory(){
@@ -815,7 +1076,30 @@ async function loadHistory(){
 }
 
 // ---- SnapTrade brokerage connect ----
-async function refreshBrokerStatus(){
+function fmtSyncTime(iso){
+  if(!iso) return 'not yet recorded';
+  const d = new Date(iso);
+  if(isNaN(d)) return iso;
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if(mins < 2) return 'just now';
+  if(mins < 60) return `${mins} min ago`;
+  if(mins < 48 * 60) return `${Math.round(mins / 60)}h ago`;
+  return d.toISOString().slice(0, 10);
+}
+
+function renderBrokerStatus(sync, flash){
+  const wrap = $('brokerStatus'), text = $('brokerStatusText');
+  if(!sync){ wrap.classList.add('hidden'); return; }
+  const window_ = (sync.history_start && sync.history_end)
+    ? `history ${sync.history_start} → ${sync.history_end}` : 'no trades stored yet';
+  text.textContent =
+    `${flash ? flash + ' · ' : ''}Brokerage synced ${fmtSyncTime(sync.last_synced_at)} · ` +
+    `${window_} · ${sync.n_transactions} transactions on file`;
+  wrap.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+async function refreshBrokerStatus(flash){
   const b = $('connectBroker'); if(!b) return;
   try {
     const s = await (await fetch('/api/snaptrade/status')).json();
@@ -825,6 +1109,7 @@ async function refreshBrokerStatus(){
     b.innerHTML = s.connected
       ? '<i data-lucide="refresh-cw" class="w-4 h-4"></i> Sync brokerage'
       : '<i data-lucide="link" class="w-4 h-4"></i> Connect brokerage';
+    renderBrokerStatus(s.sync, flash);
     lucide.createIcons();
   } catch(e){ b.classList.add('hidden'); }
 }
@@ -841,6 +1126,11 @@ $('connectBroker').onclick = async () => {
       if(r.error){ showProgressError(r.error); return; }
       PROCESSING = false;
       renderAudit(r); renderHero('returning', firstName(CURRENT)); renderMonthlyTrend(r.monthly);
+      // Ingestion transparency: say exactly what this sync brought in.
+      const fresh = r.new_transactions ?? 0;
+      refreshBrokerStatus(fresh > 0
+        ? `Sync complete — ${fresh} new transaction${fresh === 1 ? '' : 's'}`
+        : 'Sync complete — no new transactions (your broker reported nothing newer)');
     } catch(err){ showProgressError('Sync failed: ' + err); }
   } else {
     try {
@@ -883,6 +1173,33 @@ function renderTrend(r){
     </svg>`;
 }
 
+// A Supabase session token in localStorage means this is almost certainly a
+// signed-in user mid-auth-load — show skeletons, not guest copy + demo numbers
+// that would flash and then get replaced by their real dashboard.
+function likelySignedIn(){
+  try {
+    return Object.keys(localStorage).some(k =>
+      k.startsWith('sb-') && k.endsWith('-auth-token') && localStorage.getItem(k));
+  } catch(e){ return false; }
+}
+
+function renderSkeletons(){
+  const bar = (w, h='h-4') => `<div class="${h} ${w} rounded-full bg-ink/[0.07] animate-pulse"></div>`;
+  $('heroPill').innerHTML = bar('w-64','h-3');
+  $('heroTitle').innerHTML = `<div class="space-y-3 py-2">${bar('w-3/4','h-10')}${bar('w-1/2','h-10')}</div>`;
+  $('heroSub').innerHTML = `<div class="space-y-2.5">${bar('w-2/3')}${bar('w-1/2')}</div>`;
+  $('heroCtas').innerHTML = bar('w-48','h-11') + bar('w-40','h-11');
+  $('scorecard').innerHTML = [1,2,3].map(() => `<div class="card p-7">
+    <div class="flex flex-col items-center gap-4 py-6">
+      <div class="w-24 h-24 rounded-full bg-ink/[0.07] animate-pulse"></div>${bar('w-28','h-3')}
+    </div></div>`).join('');
+  $('insightHeadline').innerHTML = `<div class="card p-5">${bar('w-2/3','h-6')}</div>`;
+  $('insights').innerHTML = [1,2,3,4].map(() => `<div class="card p-5 space-y-3">
+    ${bar('w-16','h-3')}${bar('w-24','h-7')}${bar('w-20','h-3')}</div>`).join('');
+  $('trendBody').innerHTML = `<div class="space-y-4">${bar('w-40','h-8')}
+    <div class="h-36 rounded-2xl bg-ink/[0.07] animate-pulse"></div></div>`;
+}
+
 function whenAuthReady(cb, n=0){
   if(window.AgenticWhalesAuth){ cb(); }
   else if(n<40){ setTimeout(()=>whenAuthReady(cb, n+1), 150); }
@@ -907,7 +1224,9 @@ if (_jobHandoff) {
   followJob(_jobHandoff);
 }
 
-applyJourney(null); // optimistic guest render so the page isn't blank during auth load
+// Likely-signed-in users get skeletons until their real dashboard loads;
+// everyone else gets the guest journey immediately so the page isn't blank.
+if (likelySignedIn()) renderSkeletons(); else applyJourney(null);
 whenAuthReady(() => {
   window.AgenticWhalesAuth.onChange(updateAuthUI);
   // OAuth-redirect race: after Google sends the user back, Supabase establishes

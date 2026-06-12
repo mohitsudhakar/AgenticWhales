@@ -1157,3 +1157,193 @@ create policy "coach_trades: read own" on public.coach_trades for select using (
 drop policy if exists "coach_trades: write own" on public.coach_trades;
 create policy "coach_trades: write own" on public.coach_trades for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ============================================================================
+-- Folded migrations (docs/migrations/*) through 2026-06-10 — a fresh project
+-- needs ONLY this file. Each block is idempotent and byte-equivalent to its
+-- migration file; when you add a migration, fold it in here too (a unit test
+-- checks that every coach/referral table the code touches appears below).
+-- ============================================================================
+
+-- ---------- waitlist_signups (2026-06-01) ----------
+create table if not exists public.waitlist_signups (
+  id text primary key,
+  email text not null unique,
+  name text not null default '',
+  company text not null default '',
+  note text not null default '',
+  source text not null default 'landing',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists waitlist_signups_created_idx
+  on public.waitlist_signups (created_at desc);
+-- RLS on, NO policies: server-only via the service role (deny-all otherwise).
+alter table public.waitlist_signups enable row level security;
+
+-- ---------- coach_findings (2026-06-09) ----------
+create table if not exists public.coach_findings (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  leak_key text not null,
+  name text not null,
+  severity text not null default 'low',
+  dollars double precision not null default 0,
+  fix text not null default '',
+  window_end text not null default '',
+  resolved_at timestamptz,
+  persisted boolean,
+  forward_dollars double precision,
+  n_forward_trades integer
+);
+create index if not exists coach_findings_user_idx
+  on public.coach_findings (user_id, created_at desc);
+create index if not exists coach_findings_open_idx
+  on public.coach_findings (user_id, leak_key) where resolved_at is null;
+alter table public.coach_findings enable row level security;
+drop policy if exists "coach_findings: read own" on public.coach_findings;
+create policy "coach_findings: read own"
+  on public.coach_findings for select using (auth.uid() = user_id);
+
+-- ---------- coach_audits.origin (2026-06-10) ----------
+alter table public.coach_audits
+  add column if not exists origin text not null default 'upload';
+create index if not exists coach_audits_origin_idx
+  on public.coach_audits (user_id, origin, created_at desc);
+
+-- ---------- coach_rules + coach_rule_events (2026-06-10) ----------
+create table if not exists public.coach_rules (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  leak_key text not null,
+  rule_kind text not null,
+  label text not null default '',
+  description text not null default '',
+  params jsonb not null default '{}'::jsonb,
+  checkable_from_fills boolean not null default false,
+  status text not null default 'suggested',
+  source_finding_id text not null default '',
+  adopted_at timestamptz,
+  updated_at timestamptz
+);
+create index if not exists coach_rules_user_idx
+  on public.coach_rules (user_id, status);
+create table if not exists public.coach_rule_events (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  rule_id text not null,
+  rule_kind text not null,
+  leak_key text not null default '',
+  trade_key text not null default '',
+  symbol text not null default '',
+  occurred_on text not null default '',
+  dollars double precision not null default 0,
+  evidence text not null default ''
+);
+create index if not exists coach_rule_events_user_idx
+  on public.coach_rule_events (user_id, occurred_on desc);
+alter table public.coach_rules enable row level security;
+alter table public.coach_rule_events enable row level security;
+drop policy if exists "coach_rules: read own" on public.coach_rules;
+create policy "coach_rules: read own"
+  on public.coach_rules for select using (auth.uid() = user_id);
+drop policy if exists "coach_rule_events: read own" on public.coach_rule_events;
+create policy "coach_rule_events: read own"
+  on public.coach_rule_events for select using (auth.uid() = user_id);
+
+-- ---------- referral_attributions (2026-06-10) ----------
+create table if not exists public.referral_attributions (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  code text not null default '',
+  source text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists referral_attributions_code_idx
+  on public.referral_attributions (code);
+alter table public.referral_attributions enable row level security;
+drop policy if exists "referral_attributions: read own" on public.referral_attributions;
+create policy "referral_attributions: read own"
+  on public.referral_attributions for select using (auth.uid() = user_id);
+
+-- ---------- coach_prefs + coach_digests + coach_partners (2026-06-10) ----------
+create table if not exists public.coach_prefs (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email_digest boolean not null default false,
+  digest_email text not null default '',
+  unsubscribe_token text not null default '',
+  updated_at timestamptz
+);
+create index if not exists coach_prefs_token_idx
+  on public.coach_prefs (unsubscribe_token);
+create table if not exists public.coach_digests (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  week_start text not null,
+  payload jsonb not null default '{}'::jsonb,
+  emailed boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists coach_digests_user_idx
+  on public.coach_digests (user_id, week_start desc);
+create table if not exists public.coach_partners (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  partner_email text not null default '',
+  status text not null default 'invited',
+  view_token text not null default '',
+  invited_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  revoked_at timestamptz
+);
+create index if not exists coach_partners_user_idx
+  on public.coach_partners (user_id, status);
+alter table public.coach_prefs enable row level security;
+alter table public.coach_digests enable row level security;
+alter table public.coach_partners enable row level security;
+drop policy if exists "coach_prefs: read own" on public.coach_prefs;
+create policy "coach_prefs: read own"
+  on public.coach_prefs for select using (auth.uid() = user_id);
+drop policy if exists "coach_digests: read own" on public.coach_digests;
+create policy "coach_digests: read own"
+  on public.coach_digests for select using (auth.uid() = user_id);
+drop policy if exists "coach_partners: read own" on public.coach_partners;
+create policy "coach_partners: read own"
+  on public.coach_partners for select using (auth.uid() = user_id);
+
+-- ---------- coach_evals + coach_standing_briefs + coach_prefs.email_alerts (2026-06-12) ----------
+create table if not exists public.coach_evals (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz,
+  preset text not null default 'custom',
+  account_size double precision not null default 0,
+  start_date text not null default '',
+  end_date text,
+  profit_target double precision not null default 0,
+  daily_loss_limit double precision not null default 0,
+  max_drawdown double precision not null default 0
+);
+alter table public.coach_evals enable row level security;
+drop policy if exists "coach_evals: read own" on public.coach_evals;
+create policy "coach_evals: read own"
+  on public.coach_evals for select using (auth.uid() = user_id);
+create table if not exists public.coach_standing_briefs (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz,
+  tickers jsonb not null default '[]'::jsonb,
+  cadence text not null default 'weekly',
+  active boolean not null default true,
+  last_run_at timestamptz
+);
+create index if not exists coach_standing_briefs_active_idx
+  on public.coach_standing_briefs (active);
+alter table public.coach_standing_briefs enable row level security;
+drop policy if exists "coach_standing_briefs: read own" on public.coach_standing_briefs;
+create policy "coach_standing_briefs: read own"
+  on public.coach_standing_briefs for select using (auth.uid() = user_id);
+alter table public.coach_prefs
+  add column if not exists email_alerts boolean not null default false;

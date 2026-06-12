@@ -716,6 +716,12 @@ class SessionRunner:
         config["openai_reasoning_effort"] = sel.get("openai_reasoning_effort")
         config["anthropic_effort"] = sel.get("anthropic_effort")
         config["output_language"] = sel.get("output_language", "English")
+        # Analyst Desk pivot: interactive sessions are research BRIEFS — the
+        # graph ends at the Research Manager synthesis (no rating, no sizing,
+        # no decision nodes). Only recipe-fired sessions run the full trading
+        # tail (the lab path, gated by output_policy downstream).
+        config["stop_after_research"] = self.session.get("session_type", "brief") == "brief" \
+            and not self.session.get("recipe_id")
 
         analysts: List[str] = sel["analysts"]
         stats_handler = StatsCallbackHandler()
@@ -1092,14 +1098,22 @@ def config_signature(payload: Dict[str, Any]) -> str:
 
 
 def build_session(form: Dict[str, Any]) -> Dict[str, Any]:
-    """Create a fresh session record from validated form data."""
+    """Create a fresh session record from validated form data.
+
+    Interactive sessions are Analyst Desk BRIEFS: the run ends at the Research
+    Manager synthesis, so only the analyst + research teams appear in
+    agent_status (the trading tail never runs). Recipe-fired sessions are built
+    elsewhere and keep the full graph.
+    """
     analysts = form.get("analysts") or list(ANALYST_ORDER)
     analysts = [a for a in ANALYST_ORDER if a in analysts]
 
     agent_status: Dict[str, str] = {}
     for a in analysts:
         agent_status[ANALYST_AGENT_NAMES[a]] = "pending"
-    for _, names in FIXED_TEAMS:
+    for team, names in FIXED_TEAMS:
+        if team != "Research Team":
+            continue  # briefs stop at research synthesis
         for n in names:
             agent_status[n] = "pending"
 
@@ -1111,6 +1125,7 @@ def build_session(form: Dict[str, Any]) -> Dict[str, Any]:
         "started_at": None,
         "completed_at": None,
         "status": "pending",
+        "session_type": "brief",
         "config": {
             "llm_provider": form["llm_provider"],
             "backend_url": form.get("backend_url"),

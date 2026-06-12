@@ -36,7 +36,7 @@ def test_root_serves_coach_landing(client):
     assert "Join the waitlist" in r.text
     assert "data-waitlist" in r.text
     assert "/api/waitlist" in r.text
-    assert "/signin" in r.text
+    assert "homeSignIn" in r.text                 # direct Google sign-in button
     # The activation path:
     assert "/api/coach/upload_async" in r.text
 
@@ -63,7 +63,7 @@ def test_learn_unknown_slug_404(client):
 
 
 def test_landing_and_learn_pages_carry_no_directives(client):
-    paths = ["/", "/learn"] + [f"/learn/{s}" for s in LEARN_PAGES]
+    paths = ["/", "/learn", "/analyze"] + [f"/learn/{s}" for s in LEARN_PAGES]
     for path in paths:
         text = _text(client, path)
         for phrase in FORBIDDEN_PAGE_PHRASES:

@@ -150,7 +150,12 @@ class AgenticWhalesGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        # stop_after_research = Analyst Desk "brief" mode (ends at the Research
+        # Manager synthesis; no trader/risk/PM nodes exist in the graph).
+        self.workflow = self.graph_setup.setup_graph(
+            selected_analysts,
+            stop_after_research=bool(self.config.get("stop_after_research", False)),
+        )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 

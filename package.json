@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "dev": ".venv/bin/python -m web",
+    "test": ".venv/bin/python -m pytest -q --ignore=tests/integ"
+  },
   "dependencies": {
     "@google/gemini-cli": "^0.41.2"
   }

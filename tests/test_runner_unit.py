@@ -84,7 +84,12 @@ def test_build_session_shape():
     assert s["report_sections"] == {} and s["messages"] == []
     assert s["agent_status"]["Market Analyst"] == "pending"
     assert s["agent_status"]["News Analyst"] == "pending"
-    assert s["agent_status"]["Portfolio Manager"] == "pending"
+    # Analyst Desk pivot: interactive sessions are BRIEFS — they end at the
+    # Research Manager synthesis, so the trading tail never appears.
+    assert s["session_type"] == "brief"
+    assert s["agent_status"]["Research Manager"] == "pending"
+    assert "Trader" not in s["agent_status"]
+    assert "Portfolio Manager" not in s["agent_status"]
     assert "Quant Analyst" not in s["agent_status"]  # not selected
     assert len(s["id"]) == 32
 

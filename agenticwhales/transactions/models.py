@@ -10,9 +10,43 @@ read a transaction history (CSV or extracted text) and describe it.
 
 from __future__ import annotations
 
+import datetime as _dt
+import re
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_MDY_SLASH = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})(.*)$")
+_YMD_SLASH = re.compile(r"^(\d{4})/(\d{1,2})/(\d{1,2})(.*)$")
+
+
+def normalize_date(raw: str) -> str:
+    """Best-effort ISO (yyyy-mm-dd) normalization of broker date strings.
+
+    Slash dates default to US MM/DD/YYYY (the broker-export standard); an
+    unambiguous DD/MM/YYYY (first number > 12) is swapped. Anything that
+    doesn't parse is returned untouched — downstream consumers already treat
+    unparseable dates as missing. This matters: the FIFO round-trip builder
+    and the discipline chart silently DROP rows whose dates they can't parse,
+    so a non-ISO statement would otherwise leak trades out of the audit (and
+    the same trade arriving as '02/20/2026' and '2026-02-20' would dodge
+    dedupe and double-count)."""
+    s = (raw or "").strip()
+    m = _YMD_SLASH.match(s)
+    if m:
+        y, mo, d, rest = int(m[1]), int(m[2]), int(m[3]), m[4]
+    else:
+        m = _MDY_SLASH.match(s)
+        if not m:
+            return s
+        mo, d, y, rest = int(m[1]), int(m[2]), int(m[3]), m[4]
+        if mo > 12 and d <= 12:
+            mo, d = d, mo
+    try:
+        _dt.date(y, mo, d)
+    except ValueError:
+        return s
+    return f"{y:04d}-{mo:02d}-{d:02d}{rest}"
 
 
 class Transaction(BaseModel):
@@ -27,6 +61,11 @@ class Transaction(BaseModel):
 
     date: str = Field("", description="ISO yyyy-mm-dd if parseable, else raw")
     type: str = Field("Other", description="Buy, Sell, Dividend, Deposit, ...")
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def _iso_date(cls, v):
+        return normalize_date(str(v)) if v else v
     symbol: str = Field("", description="ticker (uppercase) or '' for cash events")
     description: str = ""
     quantity: float = Field(0.0, description="shares/contracts; 0 if N/A")

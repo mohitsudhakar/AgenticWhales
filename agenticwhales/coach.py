@@ -31,7 +31,7 @@ from __future__ import annotations
 import datetime as _dt
 import statistics
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from .transactions.models import Transaction
 
@@ -235,6 +235,29 @@ def behavioral_insights(trips: List[RoundTrip], leaks: List[Leak]) -> Dict:
     }
 
 
+def open_tail(txns: Sequence[Transaction], trips: List[RoundTrip]) -> Optional[Dict]:
+    """Eligible buys dated after the last closed round-trip — positions still
+    open. They carry no realized P&L, so monthly_discipline can't bucket them;
+    the UI uses this to say why the chart ends where it does instead of
+    leaving the user to wonder whether a sync failed."""
+    if not trips:
+        return None
+    last_exit = max((d for d in (_d(t.exit_date) for t in trips) if d), default=None)
+    if not last_exit:
+        return None
+    tail_dates = sorted(
+        d for t in txns
+        if t.symbol and not _is_option(t) and t.quantity > 0 and t.price > 0
+        and t.type.lower() == "buy"
+        for d in [_d(t.date)] if d and d > last_exit)
+    if not tail_dates:
+        return None
+    return {"last_close": last_exit.isoformat(),
+            "n_open_buys": len(tail_dates),
+            "first": tail_dates[0].isoformat(),
+            "last": tail_dates[-1].isoformat()}
+
+
 def monthly_discipline(trips: List[RoundTrip]) -> List[Dict]:
     """Discipline score per calendar month (by exit date) — the behaviour-over-time
     series that accumulates across uploads/syncs without re-uploading old data."""
@@ -303,6 +326,8 @@ class CoachReport:
     leaks: List[Leak] = field(default_factory=list)
     insights: Dict = field(default_factory=dict)
     monthly: List[Dict] = field(default_factory=list)
+    open_tail: Optional[Dict] = None  # buys newer than the last closed trade
+    counterfactual_curve: List[Dict] = field(default_factory=list)
     quarterly: List[Dict] = field(default_factory=list)
     # Single coherent counterfactual: P&L under disciplined rules (size cap + stop),
     # and the swing vs. actual. This is the defensible headline number — NOT the sum
@@ -451,6 +476,41 @@ def counterfactual_disciplined(trips: List[RoundTrip], *, stop_pct: float = 0.15
     return disc
 
 
+def discipline_curve(trips: List[RoundTrip], *, stop_pct: float = 0.15) -> List[Dict]:
+    """Cumulative ACTUAL P&L vs cumulative DISCIPLINED P&L, month by month
+    (by exit date) — the same per-trip arithmetic as counterfactual_disciplined
+    with the full-history median notional, so the curve's final gap reconciles
+    exactly with the headline total_quantified_leak.
+
+    Historical attribution only: what happened vs the same trades under the
+    size-cap + stop rules. Never a forecast.
+    """
+    if not trips:
+        return []
+    med = statistics.median(abs(t.qty * t.entry_px) for t in trips) or 1.0
+    from collections import defaultdict
+    monthly_actual: Dict[str, float] = defaultdict(float)
+    monthly_disc: Dict[str, float] = defaultdict(float)
+    for t in trips:
+        d = _d(t.exit_date)
+        if not d:
+            continue
+        month = f"{d.year}-{d.month:02d}"
+        notional = abs(t.qty * t.entry_px) or 1.0
+        scale = min(1.0, med / notional)
+        disciplined = max(t.pnl / notional, -stop_pct) * notional * scale
+        monthly_actual[month] += t.pnl
+        monthly_disc[month] += disciplined
+    out, cum_a, cum_d = [], 0.0, 0.0
+    for month in sorted(monthly_actual):
+        cum_a += monthly_actual[month]
+        cum_d += monthly_disc[month]
+        out.append({"month": month,
+                    "actual_cum": round(cum_a, 2),
+                    "disciplined_cum": round(cum_d, 2)})
+    return out
+
+
 def price_based_leaks(trips: List[RoundTrip], fetch_ohlc, *,
                       stop_pct: float = 0.15, lookahead_days: int = 20) -> List[Leak]:
     """Two leaks that need real price paths (so they're precise, not modeled):
@@ -463,23 +523,39 @@ def price_based_leaks(trips: List[RoundTrip], fetch_ohlc, *,
     `fetch_ohlc(symbol, start, end)` returns a date-indexed OHLC frame (or None).
     """
     from collections import defaultdict
+    from concurrent.futures import ThreadPoolExecutor
     by_sym: Dict[str, List[RoundTrip]] = defaultdict(list)
     for t in trips:
         by_sym[t.symbol].append(t)
+
+    # One price window per symbol. Fetch them concurrently — a long history
+    # spans 100+ symbols, and sequential network fetches turn a page load
+    # into multiple seconds. Failures degrade to "no data for that symbol".
+    windows: Dict[str, Tuple[str, str]] = {}
+    for sym, ts in by_sym.items():
+        eds = [_d(t.entry_date) for t in ts if _d(t.entry_date)]
+        xds = [_d(t.exit_date) for t in ts if _d(t.exit_date)]
+        if eds and xds:
+            windows[sym] = (min(eds).isoformat(),
+                            (max(xds) + _dt.timedelta(days=lookahead_days + 5)).isoformat())
+
+    def _safe_fetch(sym: str):
+        start, end = windows[sym]
+        try:
+            return sym, fetch_ohlc(sym, start, end)
+        except Exception:  # noqa: BLE001
+            return sym, None
+
+    frames: Dict[str, object] = {}
+    if windows:
+        with ThreadPoolExecutor(max_workers=min(8, len(windows))) as pool:
+            frames = dict(pool.map(_safe_fetch, windows))
 
     stop_saved = 0.0
     left_on_table = 0.0
     n_stop = n_left = 0
     for sym, ts in by_sym.items():
-        eds = [_d(t.entry_date) for t in ts if _d(t.entry_date)]
-        xds = [_d(t.exit_date) for t in ts if _d(t.exit_date)]
-        if not eds or not xds:
-            continue
-        try:
-            df = fetch_ohlc(sym, min(eds).isoformat(),
-                            (max(xds) + _dt.timedelta(days=lookahead_days + 5)).isoformat())
-        except Exception:  # noqa: BLE001
-            df = None
+        df = frames.get(sym)
         if df is None or len(df) == 0:
             continue
         dates = df.index.date
@@ -568,6 +644,8 @@ def audit_trades(txns: Sequence[Transaction], *, fees_paid: float = 0.0,
     report.discipline_score = _discipline_score(trips, leaks, abs(total_pnl))
     report.insights = behavioral_insights(trips, leaks)
     report.monthly = monthly_discipline(trips)
+    report.open_tail = open_tail(txns, trips)
+    report.counterfactual_curve = discipline_curve(trips)
     report.quarterly = quarterly_discipline(trips)
     if narrate:
         try:

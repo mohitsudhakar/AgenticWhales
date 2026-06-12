@@ -142,3 +142,90 @@ def test_clean_trader_low_leak():
                  _t(f"2025-0{i+1}-20", "Sell", f"S{i}", 10, px_out)]
     report = coach.audit_trades(txns)
     assert report.discipline_score >= 60
+
+
+def test_open_tail_explains_chart_gap():
+    """Buys newer than the last closed trade are reported so the UI can say
+    why the discipline chart ends earlier than the synced history does."""
+    txns = [
+        _t("2026-03-01", "Buy", "AAPL", 10, 100),
+        _t("2026-04-10", "Sell", "AAPL", 10, 110),   # last close: April
+        _t("2026-05-05", "Buy", "MSFT", 5, 400),     # still open
+        _t("2026-06-02", "Buy", "NVDA", 8, 130),     # still open
+        # Noise that must NOT count as open tail:
+        _t("2026-05-20", "Dividend", "AAPL", 0, 0),
+        Transaction(date="2026-05-21", type="Buy Option", symbol="SPY",
+                    quantity=1, price=5, amount=-500, description="SPY Call"),
+    ]
+    rep = coach.audit_trades(txns)
+    assert [m["month"] for m in rep.monthly] == ["2026-04"]
+    tail = rep.open_tail
+    assert tail["n_open_buys"] == 2
+    assert tail["last_close"] == "2026-04-10"
+    assert tail["first"] == "2026-05-05" and tail["last"] == "2026-06-02"
+    assert "open_tail" in rep.to_dict()
+
+
+def test_open_tail_absent_when_nothing_open_after_last_close():
+    txns = [
+        _t("2026-03-01", "Buy", "AAPL", 10, 100),
+        _t("2026-04-10", "Sell", "AAPL", 10, 110),
+    ]
+    assert coach.audit_trades(txns).open_tail is None
+    assert coach.audit_trades([]).open_tail is None
+
+
+def test_transaction_dates_normalize_to_iso():
+    """US broker CSVs carry MM/DD/YYYY; unparsed dates silently drop trades
+    out of the FIFO builder and the discipline chart, so the model boundary
+    normalizes them."""
+    assert _t("02/20/2026", "Buy", "AMD", 1, 100).date == "2026-02-20"
+    assert _t("25/12/2025", "Buy", "AMD", 1, 100).date == "2025-12-25"   # unambiguous DD/MM
+    assert _t("2026/02/20", "Buy", "AMD", 1, 100).date == "2026-02-20"   # YYYY/MM/DD
+    assert _t("2025-01-06T00:00:00Z", "Buy", "A", 1, 1).date == "2025-01-06T00:00:00Z"
+    assert _t("13/13/2025", "Buy", "A", 1, 1).date == "13/13/2025"       # invalid: untouched
+    assert _t("not a date", "Buy", "A", 1, 1).date == "not a date"
+
+
+def test_dedupe_collapses_same_trade_across_date_formats():
+    """The same fill arriving via CSV ('02/20/2026') and via brokerage sync
+    ('2026-02-20') must count once, not twice."""
+    a = _t("02/20/2026", "Buy", "AAPL", 10, 150)
+    b = _t("2026-02-20", "Buy", "AAPL", 10, 150)
+    assert len(coach.dedupe_transactions([a, b])) == 1
+
+
+def test_slash_dated_trades_are_scored():
+    txns = [_t("01/06/2026", "Buy", "AAPL", 10, 100),
+            _t("01/20/2026", "Sell", "AAPL", 10, 110)]
+    rep = coach.audit_trades(txns)
+    assert rep.n_trades == 1
+    assert rep.monthly[0]["month"] == "2026-01"
+
+
+def test_discipline_curve_reconciles_with_headline():
+    """The curve's final gap must equal total_quantified_leak exactly — both
+    derive from the same per-trip arithmetic and full-history median."""
+    txns = []
+    for i, (sym, qty, b, s) in enumerate([("AAPL", 10, 100, 90), ("MSFT", 100, 50, 30),
+                                          ("NVDA", 10, 100, 115), ("AMD", 400, 80, 60)]):
+        txns += [_t(f"2025-0{i+1}-02", "Buy", sym, qty, b),
+                 _t(f"2025-0{i+1}-20", "Sell", sym, qty, s)]
+    rep = coach.audit_trades(txns)
+    curve = rep.counterfactual_curve
+    assert [p["month"] for p in curve] == ["2025-01", "2025-02", "2025-03", "2025-04"]
+    last = curve[-1]
+    assert abs(last["actual_cum"] - rep.total_pnl) < 0.01
+    assert abs((last["disciplined_cum"] - last["actual_cum"]) - rep.total_quantified_leak) < 0.01
+    # Cumulative: monotone month count, each point carries both series.
+    assert all("actual_cum" in p and "disciplined_cum" in p for p in curve)
+    assert coach.discipline_curve([]) == []
+
+
+def test_discipline_curve_copy_carries_no_directives():
+    from agenticwhales import pretrade
+    txns = [_t("2025-01-02", "Buy", "AAPL", 10, 100), _t("2025-01-20", "Sell", "AAPL", 10, 90),
+            _t("2025-02-02", "Buy", "MSFT", 10, 100), _t("2025-02-20", "Sell", "MSFT", 10, 80)]
+    for p in coach.audit_trades(txns).counterfactual_curve:
+        for v in p.values():
+            assert not pretrade.contains_directive(str(v))
