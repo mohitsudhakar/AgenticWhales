@@ -118,3 +118,19 @@ def test_referral_claim_validates_code(client):
 def test_dashboard_includes_referrals(client):
     d = admin.build_dashboard()
     assert "referrals" in d
+
+
+def test_every_page_carries_the_favicon(client):
+    """Browsers showed the default globe on all product pages — only the
+    fund-era pages linked the icon. Every served page must carry it, and
+    /favicon.ico must answer the browsers that ask unprompted."""
+    pages = ["/", "/coach", "/analyze", "/pricing", "/security",
+             "/methodology", "/stats", "/partner", "/learn"] + \
+            [f"/learn/{s}" for s in LEARN_PAGES]
+    for path in pages:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert "/static/favicon.svg" in r.text, f"{path} missing favicon link"
+    ico = client.get("/favicon.ico")
+    assert ico.status_code == 200
+    assert "svg" in ico.headers["content-type"]

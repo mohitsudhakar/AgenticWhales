@@ -413,7 +413,9 @@ class RecipeScheduler:
         from web.runner import SessionRunner, build_session
         if not server_mod.provider_configured(server_mod.DEFAULT_PROVIDER):
             return
-        today = _dt.date.today().isoformat()
+        # UTC date, NOT local: last_run_at is stamped in UTC, so a local-date
+        # comparison would let the cron double-fire near midnight UTC.
+        today = _dt.datetime.now(_dt.timezone.utc).date().isoformat()
         fired = 0
         for row in _auth.list_active_standing_briefs():
             uid = row.get("user_id")

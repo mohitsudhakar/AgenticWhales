@@ -179,6 +179,7 @@ _PAGE_TMPL = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <title>{title} — AgenticWhales</title>
   <meta name="description" content="{meta}" />
   <link rel="canonical" href="{canonical}" />

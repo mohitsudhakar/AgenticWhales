@@ -209,6 +209,14 @@ async def root_page() -> HTMLResponse:
     return _render_html("home.html")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Browsers request /favicon.ico unprompted; serve the SVG tile (modern
+    browsers accept any image type here as long as the content-type is right)."""
+    from fastapi.responses import FileResponse
+    return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
+
+
 @app.get("/signin")
 async def signin_page() -> RedirectResponse:
     """The fund-era sign-in gate is retired (it bounced signed-in users to
