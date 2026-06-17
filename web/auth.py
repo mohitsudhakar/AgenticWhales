@@ -1162,25 +1162,80 @@ def list_cohort_scores() -> List[float]:
     return [float(s) for _, s in latest.values() if s is not None]
 
 
-def admin_coach_stats() -> Dict[str, int]:
+def admin_coach_stats() -> Dict[str, Any]:
     """Coach activation + findings funnel for the admin dashboard.
     Activation = a user with at least one persisted audit (their first
-    quantified leak card; the `coach_activation` audit event marks the moment)."""
+    quantified leak card; the `coach_activation` audit event marks the moment).
+
+    Now also includes: leak dollar buckets, rule adoption rate, second audit rate."""
     if _db_writable():
         audits = _select_columns("coach_audits", filters={},
-                                 select="user_id", limit=10000)
+                                 select="user_id,leak_summary", limit=10000)
         findings = _select_columns("coach_findings", filters={},
                                    select="user_id,resolved_at,persisted", limit=10000)
     else:
         audits = [r for (t, _), r in _memstore.items() if t == "coach_audits"]
         findings = [r for (t, _), r in _memstore.items() if t == "coach_findings"]
+
+    activated_users = {r.get("user_id") for r in audits if r.get("user_id")}
+
+    # Leak dollar buckets: for each activated user, find their top leak from
+    # the first persisted audit's leak_summary.  The plan gates on whether
+    # "users see enough pain to pay" — this answers it at a glance.
+    top_leak_by_user: Dict[str, float] = {}
+    for r in audits:
+        uid = r.get("user_id")
+        if not uid:
+            continue
+        leaks = r.get("leak_summary") or []
+        for l in leaks:
+            try:
+                d = abs(float(l.get("dollars", 0)))
+            except (TypeError, ValueError):
+                continue
+            if uid not in top_leak_by_user or d > top_leak_by_user[uid]:
+                top_leak_by_user[uid] = d
+    leak_gt_25 = sum(1 for uid, d in top_leak_by_user.items() if d > 25)
+    leak_gt_100 = sum(1 for uid, d in top_leak_by_user.items() if d > 100)
+    leak_gt_250 = sum(1 for uid, d in top_leak_by_user.items() if d > 250)
+
+    # Second audit rate: fraction of activated users who have 2+ audits.
+    audit_count_by_user: Dict[str, int] = {}
+    for r in audits:
+        uid = r.get("user_id")
+        if uid:
+            audit_count_by_user[uid] = audit_count_by_user.get(uid, 0) + 1
+    users_with_2plus = sum(1 for c in audit_count_by_user.values() if c >= 2)
+    second_audit_rate = (round(users_with_2plus / len(activated_users), 3)
+                         if activated_users else None)
+
+    # Rule adoption rate: fraction of activated users who have at least one
+    # active rule (not just suggested).
+    rules_rows: list = []
+    if _db_writable():
+        rules_rows = _select_columns("coach_rules", filters={"status": "active"},
+                                     select="user_id", limit=10000)
+    else:
+        rules_rows = [r for (t, _), r in _memstore.items()
+                      if t == "coach_rules" and r.get("status") == "active"]
+    users_with_active_rules = {r.get("user_id") for r in rules_rows if r.get("user_id")}
+    rule_adoption_rate = (round(len(users_with_active_rules & activated_users)
+                                / len(activated_users), 3)
+                          if activated_users else None)
+
     return {
-        "activated_users": len({r.get("user_id") for r in audits if r.get("user_id")}),
+        "activated_users": len(activated_users),
         "total_audits": len(audits),
         "open_findings": sum(1 for f in findings if not f.get("resolved_at")),
         "resolved_findings": sum(1 for f in findings if f.get("resolved_at")),
         "leaks_fixed": sum(1 for f in findings
                            if f.get("resolved_at") and f.get("persisted") is False),
+        "leak_gt_25": leak_gt_25,
+        "leak_gt_100": leak_gt_100,
+        "leak_gt_250": leak_gt_250,
+        "second_audit_rate": second_audit_rate,
+        "rule_adoption_rate": rule_adoption_rate,
+        "users_with_active_rules": len(users_with_active_rules & activated_users),
     }
 
 
@@ -1288,6 +1343,20 @@ def admin_funnel_stats() -> Dict[str, Any]:
             retained.add(uid)
     d30_retention = round(len(retained) / len(cohort), 3) if cohort else None
 
+    # D7 retention over user-initiated signals only (same honesty rules as D30).
+    d7_cohort = set()
+    d7_retained = set()
+    for uid, ts in activated_at.items():
+        if (now - ts).days >= 7:
+            d7_cohort.add(uid)
+    for r in audit_rows:
+        uid = r.get("user_id")
+        ts = _parse_iso_ts(r.get("created_at"))
+        if (uid in d7_cohort and ts and (now - ts).days <= 7
+                and (r.get("origin") or "upload") != "sync_auto"):
+            d7_retained.add(uid)
+    d7_retention = round(len(d7_retained) / len(d7_cohort), 3) if d7_cohort else None
+
     return {
         "events": counts,
         "activated_users": activated,
@@ -1295,6 +1364,8 @@ def admin_funnel_stats() -> Dict[str, Any]:
         "median_minutes_to_first_card": median_minutes_to_first_card,
         "d30_retention": d30_retention,
         "d30_cohort_size": len(cohort),
+        "d7_retention": d7_retention,
+        "d7_cohort_size": len(d7_cohort),
     }
 
 
