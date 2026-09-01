@@ -312,6 +312,8 @@ function renderCoach() {
       ? "—" : String(funnel.median_minutes_to_first_card)],
     ["D30 retention", funnel.d30_retention == null
       ? `— (cohort ${fmtInt(funnel.d30_cohort_size || 0)})` : pct(funnel.d30_retention)],
+    ["D7 retention", funnel.d7_retention == null
+      ? `— (cohort ${fmtInt(funnel.d7_cohort_size || 0)})` : pct(funnel.d7_retention)],
     ["Share rate", pct(funnel.share_rate)],
   ];
   tEl.innerHTML = tiles.map(([label, v]) => `
@@ -319,6 +321,29 @@ function renderCoach() {
       <div class="coach-tile-v">${escapeHTML(String(v))}</div>
       <div class="coach-tile-l">${escapeHTML(label)}</div>
     </div>`).join("");
+
+  // --- Activation threshold tiles: leak dollar buckets + behavior rates ---
+  const thresholdEl = document.getElementById("usage-coach-thresholds");
+  if (thresholdEl) {
+    const actUsers = coach.activated_users || 0;
+    const thresholds = [
+      ["Top leak > $25", fmtInt(coach.leak_gt_25 || 0),
+        coach.leak_gt_25 ? pct(coach.leak_gt_25 / actUsers) : "—"],
+      ["Top leak > $100", fmtInt(coach.leak_gt_100 || 0),
+        coach.leak_gt_100 ? pct(coach.leak_gt_100 / actUsers) : "—"],
+      ["Top leak > $250", fmtInt(coach.leak_gt_250 || 0),
+        coach.leak_gt_250 ? pct(coach.leak_gt_250 / actUsers) : "—"],
+      ["Rule adoption", pct(coach.rule_adoption_rate),
+        `${fmtInt(coach.users_with_active_rules || 0)} of ${fmtInt(actUsers)}`],
+      ["2nd audit rate", pct(coach.second_audit_rate), ""],
+    ];
+    thresholdEl.innerHTML = thresholds.map(([label, v, sub]) => `
+      <div class="coach-tile">
+        <div class="coach-tile-v">${escapeHTML(String(v))}</div>
+        <div class="coach-tile-l">${escapeHTML(label)}</div>
+        ${sub ? `<div class="coach-tile-sub">${escapeHTML(sub)}</div>` : ""}
+      </div>`).join("");
+  }
 }
 
 // ---------- Daily tokens chart (SVG, stacked) ----------
